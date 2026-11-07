@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+GenericName=File Manager
+Comment=Browse and manage your files, themed like the rest of Omarchy
+Exec=omafile %U
+Icon=system-file-manager
+Terminal=false
+Categories=System;FileTools;FileManager;Utility;GTK;
+MimeType=inode/directory;
+Keywords=files;folders;directory;browse;omarchy;
+StartupNotify=true
+StartupWMClass=io.github.whogotpwned.Omafile

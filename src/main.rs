@@ -1,188 +1,63 @@
-mod app;
-mod fs;
-mod icons;
-mod preview;
+mod actions;
+mod item;
+mod ops;
 mod theme;
-mod ui;
+mod window;
 
-use app::{App, External};
-use ratatui::crossterm::event::{self, Event, KeyEventKind};
-use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
-use ratatui::crossterm::execute;
-use ratatui::prelude::*;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::Duration;
+use adw::prelude::*;
+use gtk::{gio, glib};
+use std::cell::RefCell;
+use std::rc::Rc;
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+const APP_ID: &str = "io.github.whogotpwned.Omafile";
 
-const USAGE: &str = "\
-omafile - a keyboard-driven file manager for Omarchy
+fn main() -> glib::ExitCode {
+    let app = adw::Application::builder()
+        .application_id(APP_ID)
+        .flags(gio::ApplicationFlags::HANDLES_OPEN)
+        .build();
 
-USAGE:
-    omafile [OPTIONS] [PATH]
+    let theme: Rc<RefCell<Option<Rc<theme::ThemeManager>>>> = Rc::new(RefCell::new(None));
+    let theme2 = theme.clone();
+    app.connect_startup(move |app| {
+        gtk::Window::set_default_icon_name("system-file-manager");
+        *theme2.borrow_mut() = Some(theme::ThemeManager::install());
+        let quit = gio::SimpleAction::new("quit", None);
+        let app2 = app.clone();
+        quit.connect_activate(move |_, _| app2.quit());
+        app.add_action(&quit);
+        let about = gio::SimpleAction::new("about", None);
+        let app2 = app.clone();
+        about.connect_activate(move |_, _| actions::about(&app2));
+        app.add_action(&about);
+        app.set_accels_for_action("app.quit", &["<Control>q"]);
+        for (action, accels) in actions::ACCELS {
+            app.set_accels_for_action(action, accels);
+        }
+    });
 
-ARGS:
-    PATH                 directory to open, or a file to select (default: cwd)
+    app.connect_activate(|app| {
+        let start = std::env::current_dir().map(gio::File::for_path).unwrap_or_else(|_| gio::File::for_path(glib::home_dir()));
+        open_window(app, start);
+    });
 
-OPTIONS:
-    --cwd-file <FILE>    write the last visited directory to FILE on exit
-                         (used by the shell `cd` wrapper, see README)
-    --no-icons           use ASCII instead of Nerd Font glyphs
-    -h, --help           print this help
-    -V, --version        print the version
+    app.connect_open(|app, files, _hint| {
+        for file in files {
+            let target = match file.query_file_type(gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) {
+                gio::FileType::Directory => file.clone(),
+                gio::FileType::Unknown => file.clone(),
+                _ => file.parent().unwrap_or_else(|| file.clone()),
+            };
+            open_window(app, target);
+        }
+    });
 
-ENVIRONMENT:
-    EDITOR / VISUAL      editor for text files (default: nvim)
-    TERMINAL             terminal spawned with `t` (default: alacritty)
-    OMAFILE_THEME_DIR    override ~/.config/omarchy/current/theme
-    OMAFILE_ICONS=0      same as --no-icons
-";
-
-struct Args {
-    path: Option<PathBuf>,
-    cwd_file: Option<PathBuf>,
-    icons: bool,
+    app.run()
 }
 
-fn parse_args() -> Result<Args, String> {
-    let mut args = Args {
-        path: None,
-        cwd_file: None,
-        icons: std::env::var("OMAFILE_ICONS").map(|v| v != "0").unwrap_or(true),
-    };
-    let mut it = std::env::args().skip(1);
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "-h" | "--help" => {
-                print!("{USAGE}");
-                std::process::exit(0);
-            }
-            "-V" | "--version" => {
-                println!("omafile {VERSION}");
-                std::process::exit(0);
-            }
-            "--no-icons" => args.icons = false,
-            "--cwd-file" => {
-                args.cwd_file = Some(PathBuf::from(it.next().ok_or("--cwd-file needs a value")?));
-            }
-            s if s.starts_with("--cwd-file=") => {
-                args.cwd_file = Some(PathBuf::from(&s["--cwd-file=".len()..]));
-            }
-            s if s.starts_with('-') && s != "-" => return Err(format!("unknown option: {s}")),
-            _ => args.path = Some(PathBuf::from(arg)),
-        }
-    }
-    Ok(args)
-}
-
-struct TerminalGuard;
-
-impl TerminalGuard {
-    fn enter() -> io::Result<Self> {
-        enable_raw_mode()?;
-        execute!(io::stdout(), EnterAlternateScreen)?;
-        Ok(TerminalGuard)
-    }
-
-    fn leave() {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
-    }
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        TerminalGuard::leave();
-    }
-}
-
-/// Hand the terminal to another program and take it back afterwards.
-fn run_external(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &App, ext: External) -> io::Result<()> {
-    TerminalGuard::leave();
-    let status = match ext {
-        External::Editor(path) => {
-            let editor = std::env::var("VISUAL")
-                .or_else(|_| std::env::var("EDITOR"))
-                .unwrap_or_else(|_| "nvim".into());
-            Command::new("sh")
-                .arg("-c")
-                .arg(format!("{editor} \"$1\""))
-                .arg("omafile")
-                .arg(&path)
-                .current_dir(&app.cwd)
-                .status()
-        }
-        External::Shell => {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".into());
-            println!("omafile: shell in {} (exit to return)", fs::display_path(&app.cwd));
-            let _ = io::stdout().flush();
-            Command::new(&shell).current_dir(&app.cwd).status()
-        }
-    };
-    let _guard = TerminalGuard::enter()?;
-    std::mem::forget(_guard); // the outer guard in main owns teardown
-    terminal.clear()?;
-    status.map(|_| ())
-}
-
-fn main() -> io::Result<()> {
-    let args = match parse_args() {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("omafile: {e}\n\n{USAGE}");
-            std::process::exit(2);
-        }
-    };
-
-    let mut start = args.path.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
-    let mut select: Option<PathBuf> = None;
-    if start.is_file() {
-        select = std::fs::canonicalize(&start).ok();
-        start = start.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("/"));
-    }
-    let start = std::fs::canonicalize(&start).unwrap_or(start);
-    if !start.is_dir() {
-        eprintln!("omafile: {}: not a directory", start.display());
-        std::process::exit(1);
-    }
-
-    let mut app = App::new(start, args.icons, args.cwd_file);
-    if let Some(sel) = select {
-        app.reload(Some(&sel));
-    }
-
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        TerminalGuard::leave();
-        default_hook(info);
-    }));
-
-    let _guard = TerminalGuard::enter()?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-
-    loop {
-        terminal.draw(|f| ui::draw(f, &mut app))?;
-        if event::poll(Duration::from_millis(250))? {
-            match event::read()? {
-                Event::Key(key) if key.kind != KeyEventKind::Release => app.handle_key(key),
-                _ => {}
-            }
-        }
-        app.tick();
-        if let Some(ext) = app.external.take() {
-            if let Err(e) = run_external(&mut terminal, &app, ext) {
-                app.error(format!("{e}"));
-            }
-            app.reload(None);
-        }
-        if app.should_quit {
-            break;
-        }
-    }
-
-    drop(_guard);
-    app.write_cwd_file();
-    Ok(())
+fn open_window(app: &adw::Application, start: gio::File) {
+    let win = window::Window::new(app, start);
+    // The Rc graph is owned by the GTK window's closures; keep it alive explicitly too.
+    unsafe { win.window.set_data("omafile-window", win.clone()) };
+    win.window.present();
 }

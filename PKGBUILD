@@ -1,19 +1,17 @@
 # Maintainer: whogotpwned
 pkgname=omafile
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
-pkgdesc="Keyboard-driven terminal file manager that follows the Omarchy theme"
+pkgdesc="Native GTK4/libadwaita file manager that follows the Omarchy theme"
 arch=('x86_64' 'aarch64')
 url="https://github.com/whogotpwned/omafile"
 license=('MIT')
-depends=('gcc-libs' 'glibc')
+depends=('gtk4' 'libadwaita' 'glib2' 'hicolor-icon-theme')
 optdepends=(
-  'alacritty: terminal used by the desktop entry and the Hyprland binding'
-  'glib2: move files to trash with gio'
-  'wl-clipboard: copy paths to the Wayland clipboard'
-  'xdg-utils: open non-text files with the default application'
-  'ttf-cascadia-mono-nerd: file type icons'
-  'neovim: default editor for text files'
+  'gvfs: trash, removable drives and network locations'
+  'xdg-desktop-portal-hyprland: "Open With" chooser'
+  'alacritty: terminal for "Open Terminal Here"'
+  'uwsm: launch the terminal as a proper session app'
 )
 makedepends=('cargo')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
@@ -38,10 +36,9 @@ check() {
 package() {
   cd "$pkgname-$pkgver"
   install -Dm755 target/release/omafile "$pkgdir/usr/bin/omafile"
-  install -Dm644 contrib/omafile.desktop "$pkgdir/usr/share/applications/omafile.desktop"
-  install -Dm644 contrib/shell-integration.sh "$pkgdir/usr/share/omafile/shell-integration.sh"
-  install -Dm644 contrib/shell-integration.fish "$pkgdir/usr/share/omafile/of.fish"
-  install -Dm644 contrib/hyprland-bindings.conf "$pkgdir/usr/share/omafile/hyprland-bindings.conf"
+  install -Dm644 data/io.github.whogotpwned.Omafile.desktop \
+    "$pkgdir/usr/share/applications/io.github.whogotpwned.Omafile.desktop"
+  install -Dm644 data/hyprland-bindings.conf "$pkgdir/usr/share/omafile/hyprland-bindings.conf"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
