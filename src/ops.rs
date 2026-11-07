@@ -164,6 +164,39 @@ pub fn open_terminal(dir: &gio::File) -> Result<(), glib::Error> {
     .map(|_| ())
 }
 
+/// Run a command in `cwd`, reporting stderr on failure.
+pub async fn run_command(argv: &[&str], cwd: Option<&std::path::Path>) -> OpResult {
+    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::STDERR_PIPE | gio::SubprocessFlags::STDOUT_SILENCE);
+    if let Some(cwd) = cwd {
+        launcher.set_cwd(cwd);
+    }
+    let argv: Vec<std::ffi::OsString> = argv.iter().map(std::ffi::OsString::from).collect();
+    let argv_ref: Vec<&std::ffi::OsStr> = argv.iter().map(|s| s.as_os_str()).collect();
+    let process = launcher.spawn(&argv_ref)?;
+    let (_, stderr) = process.communicate_utf8_future(None).await?;
+    if process.is_successful() {
+        Ok(())
+    } else {
+        let msg = stderr.map(|s| s.to_string()).unwrap_or_default();
+        let msg = msg.lines().last().unwrap_or("command failed").to_string();
+        Err(glib::Error::new(gio::IOErrorEnum::Failed, &msg))
+    }
+}
+
+/// Extract an archive next to itself using bsdtar (libarchive, part of Arch base).
+pub async fn extract(archive: &std::path::Path, into: &std::path::Path) -> OpResult {
+    let tool = if glib::find_program_in_path("bsdtar").is_some() { "bsdtar" } else { "tar" };
+    run_command(&[tool, "-xf", &archive.to_string_lossy(), "-C", &into.to_string_lossy()], Some(into)).await
+}
+
+/// Create `archive` (format from its extension) from `names` inside `cwd`.
+pub async fn compress(cwd: &std::path::Path, archive: &str, names: &[String]) -> OpResult {
+    let tool = if glib::find_program_in_path("bsdtar").is_some() { "bsdtar" } else { "tar" };
+    let mut argv: Vec<&str> = vec![tool, "-caf", archive, "--"];
+    argv.extend(names.iter().map(String::as_str));
+    run_command(&argv, Some(cwd)).await
+}
+
 pub fn human_size(n: u64) -> String {
     glib::format_size(n).to_string()
 }

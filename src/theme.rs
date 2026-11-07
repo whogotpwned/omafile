@@ -236,6 +236,44 @@ pub fn css(p: &Palette) -> String {
 @define-color shade_color rgba(0, 0, 0, 0.36);
 @define-color scrollbar_outline_color rgba(0, 0, 0, 0.5);
 
+/* ---- omafile widgets ------------------------------------------------- */
+.omafile-header {{
+  box-shadow: none;
+}}
+.omafile-card {{
+  background-color: @view_bg_color;
+  border: 1px solid alpha(@window_fg_color, 0.08);
+  border-radius: 12px;
+  margin: 0 10px 10px 4px;
+}}
+.omafile-card scrolledwindow {{
+  background: transparent;
+}}
+.omafile-files {{
+  background: transparent;
+}}
+.omafile-files columnview > header {{
+  background-color: transparent;
+  border-bottom: 1px solid alpha(@window_fg_color, 0.08);
+}}
+.omafile-files columnview > header button {{
+  padding: 4px 10px;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: alpha(@window_fg_color, 0.6);
+}}
+.omafile-files listview > row {{
+  border-radius: 8px;
+  margin: 1px 6px;
+  padding: 0 4px;
+}}
+.omafile-files columnview > listview > row > cell {{
+  padding: 4px 6px;
+}}
+.omafile-files listview > row:hover,
+.omafile-files gridview > child:hover {{
+  background-color: alpha(@window_fg_color, 0.05);
+}}
 .omafile-files listview > row:selected,
 .omafile-files gridview > child:selected {{
   background-color: {selected_row};
@@ -253,27 +291,62 @@ pub fn css(p: &Palette) -> String {
   opacity: 0.85;
 }}
 .omafile-files gridview > child {{
-  border-radius: 9px;
-  padding: 6px;
+  border-radius: 10px;
+  padding: 10px 6px;
+  margin: 4px;
 }}
-.omafile-files columnview > header {{
-  background-color: @view_bg_color;
+.omafile-thumb {{
+  border-radius: 6px;
+}}
+.omafile-grid-item .omafile-thumb {{
+  border-radius: 8px;
+}}
+.omafile-pathbar {{
+  background-color: alpha(@window_fg_color, 0.06);
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-height: 30px;
 }}
 .omafile-pathbar button {{
   min-height: 24px;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: 999px;
+  font-weight: 500;
 }}
 .omafile-pathbar button.current {{
-  font-weight: bold;
+  font-weight: 700;
   color: @accent_color;
 }}
 .omafile-pathbar .separator {{
-  color: alpha(@window_fg_color, 0.45);
-  padding: 0 2px;
+  color: alpha(@window_fg_color, 0.35);
+  padding: 0 1px;
+}}
+.omafile-path-entry {{
+  border-radius: 999px;
+}}
+.omafile-tabs tabbar {{
+  background: transparent;
+}}
+.omafile-sidebar row {{
+  border-radius: 8px;
+}}
+.omafile-preview {{
+  background-color: @sidebar_bg_color;
+}}
+.omafile-preview-image {{
+  border-radius: 10px;
+}}
+.omafile-preview-card {{
+  background-color: @view_bg_color;
+  border: 1px solid alpha(@window_fg_color, 0.08);
+  border-radius: 10px;
+}}
+.omafile-preview-text {{
+  background: transparent;
+  font-size: 0.85em;
 }}
 .omafile-hidden {{
-  opacity: 0.6;
+  opacity: 0.55;
 }}
 .omafile-symlink {{
   font-style: italic;
@@ -283,6 +356,9 @@ pub fn css(p: &Palette) -> String {
 }}
 .omafile-dim {{
   color: alpha(@window_fg_color, 0.55);
+}}
+toast {{
+  border-radius: 999px;
 }}
 "#,
         name = p.name,

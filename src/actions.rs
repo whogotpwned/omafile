@@ -1,8 +1,10 @@
-//! Window actions: navigation, clipboard, file operations and dialogs.
+//! Window actions: navigation, tabs, clipboard, file operations and dialogs.
 
 use crate::item::FileItem;
 use crate::ops;
-use crate::window::{Clipboard, Window};
+use crate::pane::Pane;
+use crate::remote;
+use crate::window::{Clipboard, PlaceKind, Window};
 use adw::prelude::*;
 use gtk::{gdk, gio, glib};
 use std::rc::Rc;
@@ -17,10 +19,15 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.reload", &["F5", "<Control>r"]),
     ("win.show-hidden", &["<Control>h"]),
     ("win.show-sidebar", &["F9"]),
+    ("win.show-preview", &["F3"]),
     ("win.search", &["<Control>f"]),
     ("win.location", &["<Control>l"]),
     ("win.view::list", &["<Control>1"]),
     ("win.view::grid", &["<Control>2"]),
+    ("win.new-tab", &["<Control>t"]),
+    ("win.close-tab", &["<Control>w"]),
+    ("win.next-tab", &["<Control>Tab", "<Control>Page_Down"]),
+    ("win.prev-tab", &["<Control><Shift>Tab", "<Control>Page_Up"]),
     ("win.new-folder", &["<Control><Shift>n"]),
     ("win.new-file", &["<Control><Alt>n"]),
     ("win.rename", &["F2"]),
@@ -34,8 +41,10 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.terminal", &["F4", "<Control><Alt>t"]),
     ("win.properties", &["<Control>i", "<Alt>Return"]),
     ("win.open-with", &["<Control><Shift>o"]),
+    ("win.open-new-tab", &["<Control>Return"]),
+    ("win.bookmark", &["<Control>d"]),
+    ("win.connect", &["<Control><Shift>k"]),
     ("win.shortcuts", &["<Control>question"]),
-    ("win.close", &["<Control>w"]),
 ];
 
 impl Window {
@@ -50,39 +59,54 @@ impl Window {
             });
             self.window.add_action(&action);
         };
+        let pane = |w: &Rc<Window>| w.active_pane();
 
-        simple("back", Box::new(|w| w.go_back()));
-        simple("forward", Box::new(|w| w.go_forward()));
-        simple("up", Box::new(|w| w.go_up()));
-        simple("home", Box::new(|w| w.navigate(gio::File::for_path(glib::home_dir()), true)));
-        simple("reload", Box::new(|w| w.reload()));
-        simple("search", Box::new(|w| {
-            w.search_bar.set_search_mode(true);
-            w.search_entry.grab_focus();
+        simple("back", Box::new(move |w| { if let Some(p) = pane(w) { p.go_back() } }));
+        simple("forward", Box::new(move |w| { if let Some(p) = pane(w) { p.go_forward() } }));
+        simple("up", Box::new(move |w| { if let Some(p) = pane(w) { p.go_up() } }));
+        simple("home", Box::new(|w| w.navigate(gio::File::for_path(glib::home_dir()))));
+        simple("reload", Box::new(move |w| { if let Some(p) = pane(w) { p.reload() } }));
+        simple("search", Box::new(move |w| {
+            if let Some(p) = pane(w) {
+                p.search_bar.set_search_mode(true);
+                p.search_entry.grab_focus();
+            }
         }));
-        simple("location", Box::new(|w| {
-            w.path_stack.set_visible_child_name("entry");
-            w.path_entry.grab_focus();
-            w.path_entry.select_region(0, -1);
-        }));
+        simple("location", Box::new(|w| w.show_location_entry()));
         simple("toggle-view", Box::new(|w| {
-            let next = if w.is_grid() { "list" } else { "grid" };
+            let next = if w.view_mode() == "grid" { "list" } else { "grid" };
             gio::prelude::ActionGroupExt::activate_action(&w.window, "view", Some(&next.to_variant()));
         }));
-        simple("open", Box::new(|w| {
+        simple("new-tab", Box::new(|w| {
+            let dir = w.active_pane().map(|p| p.cwd()).unwrap_or_else(|| gio::File::for_path(glib::home_dir()));
+            w.open_in_new_tab(dir, true);
+        }));
+        simple("close-tab", Box::new(|w| w.close_active_tab()));
+        simple("next-tab", Box::new(|w| { w.tab_view.select_next_page(); }));
+        simple("prev-tab", Box::new(|w| { w.tab_view.select_previous_page(); }));
+        simple("open", Box::new(move |w| {
+            if let Some(p) = pane(w) {
+                for item in p.selected_items() {
+                    p.open_item(&item);
+                }
+            }
+        }));
+        simple("open-new-tab", Box::new(|w| {
             for item in w.selected_items() {
-                w.open_item(&item);
+                if item.is_dir() {
+                    w.open_in_new_tab(item.target_file(), false);
+                }
             }
         }));
         simple("open-with", Box::new(|w| {
             if let Some(item) = w.selected_items().first() {
-                w.launch(&item.file(), true);
+                w.launch(&item.target_file(), true);
             }
         }));
-        simple("terminal", Box::new(|w| w.open_terminal(&w.cwd())));
+        simple("terminal", Box::new(move |w| { if let Some(p) = pane(w) { w.open_terminal(&p.cwd()) } }));
         simple("terminal-selected", Box::new(|w| {
             if let Some(item) = w.selected_items().first() {
-                w.open_terminal(&item.file());
+                w.open_terminal(&item.target_file());
             }
         }));
         simple("new-folder", Box::new(|w| w.prompt_create(true)));
@@ -90,22 +114,22 @@ impl Window {
         simple("rename", Box::new(|w| w.prompt_rename()));
         simple("trash", Box::new(|w| w.trash_selected()));
         simple("delete", Box::new(|w| w.delete_selected()));
+        simple("restore", Box::new(|w| w.restore_selected()));
+        simple("empty-trash", Box::new(|w| w.empty_trash()));
         simple("copy", Box::new(|w| w.clip_selected(false)));
         simple("cut", Box::new(|w| w.clip_selected(true)));
         simple("paste", Box::new(|w| w.paste()));
-        simple("select-all", Box::new(|w| {
-            w.selection.select_all();
-        }));
+        simple("select-all", Box::new(move |w| { if let Some(p) = pane(w) { p.selection.select_all(); } }));
         simple("copy-path", Box::new(|w| {
-            let paths: Vec<String> = w.selected_items().iter().filter_map(|i| i.file().path()).map(|p| p.display().to_string()).collect();
+            let paths: Vec<String> = w.selected_items().iter().map(|i| crate::window::location_text(&i.target_file())).collect();
             if !paths.is_empty() {
                 w.window.clipboard().set_text(&paths.join("\n"));
                 w.toast(if paths.len() == 1 { "Path copied" } else { "Paths copied" });
             }
         }));
-        simple("copy-cwd-path", Box::new(|w| {
-            if let Some(p) = w.cwd().path() {
-                w.window.clipboard().set_text(&p.display().to_string());
+        simple("copy-cwd-path", Box::new(move |w| {
+            if let Some(p) = pane(w) {
+                w.window.clipboard().set_text(&crate::window::location_text(&p.cwd()));
                 w.toast("Path copied");
             }
         }));
@@ -114,8 +138,9 @@ impl Window {
                 w.show_properties(item);
             }
         }));
-        simple("cwd-properties", Box::new(|w| {
-            let cwd = w.cwd();
+        simple("cwd-properties", Box::new(move |w| {
+            let Some(p) = pane(w) else { return };
+            let cwd = p.cwd();
             let this = Rc::downgrade(w);
             glib::spawn_future_local(async move {
                 if let (Ok(item), Some(w)) = (ops::query(&cwd).await, this.upgrade()) {
@@ -123,10 +148,39 @@ impl Window {
                 }
             });
         }));
+        simple("bookmark", Box::new(move |w| { if let Some(p) = pane(w) { w.toggle_bookmark(&p.cwd()) } }));
+        simple("bookmark-selected", Box::new(|w| {
+            if let Some(item) = w.selected_items().first() {
+                w.toggle_bookmark(&item.target_file());
+            }
+        }));
+        simple("extract", Box::new(|w| w.extract_selected()));
+        simple("compress", Box::new(|w| w.prompt_compress()));
+        simple("connect", Box::new(|w| w.prompt_connect()));
+        simple("sidebar-new-tab", Box::new(|w| {
+            if let Some((file, kind)) = w.sidebar_target_place() {
+                match kind {
+                    PlaceKind::Ssh(_) => w.connect_to(file, true),
+                    _ => w.open_in_new_tab(file, true),
+                }
+            }
+        }));
+        simple("sidebar-remove-bookmark", Box::new(|w| {
+            if let Some((file, PlaceKind::Bookmark)) = w.sidebar_target_place() {
+                if let Err(e) = remote::remove_bookmark(&file) {
+                    w.toast_error(&format!("Cannot update bookmarks: {e}"));
+                }
+                w.refresh_sidebar();
+            }
+        }));
+        simple("sidebar-unmount", Box::new(|w| {
+            if let Some((_, PlaceKind::Mount(m))) = w.sidebar_target_place() {
+                w.unmount(m);
+            }
+        }));
         simple("shortcuts", Box::new(|w| w.show_shortcuts()));
-        simple("close", Box::new(|w| w.window.close()));
 
-        // Stateful: hidden files, sidebar, view mode.
+        // Stateful actions.
         let hidden = gio::SimpleAction::new_stateful("show-hidden", None, &false.to_variant());
         let this = Rc::downgrade(self);
         hidden.connect_activate(move |action, _| {
@@ -134,7 +188,11 @@ impl Window {
             let on = !action.state().and_then(|s| s.get::<bool>()).unwrap_or(false);
             action.set_state(&on.to_variant());
             w.state.borrow_mut().show_hidden = on;
-            w.filter.changed(gtk::FilterChange::Different);
+            let panes: Vec<Rc<Pane>> = w.panes.borrow().clone();
+            for p in panes {
+                p.filter.changed(gtk::FilterChange::Different);
+                p.apply_view_mode();
+            }
         });
         self.window.add_action(&hidden);
 
@@ -148,34 +206,80 @@ impl Window {
         });
         self.window.add_action(&sidebar);
 
+        let preview = gio::SimpleAction::new_stateful("show-preview", None, &false.to_variant());
+        let this = Rc::downgrade(self);
+        preview.connect_activate(move |action, _| {
+            let Some(w) = this.upgrade() else { return };
+            let on = !action.state().and_then(|s| s.get::<bool>()).unwrap_or(false);
+            action.set_state(&on.to_variant());
+            w.preview_split.set_show_sidebar(on);
+            if on {
+                w.sync_active();
+            }
+        });
+        self.window.add_action(&preview);
+
         let view = gio::SimpleAction::new_stateful("view", Some(glib::VariantTy::STRING), &"list".to_variant());
         let this = Rc::downgrade(self);
         view.connect_activate(move |action, param| {
             let Some(w) = this.upgrade() else { return };
             let Some(mode) = param.and_then(|p| p.get::<String>()) else { return };
             action.set_state(&mode.to_variant());
-            w.view_stack.set_visible_child_name(&mode);
-            w.focus_view();
+            w.state.borrow_mut().view_mode = mode.clone();
+            let grid = mode == "grid";
+            w.view_btn.set_icon_name(if grid { "view-list-symbolic" } else { "view-grid-symbolic" });
+            w.view_btn.set_tooltip_text(Some(if grid { "List view (Ctrl+1)" } else { "Grid view (Ctrl+2)" }));
+            let panes: Vec<Rc<Pane>> = w.panes.borrow().clone();
+            for p in panes {
+                p.apply_view_mode();
+            }
+            if let Some(p) = w.active_pane() {
+                p.focus_view();
+            }
         });
         self.window.add_action(&view);
+
+        let sort = gio::SimpleAction::new_stateful("sort", Some(glib::VariantTy::STRING), &"name".to_variant());
+        let this = Rc::downgrade(self);
+        sort.connect_activate(move |action, param| {
+            let Some(w) = this.upgrade() else { return };
+            let Some(key) = param.and_then(|p| p.get::<String>()) else { return };
+            action.set_state(&key.to_variant());
+            let panes: Vec<Rc<Pane>> = w.panes.borrow().clone();
+            for p in panes {
+                p.sort_by(&key);
+            }
+        });
+        self.window.add_action(&sort);
     }
 
     fn open_terminal(&self, dir: &gio::File) {
-        match ops::open_terminal(dir) {
-            Ok(()) => {}
-            Err(e) => self.toast_error(&format!("Cannot open terminal: {}", e.message())),
+        if let Err(e) = ops::open_terminal(dir) {
+            self.toast_error(&format!("Cannot open terminal: {}", e.message()));
         }
+    }
+
+    fn toggle_bookmark(self: &Rc<Self>, file: &gio::File) {
+        let result = if remote::is_bookmarked(file) {
+            remote::remove_bookmark(file).map(|_| "Bookmark removed")
+        } else {
+            remote::add_bookmark(file).map(|added| if added { "Bookmark added" } else { "Already bookmarked" })
+        };
+        match result {
+            Ok(msg) => self.toast(msg),
+            Err(e) => self.toast_error(&format!("Cannot update bookmarks: {e}")),
+        }
+        self.refresh_sidebar();
     }
 
     // ----- clipboard -----------------------------------------------------------
 
     fn clip_selected(&self, cut: bool) {
-        let files: Vec<gio::File> = self.selected_items().iter().map(|i| i.file()).collect();
+        let files: Vec<gio::File> = self.selected_items().iter().map(|i| i.target_file()).collect();
         if files.is_empty() {
             return;
         }
         let n = files.len();
-        // Share with other applications as a file list and as plain text URIs.
         let list = gdk::FileList::from_array(&files);
         let uris: Vec<String> = files.iter().map(|f| f.uri().to_string()).collect();
         let provider = gdk::ContentProvider::new_union(&[
@@ -188,10 +292,10 @@ impl Window {
     }
 
     fn paste(self: &Rc<Self>) {
+        let Some(pane) = self.active_pane() else { return };
         let this = Rc::downgrade(self);
         glib::spawn_future_local(async move {
             let Some(w) = this.upgrade() else { return };
-            // Prefer our own clipboard (knows about cut); fall back to files other apps copied.
             let (files, cut) = match w.state.borrow().clipboard.as_ref() {
                 Some(c) => (c.files.clone(), c.cut),
                 None => (Vec::new(), false),
@@ -208,7 +312,7 @@ impl Window {
                 w.toast("Nothing to paste");
                 return;
             }
-            let dest_dir = w.cwd();
+            let dest_dir = pane.cwd();
             let mut done = 0;
             let mut last = None;
             let mut error = None;
@@ -234,14 +338,9 @@ impl Window {
             if cut {
                 w.state.borrow_mut().clipboard = None;
             }
-            w.reload();
+            pane.reload();
             if let Some(dst) = last {
-                let this = Rc::downgrade(&w);
-                glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
-                    if let Some(w) = this.upgrade() {
-                        w.select_file(&dst);
-                    }
-                });
+                pane.select_file_later(dst);
             }
             match error {
                 Some(e) => w.toast_error(&e),
@@ -250,24 +349,44 @@ impl Window {
         });
     }
 
-    // ----- destructive -----------------------------------------------------------
+    // ----- trash / delete / restore -------------------------------------------------
 
     fn trash_selected(self: &Rc<Self>) {
-        let items = self.selected_items();
+        let Some(pane) = self.active_pane() else { return };
+        let items = pane.selected_items();
         if items.is_empty() {
             return;
         }
-        // Inside the trash, "trash" means delete for good; ask first.
-        if self.cwd().uri_scheme().as_deref() == Some("trash") {
+        if pane.cwd().uri_scheme().as_deref() == Some("trash") {
             self.delete_selected();
             return;
         }
         let this = Rc::downgrade(self);
         glib::spawn_future_local(async move {
+            let (done, error) = run_each(&items, |item| ops::trash(item.file())).await;
+            let Some(w) = this.upgrade() else { return };
+            pane.reload();
+            match error {
+                Some(e) => w.toast_error(&e),
+                None => w.toast(&format!("Moved {done} {} to trash", if done == 1 { "item" } else { "items" })),
+            }
+        });
+    }
+
+    fn restore_selected(self: &Rc<Self>) {
+        let Some(pane) = self.active_pane() else { return };
+        let items = pane.selected_items();
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
             let mut done = 0;
             let mut error = None;
             for item in &items {
-                match ops::trash(item.file()).await {
+                let Some(orig) = item.info().attribute_byte_string("trash::orig-path") else { continue };
+                let dest = gio::File::for_path(&orig);
+                if let Some(parent) = dest.parent() {
+                    let _ = parent.make_directory_with_parents(gio::Cancellable::NONE);
+                }
+                match ops::move_file(item.file(), dest).await {
                     Ok(()) => done += 1,
                     Err(e) => {
                         error = Some(format!("{}: {}", item.display_name(), e.message()));
@@ -276,24 +395,47 @@ impl Window {
                 }
             }
             let Some(w) = this.upgrade() else { return };
-            w.reload();
+            pane.reload();
             match error {
                 Some(e) => w.toast_error(&e),
-                None => w.toast(&format!("Moved {done} {} to trash", if done == 1 { "item" } else { "items" })),
+                None => w.toast(&format!("Restored {done} {}", if done == 1 { "item" } else { "items" })),
             }
         });
     }
 
+    fn empty_trash(self: &Rc<Self>) {
+        let Some(pane) = self.active_pane() else { return };
+        let dialog = adw::AlertDialog::new(Some("Empty the trash?"), Some("All items in the trash will be permanently deleted."));
+        dialog.add_responses(&[("cancel", "Cancel"), ("empty", "Empty Trash")]);
+        dialog.set_response_appearance("empty", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        let this = Rc::downgrade(self);
+        dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
+            if response != "empty" {
+                return;
+            }
+            let this = this.clone();
+            glib::spawn_future_local(async move {
+                let items = ops::list_dir(&gio::File::for_uri("trash:///")).await.unwrap_or_default();
+                let (done, error) = run_each(&items, |item| ops::delete_recursive(item.file())).await;
+                let Some(w) = this.upgrade() else { return };
+                pane.reload();
+                match error {
+                    Some(e) => w.toast_error(&e),
+                    None => w.toast(&format!("Trash emptied ({done} items)")),
+                }
+            });
+        });
+    }
+
     fn delete_selected(self: &Rc<Self>) {
-        let items = self.selected_items();
+        let Some(pane) = self.active_pane() else { return };
+        let items = pane.selected_items();
         if items.is_empty() {
             return;
         }
-        let what = if items.len() == 1 {
-            format!("“{}”", items[0].display_name())
-        } else {
-            format!("{} items", items.len())
-        };
+        let what = if items.len() == 1 { format!("“{}”", items[0].display_name()) } else { format!("{} items", items.len()) };
         let dialog = adw::AlertDialog::new(
             Some(&format!("Permanently delete {what}?")),
             Some("This cannot be undone. The files will not go to the trash."),
@@ -309,19 +451,9 @@ impl Window {
             }
             let this = this.clone();
             glib::spawn_future_local(async move {
-                let mut done = 0;
-                let mut error = None;
-                for item in &items {
-                    match ops::delete_recursive(item.file()).await {
-                        Ok(()) => done += 1,
-                        Err(e) => {
-                            error = Some(format!("{}: {}", item.display_name(), e.message()));
-                            break;
-                        }
-                    }
-                }
+                let (done, error) = run_each(&items, |item| ops::delete_recursive(item.file())).await;
                 let Some(w) = this.upgrade() else { return };
-                w.reload();
+                pane.reload();
                 match error {
                     Some(e) => w.toast_error(&e),
                     None => w.toast(&format!("Deleted {done} {}", if done == 1 { "item" } else { "items" })),
@@ -330,14 +462,128 @@ impl Window {
         });
     }
 
-    // ----- dialogs ---------------------------------------------------------------
+    // ----- archives ---------------------------------------------------------------------
+
+    fn extract_selected(self: &Rc<Self>) {
+        let Some(pane) = self.active_pane() else { return };
+        let Some(item) = pane.selected_items().into_iter().find(|i| i.is_archive()) else { return };
+        let (Some(archive), Some(into)) = (item.target_file().path(), pane.cwd().path()) else {
+            self.toast_error("Archives can only be extracted on local file systems");
+            return;
+        };
+        let this = Rc::downgrade(self);
+        let name = item.display_name();
+        self.toast(&format!("Extracting {name}…"));
+        glib::spawn_future_local(async move {
+            let result = ops::extract(&archive, &into).await;
+            let Some(w) = this.upgrade() else { return };
+            pane.reload();
+            match result {
+                Ok(()) => w.toast(&format!("Extracted {name}")),
+                Err(e) => w.toast_error(&format!("Cannot extract {name}: {}", e.message())),
+            }
+        });
+    }
+
+    fn prompt_compress(self: &Rc<Self>) {
+        let Some(pane) = self.active_pane() else { return };
+        let items = pane.selected_items();
+        let Some(cwd) = pane.cwd().path() else {
+            self.toast_error("Archives can only be created on local file systems");
+            return;
+        };
+        if items.is_empty() {
+            return;
+        }
+        let default = if items.len() == 1 {
+            format!("{}.tar.zst", items[0].display_name().trim_end_matches('/'))
+        } else {
+            "Archive.tar.zst".to_string()
+        };
+        let entry = gtk::Entry::builder().text(&default).activates_default(true).build();
+        let dialog = adw::AlertDialog::new(Some("Compress"), Some("The extension picks the format: .zip, .tar.gz, .tar.xz, .tar.zst, .7z"));
+        dialog.set_extra_child(Some(&entry));
+        dialog.add_responses(&[("cancel", "Cancel"), ("create", "Create")]);
+        dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("create"));
+        dialog.set_close_response("cancel");
+        let this = Rc::downgrade(self);
+        let entry2 = entry.clone();
+        dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
+            let Some(w) = this.upgrade() else { return };
+            if response != "create" {
+                return;
+            }
+            let archive = entry2.text().trim().to_string();
+            if archive.is_empty() || archive.contains('/') {
+                w.toast_error("Invalid archive name");
+                return;
+            }
+            let names: Vec<String> = items.iter().map(|i| i.name()).collect();
+            let this = Rc::downgrade(&w);
+            let target = pane.cwd().child(&archive);
+            w.toast(&format!("Creating {archive}…"));
+            glib::spawn_future_local(async move {
+                let result = ops::compress(&cwd, &archive, &names).await;
+                let Some(w) = this.upgrade() else { return };
+                pane.reload();
+                match result {
+                    Ok(()) => {
+                        w.toast(&format!("Created {archive}"));
+                        pane.select_file_later(target);
+                    }
+                    Err(e) => w.toast_error(&format!("Cannot create {archive}: {}", e.message())),
+                }
+            });
+        });
+        entry.grab_focus();
+        if let Some(dot) = entry.text().find('.') {
+            entry.select_region(0, dot as i32);
+        }
+    }
+
+    // ----- dialogs ------------------------------------------------------------------------
+
+    fn prompt_connect(self: &Rc<Self>) {
+        let entry = gtk::Entry::builder().placeholder_text("user@host[:port][/path]  or  sftp://host/").activates_default(true).build();
+        let hosts = remote::ssh_hosts();
+        let body = if hosts.is_empty() {
+            "Connect over SSH (SFTP). Hosts from ~/.ssh/config appear under Remote in the sidebar.".to_string()
+        } else {
+            format!("Connect over SSH (SFTP). Known hosts: {}", hosts.iter().map(|h| h.alias.as_str()).collect::<Vec<_>>().join(", "))
+        };
+        let dialog = adw::AlertDialog::new(Some("Connect to Server"), Some(&body));
+        dialog.set_extra_child(Some(&entry));
+        dialog.add_responses(&[("cancel", "Cancel"), ("connect", "Connect")]);
+        dialog.set_response_appearance("connect", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("connect"));
+        dialog.set_close_response("cancel");
+        let this = Rc::downgrade(self);
+        let entry2 = entry.clone();
+        dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
+            let Some(w) = this.upgrade() else { return };
+            if response != "connect" {
+                return;
+            }
+            let text = entry2.text().to_string();
+            // Allow typing an alias from ~/.ssh/config.
+            let uri = hosts
+                .iter()
+                .find(|h| h.alias == text.trim())
+                .map(|h| h.uri())
+                .or_else(|| remote::parse_server(&text));
+            match uri {
+                Some(uri) => w.connect_to(gio::File::for_uri(&uri), true),
+                None => w.toast_error("Enter a host to connect to"),
+            }
+        });
+        entry.grab_focus();
+    }
 
     fn prompt_create(self: &Rc<Self>, folder: bool) {
+        let Some(pane) = self.active_pane() else { return };
         let heading = if folder { "New Folder" } else { "New File" };
-        let entry = gtk::Entry::builder()
-            .text(if folder { "Untitled Folder" } else { "Untitled.txt" })
-            .activates_default(true)
-            .build();
+        let entry = gtk::Entry::builder().text(if folder { "Untitled Folder" } else { "Untitled.txt" }).activates_default(true).build();
         let dialog = adw::AlertDialog::new(Some(heading), None);
         dialog.set_extra_child(Some(&entry));
         dialog.add_responses(&[("cancel", "Cancel"), ("create", "Create")]);
@@ -356,38 +602,28 @@ impl Window {
                 w.toast_error("Invalid name");
                 return;
             }
-            let target = w.cwd().child(&name);
+            let target = pane.cwd().child(&name);
             let this = Rc::downgrade(&w);
             glib::spawn_future_local(async move {
                 let result = if folder { ops::make_dir(target.clone()).await } else { ops::create_file(target.clone()).await };
                 let Some(w) = this.upgrade() else { return };
                 match result {
                     Ok(()) => {
-                        w.reload();
-                        let this = Rc::downgrade(&w);
-                        glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
-                            if let Some(w) = this.upgrade() {
-                                w.select_file(&target);
-                            }
-                        });
+                        pane.reload();
+                        pane.select_file_later(target);
                     }
                     Err(e) => w.toast_error(&format!("Cannot create {name}: {}", e.message())),
                 }
             });
         });
         entry.grab_focus();
-        if !folder {
-            if let Some(dot) = entry.text().rfind('.') {
-                entry.select_region(0, dot as i32);
-            }
-        } else {
-            entry.select_region(0, -1);
-        }
+        let end = if folder { None } else { entry.text().rfind('.') };
+        entry.select_region(0, end.map(|i| i as i32).unwrap_or(-1));
     }
 
     fn prompt_rename(self: &Rc<Self>) {
-        let items = self.selected_items();
-        let Some(item) = items.first().cloned() else { return };
+        let Some(pane) = self.active_pane() else { return };
+        let Some(item) = pane.selected_items().first().cloned() else { return };
         let old = item.display_name();
         let stem_end = if item.is_dir() { None } else { old.rfind('.').filter(|&i| i > 0) };
         let entry = gtk::Entry::builder().text(&old).activates_default(true).build();
@@ -414,13 +650,8 @@ impl Window {
                 let Some(w) = this.upgrade() else { return };
                 match result {
                     Ok(new_file) => {
-                        w.reload();
-                        let this = Rc::downgrade(&w);
-                        glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
-                            if let Some(w) = this.upgrade() {
-                                w.select_file(&new_file);
-                            }
-                        });
+                        pane.reload();
+                        pane.select_file_later(new_file);
                     }
                     Err(e) => w.toast_error(&format!("Cannot rename: {}", e.message())),
                 }
@@ -444,10 +675,9 @@ impl Window {
         if !item.is_dir() {
             group.add(&row("Size", &ops::human_size(item.size())));
         }
-        if let Some(parent) = item.file().parent().and_then(|p| p.path()) {
-            group.add(&row("Location", &crate::window::abbreviate_home(&parent)));
-        } else {
-            group.add(&row("Location", &item.file().uri()));
+        match item.target_file().parent() {
+            Some(parent) => group.add(&row("Location", &crate::window::location_text(&parent))),
+            None => group.add(&row("Location", &item.file().uri())),
         }
         if let Some(m) = item.modified() {
             group.add(&row("Modified", &m.format("%A, %-d %B %Y %H:%M").map(|s| s.to_string()).unwrap_or_default()));
@@ -457,10 +687,7 @@ impl Window {
         }
         let mode = item.mode();
         if mode != 0 {
-            group.add(&row(
-                "Permissions",
-                &format!("{} ({:o})", ops::perm_string(mode, item.is_dir(), item.is_symlink()), mode & 0o7777),
-            ));
+            group.add(&row("Permissions", &format!("{} ({:o})", ops::perm_string(mode, item.is_dir(), item.is_symlink()), mode & 0o7777)));
         }
         let owner = item.owner();
         if !owner.is_empty() {
@@ -468,20 +695,19 @@ impl Window {
         }
         page.add(&group);
 
-        let header = adw::HeaderBar::new();
         let icon = gtk::Image::new();
-        icon.set_pixel_size(48);
+        icon.set_pixel_size(64);
         if let Some(gicon) = item.icon() {
             icon.set_from_gicon(&gicon);
         }
-        icon.set_margin_top(12);
+        icon.set_margin_top(18);
         let content = adw::ToolbarView::new();
-        content.add_top_bar(&header);
+        content.add_top_bar(&adw::HeaderBar::new());
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
         vbox.append(&icon);
         vbox.append(&page);
         content.set_content(Some(&vbox));
-        let dialog = adw::Dialog::builder().title("Properties").content_width(420).content_height(520).child(&content).build();
+        let dialog = adw::Dialog::builder().title("Properties").content_width(440).content_height(560).child(&content).build();
         dialog.present(Some(&self.window));
     }
 
@@ -496,23 +722,27 @@ impl Window {
                 ("Ctrl+F", "Filter this folder"),
                 ("F5", "Reload"),
             ]),
-            ("View", &[
-                ("Ctrl+1  /  Ctrl+2", "List / grid"),
-                ("Ctrl+H", "Show hidden files"),
-                ("F9", "Toggle sidebar"),
+            ("Tabs & panes", &[
+                ("Ctrl+T  /  Ctrl+W", "New / close tab"),
+                ("Ctrl+Tab  /  Ctrl+Shift+Tab", "Next / previous tab"),
+                ("Ctrl+Enter  /  middle click", "Open folder in new tab"),
+                ("F3", "Preview pane"),
+                ("F9", "Sidebar"),
+                ("Ctrl+1  /  Ctrl+2", "List / grid view"),
+                ("Ctrl+H", "Hidden files"),
             ]),
             ("Files", &[
                 ("Enter", "Open"),
                 ("Ctrl+Shift+O", "Open with…"),
                 ("F4", "Open terminal here"),
-                ("Ctrl+Shift+N", "New folder"),
-                ("Ctrl+Alt+N", "New file"),
+                ("Ctrl+Shift+N  /  Ctrl+Alt+N", "New folder / file"),
                 ("F2", "Rename"),
                 ("Ctrl+C  /  Ctrl+X  /  Ctrl+V", "Copy / cut / paste"),
                 ("Ctrl+Shift+C", "Copy path"),
-                ("Delete", "Move to trash"),
-                ("Shift+Delete", "Delete permanently"),
+                ("Ctrl+D", "Bookmark this folder"),
+                ("Delete  /  Shift+Delete", "Trash / delete permanently"),
                 ("Ctrl+I", "Properties"),
+                ("Ctrl+Shift+K", "Connect to server (SFTP)"),
             ]),
         ];
         for (title, rows) in sections {
@@ -530,9 +760,25 @@ impl Window {
         let content = adw::ToolbarView::new();
         content.add_top_bar(&adw::HeaderBar::new());
         content.set_content(Some(&page));
-        let dialog = adw::Dialog::builder().title("Keyboard Shortcuts").content_width(460).content_height(620).child(&content).build();
+        let dialog = adw::Dialog::builder().title("Keyboard Shortcuts").content_width(480).content_height(640).child(&content).build();
         dialog.present(Some(&self.window));
     }
+}
+
+/// Run `op` for every item, stopping at the first error.
+async fn run_each<F, Fut>(items: &[FileItem], op: F) -> (usize, Option<String>)
+where
+    F: Fn(&FileItem) -> Fut,
+    Fut: std::future::Future<Output = ops::OpResult>,
+{
+    let mut done = 0;
+    for item in items {
+        match op(item).await {
+            Ok(()) => done += 1,
+            Err(e) => return (done, Some(format!("{}: {}", item.display_name(), e.message()))),
+        }
+    }
+    (done, None)
 }
 
 pub fn about(app: &adw::Application) {

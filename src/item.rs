@@ -9,7 +9,7 @@ use std::cell::RefCell;
 pub const ATTRIBUTES: &str = "standard::name,standard::display-name,standard::type,standard::size,\
 standard::icon,standard::is-hidden,standard::is-backup,standard::is-symlink,standard::symlink-target,\
 standard::content-type,standard::fast-content-type,time::modified,unix::mode,access::can-write,\
-access::can-execute,owner::user,owner::group";
+access::can-execute,owner::user,owner::group,standard::target-uri,thumbnail::path,thumbnail::is-valid";
 
 mod imp {
     use super::*;
@@ -72,12 +72,16 @@ impl FileItem {
     }
 
     pub fn is_symlink(&self) -> bool {
-        self.info().is_symlink()
+        let info = self.info();
+        // Remote backends (sftp, ...) do not always provide these attributes.
+        info.has_attribute(gio::FILE_ATTRIBUTE_STANDARD_IS_SYMLINK) && info.is_symlink()
     }
 
     pub fn is_hidden(&self) -> bool {
         let info = self.info();
-        info.is_hidden() || info.is_backup()
+        let hidden = if info.has_attribute(gio::FILE_ATTRIBUTE_STANDARD_IS_HIDDEN) { info.is_hidden() } else { self.name().starts_with('.') };
+        let backup = if info.has_attribute(gio::FILE_ATTRIBUTE_STANDARD_IS_BACKUP) { info.is_backup() } else { self.name().ends_with('~') };
+        hidden || backup
     }
 
     pub fn is_executable(&self) -> bool {
@@ -102,9 +106,14 @@ impl FileItem {
 
     pub fn content_type(&self) -> Option<String> {
         let info = self.info();
-        info.content_type()
+        info.attribute_string(gio::FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE)
             .or_else(|| info.attribute_string(gio::FILE_ATTRIBUTE_STANDARD_FAST_CONTENT_TYPE))
             .map(|s| s.to_string())
+            .or_else(|| {
+                // Remote backends may omit the content type; guess from the name.
+                let (guess, uncertain) = gio::content_type_guess(Some(std::path::Path::new(&self.name())), None);
+                if uncertain && self.is_dir() { Some("inode/directory".into()) } else { Some(guess.to_string()) }
+            })
     }
 
     pub fn type_description(&self) -> String {
@@ -116,6 +125,44 @@ impl FileItem {
             None if self.is_dir() => "Folder".into(),
             None => "Unknown".into(),
         }
+    }
+
+    /// For `recent:///` and `trash:///` entries: the real file behind the item.
+    pub fn target_file(&self) -> gio::File {
+        match self.info().attribute_string(gio::FILE_ATTRIBUTE_STANDARD_TARGET_URI) {
+            Some(uri) if !uri.is_empty() => gio::File::for_uri(&uri),
+            _ => self.file(),
+        }
+    }
+
+    pub fn is_image(&self) -> bool {
+        self.content_type().map(|ct| ct.starts_with("image/")).unwrap_or(false)
+    }
+
+    pub fn is_text(&self) -> bool {
+        self.content_type()
+            .map(|ct| ct.starts_with("text/") || gio::content_type_is_a(&ct, "text/plain") || matches!(ct.as_str(), "application/json" | "application/xml" | "application/x-shellscript" | "application/toml" | "application/x-yaml" | "application/javascript"))
+            .unwrap_or(false)
+    }
+
+    pub fn is_archive(&self) -> bool {
+        let Some(ct) = self.content_type() else { return false };
+        matches!(
+            ct.as_str(),
+            "application/zip" | "application/x-tar" | "application/gzip" | "application/x-xz" | "application/zstd"
+                | "application/x-bzip2" | "application/x-7z-compressed" | "application/vnd.rar" | "application/x-compressed-tar"
+                | "application/x-xz-compressed-tar" | "application/x-zstd-compressed-tar" | "application/x-bzip-compressed-tar"
+                | "application/x-lzma-compressed-tar" | "application/x-cpio" | "application/x-iso9660-image"
+        ) || gio::content_type_is_a(&ct, "application/x-archive")
+    }
+
+    /// Existing freedesktop thumbnail, if the system already made one.
+    pub fn thumbnail_path(&self) -> Option<std::path::PathBuf> {
+        let info = self.info();
+        if !info.boolean(gio::FILE_ATTRIBUTE_THUMBNAIL_IS_VALID) {
+            return None;
+        }
+        info.attribute_byte_string(gio::FILE_ATTRIBUTE_THUMBNAIL_PATH).map(|p| std::path::PathBuf::from(p.to_string()))
     }
 
     pub fn mode(&self) -> u32 {

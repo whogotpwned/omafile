@@ -1,7 +1,11 @@
 mod actions;
 mod item;
 mod ops;
+mod pane;
+mod preview;
+mod remote;
 mod theme;
+mod thumbs;
 mod window;
 
 use adw::prelude::*;

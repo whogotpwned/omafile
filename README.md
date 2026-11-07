@@ -2,51 +2,79 @@
 
 A native GTK 4 / libadwaita file manager for [Omarchy](https://omarchy.org).
 It looks like it shipped with the system: colours, accent and light/dark mode
-come straight from the active Omarchy theme, and they follow along live when
-you run `omarchy-theme-set`.
+come straight from the active Omarchy theme and follow along live when you
+run `omarchy-theme-set`.
 
-![omafile with the Tokyo Night theme](docs/screenshot-list.png)
+![omafile, Tokyo Night, grid view with thumbnails and the preview pane](docs/screenshot-grid.png)
 
 <details>
 <summary>More screenshots</summary>
 
-Grid view
+List view
 
-![grid view](docs/screenshot-grid.png)
+![list view](docs/screenshot-list.png)
+
+Tabs and the preview pane showing a text file
+
+![tabs and text preview](docs/screenshot-tabs.png)
+
+Browsing a server over SFTP, after pasting a local file into it
+
+![sftp](docs/screenshot-sftp.png)
+
+Connect to Server
+
+![connect dialog](docs/screenshot-connect.png)
 
 Context menu
 
 ![context menu](docs/screenshot-menu.png)
 
-Same window, after switching to a light theme at runtime
+The same build after switching Omarchy to a light theme at runtime
 
 ![light theme](docs/screenshot-light.png)
 
-New folder dialog
-
-![new folder](docs/screenshot-newfolder.png)
-
 </details>
 
-## Why
+## What you get
 
-Omarchy ships Nautilus, a GNOME app that ignores the Omarchy theme and drags
-along its own ideas about how a desktop works. omafile is a small, fast,
-single-binary file manager built with the same toolkit as Walker and swayosd:
-
-- **Theme-native.** Reads the 16-colour palette from
-  `~/.config/omarchy/current/theme/alacritty.toml`, derives every libadwaita
-  named colour from it (window, sidebar, headerbar, accent, selection, dialogs)
-  and switches between light and dark from the theme's `light.mode` marker.
-  Watches the theme link and re-skins itself the moment the theme changes.
-- **Native widgets.** libadwaita header bar, overlay split view sidebar,
-  `GtkColumnView` list and `GtkGridView` grid, toast notifications, adaptive
-  dialogs. Icons come from the icon theme Omarchy sets (Yaru).
-- **Keyboard-first.** Every action has a shortcut; `Ctrl+L` types a path,
-  `Ctrl+F` filters, `F4` opens Alacritty in the current folder via `uwsm`.
-- **Wayland-native** through GTK 4; opens files with the portal, copies paths
-  to the clipboard, shares copied files with other GTK apps.
-- **No config file.** Nothing to set up; it just follows the system.
+- **Omarchy theming.** The 16-colour palette from
+  `~/.config/omarchy/current/theme/alacritty.toml` is mapped onto every
+  libadwaita named colour (window, sidebar, header, accent, selection,
+  dialogs, toasts). Light or dark follows the theme's `light.mode` marker.
+  A file monitor on the theme link re-skins the running app the moment the
+  theme changes. No stylesheet to maintain, custom themes just work.
+- **Modern libadwaita UI.** Flat header bar, pill-shaped breadcrumb path bar
+  (click the empty part or press `Ctrl+L` to type), rounded content card,
+  overlay split views for the places sidebar and the preview pane, tabs,
+  toasts, adaptive dialogs, status line with selection size.
+- **Tabs.** `Ctrl+T`, `Ctrl+W`, `Ctrl+Tab`; middle-click or `Ctrl+Enter`
+  opens a folder in a new tab. Every tab has its own history and live
+  directory monitor.
+- **Thumbnails.** Images are decoded off the main thread and shown in both
+  the grid and the list; existing freedesktop thumbnails are reused.
+- **Preview pane** (`F3`): large image preview, text preview in monospace,
+  folder item counts, type / size / modified line.
+- **SFTP / SCP.** Hosts from `~/.ssh/config` are listed under *Remote* in the
+  sidebar; one click mounts them through GVFS and opens a tab. *Connect to
+  Server…* (`Ctrl+Shift+K`) takes `user@host[:port]/path` or any `sftp://`
+  URI, and the location entry accepts the same. Password, passphrase and
+  host-key prompts come up as native dialogs. Mounted servers appear under
+  *Devices* with an unmount entry. Copy, paste, drag and drop, rename, delete
+  and the preview all work on remote files exactly like on local ones, which
+  is what `scp` does, minus the terminal.
+- **Drag and drop** between tabs, onto folders and onto sidebar places, and
+  with other GTK apps. Local-to-local drops move, everything else copies.
+- **Bookmarks** (`Ctrl+D`) shared with the GTK file chooser, *Recent* and
+  *Trash* places (restore and empty trash), removable drives.
+- **Archives.** *Extract Here* and *Compress…* via `bsdtar` (libarchive,
+  part of Arch base): zip, tar.gz, tar.xz, tar.zst, 7z.
+- **Everything else** a file manager needs: cut/copy/paste shared with other
+  apps, rename, new folder/file, trash and permanent delete with
+  confirmation, properties, open with…, copy path, open terminal here via
+  `uwsm app -- alacritty`, sort by name/size/type/modified, hidden files,
+  rubber-band and multi-selection, live reload on directory changes.
+- **No config file.** It follows the system.
 
 ## Install
 
@@ -63,8 +91,8 @@ default application for folders, and replaces Nautilus on `SUPER+F` in
 the last two, or nothing for just the binary.
 
 Build dependencies on Omarchy: `sudo pacman -S --needed rust gtk4 libadwaita`.
-Everything else (gvfs for trash and drives, the Hyprland portal for "Open
-With") is already there.
+Everything else is already there: `gvfs` for trash, drives and SFTP,
+`libarchive` for archives, the Hyprland portal for "Open With".
 
 Arch package:
 
@@ -89,6 +117,10 @@ rules for a centered floating window. The window class is
 | `Ctrl+F` | Filter the current folder |
 | `F5` `Ctrl+R` | Reload |
 | `Ctrl+1` `Ctrl+2` | List / grid view |
+| `Ctrl+T` `Ctrl+W` | New / close tab |
+| `Ctrl+Tab` `Ctrl+Shift+Tab` | Next / previous tab |
+| `Ctrl+Enter` / middle click | Open folder in new tab |
+| `F3` | Preview pane |
 | `Ctrl+H` | Show hidden files |
 | `F9` | Toggle sidebar |
 | `Enter` | Open (folders navigate, files open with the default app) |
@@ -102,8 +134,10 @@ rules for a centered floating window. The window class is
 | `Delete` | Move to trash |
 | `Shift+Delete` | Delete permanently |
 | `Ctrl+I` `Alt+Enter` | Properties |
+| `Ctrl+D` | Bookmark this folder |
+| `Ctrl+Shift+K` | Connect to server (SFTP) |
 | `Ctrl+?` | Shortcut overview |
-| `Ctrl+W` `Ctrl+Q` | Close window / quit |
+| `Ctrl+Q` | Quit |
 
 Right-click opens a context menu on items and on the background. Rubber-band
 selection, `Shift`/`Ctrl` multi-select and sorting by column header work as
@@ -146,8 +180,12 @@ cargo clippy
 |---|---|
 | `theme` | palette parsing, CSS generation, live reload |
 | `item` | `FileItem` GObject (file + info) for the list models |
-| `ops` | async GIO operations: list, copy, move, trash, delete, rename, create |
-| `window` | sidebar, header, path bar, views, search, directory monitor |
+| `ops` | async GIO operations: list, copy, move, trash, delete, rename, archives |
+| `pane` | one tab: list/grid views, filter, selection, drag and drop, monitor |
+| `window` | shell: sidebar, header, path bar, tabs, preview split, mounting |
+| `preview` | preview pane |
+| `thumbs` | thumbnail cache, decoding off the main thread |
+| `remote` | ssh config hosts, server URIs, GTK bookmarks |
 | `actions` | window actions, clipboard, dialogs, properties, shortcuts |
 
 ## License

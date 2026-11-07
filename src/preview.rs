@@ -1,0 +1,208 @@
+//! Preview pane: image, text or icon plus key details for the selected item.
+
+use crate::item::FileItem;
+use crate::ops;
+use crate::thumbs::ThumbCache;
+use adw::prelude::*;
+use gtk::{gdk, gio, glib, pango};
+use std::cell::Cell;
+use std::rc::Rc;
+
+const TEXT_BYTES: usize = 64 * 1024;
+
+pub struct PreviewPane {
+    pub root: gtk::Box,
+    stack: gtk::Stack,
+    picture: gtk::Picture,
+    text: gtk::TextView,
+    icon: gtk::Image,
+    name: gtk::Label,
+    details: gtk::Label,
+    hint: gtk::Label,
+    thumbs: Rc<ThumbCache>,
+    generation: Cell<u64>,
+}
+
+impl PreviewPane {
+    pub fn new(thumbs: Rc<ThumbCache>) -> Rc<Self> {
+        let stack = gtk::Stack::new();
+        stack.set_vexpand(true);
+        stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+
+        let placeholder = adw::StatusPage::builder()
+            .icon_name("view-reveal-symbolic")
+            .title("Preview")
+            .description("Select a file to preview it here")
+            .build();
+        placeholder.add_css_class("compact");
+
+        let picture = gtk::Picture::new();
+        picture.set_content_fit(gtk::ContentFit::Contain);
+        picture.set_can_shrink(true);
+        picture.add_css_class("omafile-preview-image");
+        let picture_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        picture_box.set_margin_top(12);
+        picture_box.set_margin_start(12);
+        picture_box.set_margin_end(12);
+        picture_box.append(&picture);
+
+        let text = gtk::TextView::builder()
+            .editable(false)
+            .cursor_visible(false)
+            .monospace(true)
+            .wrap_mode(gtk::WrapMode::None)
+            .left_margin(10)
+            .right_margin(10)
+            .top_margin(10)
+            .bottom_margin(10)
+            .build();
+        text.add_css_class("omafile-preview-text");
+        let text_scroll = gtk::ScrolledWindow::builder().child(&text).vexpand(true).build();
+        text_scroll.add_css_class("omafile-preview-card");
+        text_scroll.set_margin_top(12);
+        text_scroll.set_margin_start(12);
+        text_scroll.set_margin_end(12);
+
+        let icon = gtk::Image::new();
+        icon.set_pixel_size(128);
+        icon.set_vexpand(true);
+        icon.set_valign(gtk::Align::Center);
+
+        stack.add_named(&placeholder, Some("none"));
+        stack.add_named(&picture_box, Some("image"));
+        stack.add_named(&text_scroll, Some("text"));
+        stack.add_named(&icon, Some("icon"));
+
+        let name = gtk::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .wrap_mode(pango::WrapMode::WordChar)
+            .lines(2)
+            .ellipsize(pango::EllipsizeMode::End)
+            .css_classes(["title-4"])
+            .build();
+        let details = gtk::Label::builder().xalign(0.0).wrap(true).css_classes(["omafile-dim", "caption"]).build();
+        let hint = gtk::Label::builder().xalign(0.0).wrap(true).css_classes(["omafile-dim", "caption"]).build();
+        let info = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        info.set_margin_top(12);
+        info.set_margin_bottom(14);
+        info.set_margin_start(16);
+        info.set_margin_end(16);
+        info.append(&name);
+        info.append(&details);
+        info.append(&hint);
+
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        root.add_css_class("omafile-preview");
+        root.append(&stack);
+        root.append(&info);
+
+        Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0) })
+    }
+
+    pub fn show(self: &Rc<Self>, item: Option<&FileItem>, count: usize) {
+        let gen = self.generation.get() + 1;
+        self.generation.set(gen);
+        let Some(item) = item else {
+            self.stack.set_visible_child_name("none");
+            self.name.set_text(if count > 1 { "Multiple items" } else { "" });
+            let details = if count > 1 { format!("{count} items selected") } else { String::new() };
+            self.details.set_text(&details);
+            self.hint.set_text("");
+            return;
+        };
+        self.name.set_text(&item.display_name());
+        let mut details = vec![item.type_description()];
+        if !item.is_dir() {
+            details.push(ops::human_size(item.size()));
+        }
+        if let Some(m) = item.modified() {
+            details.push(ops::format_time(&m));
+        }
+        self.details.set_text(&details.join("  ·  "));
+        self.hint.set_text("");
+        if let Some(icon) = item.icon() {
+            self.icon.set_from_gicon(&icon);
+        }
+        if ThumbCache::can_thumbnail(item) {
+            self.stack.set_visible_child_name("image");
+            self.thumbs.assign(item, &self.picture, 1024);
+            return;
+        }
+        if item.is_dir() {
+            self.stack.set_visible_child_name("icon");
+            let file = item.target_file();
+            let this = Rc::downgrade(self);
+            glib::spawn_future_local(async move {
+                let count = count_children(&file).await;
+                let Some(p) = this.upgrade() else { return };
+                if p.generation.get() == gen {
+                    if let Some(n) = count {
+                        p.hint.set_text(&format!("{n} {}", if n == 1 { "item" } else { "items" }));
+                    }
+                }
+            });
+            return;
+        }
+        if item.is_text() && item.size() > 0 {
+            self.stack.set_visible_child_name("text");
+            self.text.buffer().set_text("");
+            let file = item.target_file();
+            let this = Rc::downgrade(self);
+            glib::spawn_future_local(async move {
+                let head = read_head(&file).await;
+                let Some(p) = this.upgrade() else { return };
+                if p.generation.get() != gen {
+                    return;
+                }
+                match head {
+                    Some(text) => p.text.buffer().set_text(&text),
+                    None => p.stack.set_visible_child_name("icon"),
+                }
+            });
+            return;
+        }
+        self.stack.set_visible_child_name("icon");
+        self.picture.set_paintable(None::<&gdk::Paintable>);
+    }
+}
+
+async fn read_head(file: &gio::File) -> Option<String> {
+    let stream = file.read_future(glib::Priority::DEFAULT).await.ok()?;
+    let mut buf = Vec::new();
+    while buf.len() < TEXT_BYTES {
+        let chunk = stream.read_future(vec![0u8; 8192], glib::Priority::DEFAULT).await.ok()?;
+        let (data, n) = chunk;
+        if n == 0 {
+            break;
+        }
+        buf.extend_from_slice(&data[..n]);
+    }
+    if buf.contains(&0) {
+        return None;
+    }
+    let mut text = String::from_utf8_lossy(&buf).to_string();
+    if buf.len() >= TEXT_BYTES {
+        text.push_str("\n…");
+    }
+    Some(text)
+}
+
+async fn count_children(dir: &gio::File) -> Option<u32> {
+    let enumerator = dir
+        .enumerate_children_future("standard::name", gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS, glib::Priority::DEFAULT)
+        .await
+        .ok()?;
+    let mut n = 0u32;
+    loop {
+        let batch = enumerator.next_files_future(500, glib::Priority::DEFAULT).await.ok()?;
+        if batch.is_empty() {
+            break;
+        }
+        n += batch.len() as u32;
+        if n > 50_000 {
+            break;
+        }
+    }
+    Some(n)
+}
