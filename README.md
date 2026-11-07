@@ -5,15 +5,24 @@ It runs in Alacritty, speaks vim, and picks up whatever theme is active in
 `~/.config/omarchy/current/theme`: switch themes with `omarchy-theme-set` and
 omafile recolours itself live without a restart.
 
+![omafile in Tokyo Night](docs/screenshot.png)
+
 ```
-  ~/Projects                                              sort:name  3/12  tokyo-night
-   Documents       │   omafile                           │  1 # omafile
-   Downloads       │   dotfiles                          │  2
-  󰲋 Projects       │   notes                             │  3 A keyboard-driven file manager
-   Pictures        │   README.md                  2.1 K  │  4 built for Omarchy...
-                   │   todo.txt                    311 B │  5
+   ~/Projects                                              sort:name  3/12  tokyo-night
+  7 Documents       │   omafile                           │  1 # omafile
+  d Downloads       │   dotfiles                          │  2
+  b Projects        │   notes                             │  3 A keyboard-driven file manager
+  f Pictures        │   README.md                  2.1 K  │  4 built for Omarchy...
+                    │   todo.txt                    311 B │  5
  ? help  / filter  a new  r rename  d trash  y/x/p copy/cut/paste  q quit
 ```
+
+<details><summary>More screenshots</summary>
+
+![file info](docs/screenshot-info.png)
+![help popup](docs/screenshot-help.png)
+
+</details>
 
 ## Why
 
