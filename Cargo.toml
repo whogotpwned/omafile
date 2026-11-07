@@ -1,0 +1,25 @@
+[package]
+name = "omafile"
+version = "0.1.0"
+edition = "2021"
+description = "A keyboard-driven, theme-aware terminal file manager for Omarchy"
+license = "MIT"
+repository = "https://github.com/whogotpwned/omafile"
+readme = "README.md"
+keywords = ["file-manager", "tui", "omarchy", "hyprland"]
+categories = ["command-line-utilities", "filesystem"]
+
+[[bin]]
+name = "omafile"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.29"
+chrono = "0.4"
+unicode-width = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
