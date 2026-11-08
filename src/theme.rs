@@ -1,9 +1,12 @@
 //! Omarchy theme integration.
 //!
-//! `omarchy-theme-set` repoints `~/.config/omarchy/current/theme`. Every theme
-//! ships an `alacritty.toml` with a 16-colour palette; light themes also contain
-//! a `light.mode` marker. We turn the palette into libadwaita named colours and
-//! install them as a CSS provider, then re-apply whenever the link changes.
+//! Current Omarchy keeps the active theme at `~/.local/state/omarchy/current/theme`
+//! (a symlink that `omarchy-theme-set` repoints) with a semantic `colors.toml`,
+//! an `icons.theme` naming the icon theme and `mode = "light" | "dark"`.
+//! Older releases used `~/.config/omarchy/current/theme` with an
+//! `alacritty.toml` palette and a `light.mode` marker. Both are supported.
+//! The palette is turned into libadwaita named colours, installed as a CSS
+//! provider, and re-applied whenever the theme link changes.
 
 use adw::prelude::*;
 use gtk::{gdk, gio, glib};
@@ -24,7 +27,6 @@ impl Rgb {
         format!("rgba({}, {}, {}, {alpha})", self.0, self.1, self.2)
     }
 
-    /// Linear blend towards `other` by `t` in 0..=1.
     pub fn mix(self, other: Rgb, t: f32) -> Rgb {
         let f = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round().clamp(0.0, 255.0) as u8;
         Rgb(f(self.0, other.0), f(self.1, other.1), f(self.2, other.2))
@@ -55,22 +57,27 @@ impl Rgb {
     }
 }
 
+/// Semantic palette, following the keys of Omarchy's `colors.toml`.
 #[derive(Clone, Debug)]
 pub struct Palette {
     pub name: String,
     pub light: bool,
-    pub bg: Rgb,
-    pub fg: Rgb,
-    pub black: Rgb,
+    pub icon_theme: Option<String>,
+    pub accent: Rgb,
+    pub selection: Rgb,
+    pub muted: Rgb,
+    pub background: Rgb,
+    pub dark_background: Rgb,
+    pub lighter_background: Rgb,
+    pub foreground: Rgb,
+    pub dark_foreground: Rgb,
+    pub bright_foreground: Rgb,
     pub red: Rgb,
-    pub green: Rgb,
     pub yellow: Rgb,
+    pub green: Rgb,
     pub blue: Rgb,
     pub magenta: Rgb,
     pub cyan: Rgb,
-    pub white: Rgb,
-    pub bright_black: Rgb,
-    pub bright_blue: Rgb,
 }
 
 impl Default for Palette {
@@ -79,32 +86,50 @@ impl Default for Palette {
         Palette {
             name: "tokyo-night".into(),
             light: false,
-            bg: Rgb(0x1a, 0x1b, 0x26),
-            fg: Rgb(0xa9, 0xb1, 0xd6),
-            black: Rgb(0x32, 0x34, 0x4a),
+            icon_theme: None,
+            accent: Rgb(0x7a, 0xa2, 0xf7),
+            selection: Rgb(0x29, 0x2e, 0x42),
+            muted: Rgb(0x41, 0x48, 0x68),
+            background: Rgb(0x1a, 0x1b, 0x26),
+            dark_background: Rgb(0x13, 0x14, 0x1c),
+            lighter_background: Rgb(0x24, 0x28, 0x3b),
+            foreground: Rgb(0xa9, 0xb1, 0xd6),
+            dark_foreground: Rgb(0x56, 0x5f, 0x89),
+            bright_foreground: Rgb(0xc0, 0xca, 0xf5),
             red: Rgb(0xf7, 0x76, 0x8e),
-            green: Rgb(0x9e, 0xce, 0x6a),
             yellow: Rgb(0xe0, 0xaf, 0x68),
+            green: Rgb(0x9e, 0xce, 0x6a),
             blue: Rgb(0x7a, 0xa2, 0xf7),
             magenta: Rgb(0xad, 0x8e, 0xe6),
             cyan: Rgb(0x44, 0x9d, 0xab),
-            white: Rgb(0x78, 0x7c, 0x99),
-            bright_black: Rgb(0x44, 0x4b, 0x6a),
-            bright_blue: Rgb(0x7d, 0xa6, 0xff),
         }
     }
 }
 
-pub fn theme_dir() -> PathBuf {
+/// Candidate theme directories, most current first.
+pub fn theme_dirs() -> Vec<PathBuf> {
     if let Ok(dir) = std::env::var("OMAFILE_THEME_DIR") {
-        return PathBuf::from(dir);
+        return vec![PathBuf::from(dir)];
     }
-    glib::home_dir().join(".config/omarchy/current/theme")
+    let home = glib::home_dir();
+    vec![home.join(".local/state/omarchy/current/theme"), home.join(".config/omarchy/current/theme")]
 }
 
-/// Minimal parser for the `[colors.*]` tables of an Alacritty config.
-pub fn parse_alacritty(src: &str) -> HashMap<String, Rgb> {
-    let mut out = HashMap::new();
+/// The directory of the active theme: the first candidate that holds a palette.
+pub fn theme_dir() -> PathBuf {
+    let dirs = theme_dirs();
+    dirs.iter()
+        .find(|d| d.join("colors.toml").is_file() || d.join("alacritty.toml").is_file())
+        .cloned()
+        .unwrap_or_else(|| dirs[0].clone())
+}
+
+/// Minimal TOML-ish parser: `key = "#hex"` lines, optionally under `[sections]`.
+/// Returns `section.key` (or bare `key` for the top level) → colour, and the
+/// raw string values of non-colour keys such as `mode`.
+pub fn parse_colors(src: &str) -> (HashMap<String, Rgb>, HashMap<String, String>) {
+    let mut colors = HashMap::new();
+    let mut strings = HashMap::new();
     let mut section = String::new();
     for line in src.lines() {
         let line = line.trim();
@@ -119,17 +144,28 @@ pub fn parse_alacritty(src: &str) -> HashMap<String, Rgb> {
             continue;
         }
         if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim().trim_matches('"');
+            let full = if section.is_empty() { key.to_string() } else { format!("{section}.{key}") };
             if let Some(color) = Rgb::parse(value) {
-                let key = key.trim().trim_matches('"');
-                let full = if section.is_empty() { key.to_string() } else { format!("{section}.{key}") };
-                out.insert(full, color);
+                colors.insert(full, color);
+            } else {
+                let v = value.trim().split('#').next().unwrap_or("").trim().trim_matches(['"', '\'']).to_string();
+                strings.insert(full, v);
             }
         }
     }
-    out
+    (colors, strings)
 }
 
 fn theme_name(dir: &Path) -> String {
+    if let Some(parent) = dir.parent() {
+        if let Ok(name) = std::fs::read_to_string(parent.join("theme.name")) {
+            let name = name.trim();
+            if !name.is_empty() {
+                return name.to_string();
+            }
+        }
+    }
     std::fs::read_link(dir)
         .ok()
         .or_else(|| std::fs::canonicalize(dir).ok())
@@ -139,53 +175,75 @@ fn theme_name(dir: &Path) -> String {
 
 pub fn load_from(dir: &Path) -> Palette {
     let mut p = Palette::default();
-    let Ok(src) = std::fs::read_to_string(dir.join("alacritty.toml")) else {
-        return p;
-    };
-    let map = parse_alacritty(&src);
-    if map.is_empty() {
-        return p;
+    let icon_theme = std::fs::read_to_string(dir.join("icons.theme")).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if let Ok(src) = std::fs::read_to_string(dir.join("colors.toml")) {
+        let (colors, strings) = parse_colors(&src);
+        if !colors.is_empty() {
+            p.name = theme_name(dir);
+            p.icon_theme = icon_theme;
+            let pick = |key: &str, fallback: Rgb| colors.get(key).copied().unwrap_or(fallback);
+            p.background = pick("background", p.background);
+            p.foreground = pick("foreground", p.foreground);
+            p.accent = pick("accent", pick("blue", p.accent));
+            p.blue = pick("blue", p.accent);
+            p.red = pick("red", p.red);
+            p.yellow = pick("yellow", p.yellow);
+            p.green = pick("green", p.green);
+            p.magenta = pick("magenta", p.magenta);
+            p.cyan = pick("cyan", p.cyan);
+            p.light = match strings.get("mode").or_else(|| strings.get("theme_type")).map(|s| s.as_str()) {
+                Some("light") => true,
+                Some("dark") => false,
+                _ => dir.join("light.mode").exists() || p.background.luminance() > 0.6,
+            };
+            p.dark_background = pick("dark_background", p.background.mix(Rgb(0, 0, 0), if p.light { 0.04 } else { 0.25 }));
+            p.lighter_background = pick("lighter_background", p.background.mix(if p.light { Rgb(0, 0, 0) } else { Rgb(255, 255, 255) }, 0.06));
+            p.selection = pick("selection", p.accent.mix(p.background, 0.7));
+            p.muted = pick("muted", p.foreground.mix(p.background, 0.6));
+            p.dark_foreground = pick("dark_foreground", p.foreground.mix(p.background, 0.45));
+            p.bright_foreground = pick("bright_foreground", p.foreground.mix(if p.light { Rgb(0, 0, 0) } else { Rgb(255, 255, 255) }, 0.3));
+            return p;
+        }
     }
-    p.name = theme_name(dir);
-    p.light = dir.join("light.mode").exists();
-    let pick = |key: &str, fallback: Rgb| map.get(key).copied().unwrap_or(fallback);
-    p.bg = pick("primary.background", p.bg);
-    p.fg = pick("primary.foreground", p.fg);
-    p.black = pick("normal.black", p.black);
-    p.red = pick("normal.red", p.red);
-    p.green = pick("normal.green", p.green);
-    p.yellow = pick("normal.yellow", p.yellow);
-    p.blue = pick("normal.blue", p.blue);
-    p.magenta = pick("normal.magenta", p.magenta);
-    p.cyan = pick("normal.cyan", p.cyan);
-    p.white = pick("normal.white", p.white);
-    p.bright_black = pick("bright.black", p.black);
-    p.bright_blue = pick("bright.blue", p.blue);
-    // Trust the palette over the marker if they disagree wildly.
-    if !p.light && p.bg.luminance() > 0.6 {
-        p.light = true;
+    // Legacy layout: alacritty.toml with a 16-colour palette.
+    if let Ok(src) = std::fs::read_to_string(dir.join("alacritty.toml")) {
+        let (colors, _) = parse_colors(&src);
+        if !colors.is_empty() {
+            p.name = theme_name(dir);
+            p.icon_theme = icon_theme;
+            let pick = |key: &str, fallback: Rgb| colors.get(key).copied().unwrap_or(fallback);
+            p.background = pick("primary.background", p.background);
+            p.foreground = pick("primary.foreground", p.foreground);
+            p.blue = pick("normal.blue", p.blue);
+            p.accent = p.blue;
+            p.red = pick("normal.red", p.red);
+            p.yellow = pick("normal.yellow", p.yellow);
+            p.green = pick("normal.green", p.green);
+            p.magenta = pick("normal.magenta", p.magenta);
+            p.cyan = pick("normal.cyan", p.cyan);
+            p.light = dir.join("light.mode").exists() || p.background.luminance() > 0.6;
+            let toward = if p.light { Rgb(0, 0, 0) } else { Rgb(255, 255, 255) };
+            p.dark_background = p.background.mix(Rgb(0, 0, 0), if p.light { 0.04 } else { 0.25 });
+            p.lighter_background = p.background.mix(toward, 0.06);
+            p.selection = p.accent.mix(p.background, 0.7);
+            p.muted = pick("bright.black", p.foreground.mix(p.background, 0.6));
+            p.dark_foreground = pick("normal.white", p.foreground.mix(p.background, 0.45));
+            p.bright_foreground = pick("bright.white", p.foreground.mix(toward, 0.3));
+        }
     }
     p
 }
 
-/// libadwaita named colours derived from the palette.
+/// libadwaita named colours and omafile widget styles derived from the palette.
 pub fn css(p: &Palette) -> String {
     let dark = !p.light;
-    // Surfaces: step away from the window background in the direction of the
-    // foreground so sidebars, cards and popovers stay distinguishable.
-    let toward = if dark { Rgb(255, 255, 255) } else { Rgb(0, 0, 0) };
-    let view_bg = if dark { p.bg.mix(Rgb(0, 0, 0), 0.18) } else { p.bg.mix(Rgb(255, 255, 255), 0.6) };
-    let sidebar_bg = p.bg.mix(toward, if dark { 0.045 } else { 0.03 });
-    let headerbar_bg = sidebar_bg;
-    let card_bg = p.bg.mix(toward, if dark { 0.06 } else { 0.4 });
-    let popover_bg = p.bg.mix(toward, if dark { 0.08 } else { 0.5 });
-    let dialog_bg = p.bg.mix(toward, if dark { 0.05 } else { 0.3 });
-    let border = p.bright_black.rgba(if dark { 0.55 } else { 0.35 });
-    let accent = p.blue;
-    // Text on the accent must stay readable on light and dark accents alike.
-    let accent_fg = if accent.luminance() > 0.55 { p.bg.mix(Rgb(0, 0, 0), 0.6) } else { Rgb(255, 255, 255) };
-    let accent_text = if dark { p.bright_blue } else { p.blue.mix(Rgb(0, 0, 0), 0.25) };
-    let selected_row = accent.rgba(if dark { 0.22 } else { 0.18 });
+    let border = p.muted.rgba(if dark { 0.45 } else { 0.35 });
+    let accent_fg = if p.accent.luminance() > 0.55 { p.dark_background.mix(Rgb(0, 0, 0), 0.5) } else { Rgb(255, 255, 255) };
+    let accent_text = if dark { p.accent.mix(Rgb(255, 255, 255), 0.1) } else { p.accent.mix(Rgb(0, 0, 0), 0.25) };
+    let selected_row = p.selection.hex();
+    let hover = p.foreground.rgba(0.05);
+    let popover_bg = p.lighter_background;
+    let dialog_bg = p.background.mix(p.lighter_background, 0.5);
 
     format!(
         r#"/* generated by omafile from the Omarchy theme "{name}" */
@@ -193,18 +251,18 @@ pub fn css(p: &Palette) -> String {
 @define-color window_fg_color {fg};
 @define-color view_bg_color {view_bg};
 @define-color view_fg_color {fg};
-@define-color headerbar_bg_color {headerbar_bg};
+@define-color headerbar_bg_color {bg};
 @define-color headerbar_fg_color {fg};
 @define-color headerbar_border_color {border};
 @define-color headerbar_backdrop_color {bg};
 @define-color headerbar_shade_color rgba(0, 0, 0, 0.12);
 @define-color headerbar_darker_shade_color rgba(0, 0, 0, 0.2);
-@define-color sidebar_bg_color {sidebar_bg};
+@define-color sidebar_bg_color {bg};
 @define-color sidebar_fg_color {fg};
 @define-color sidebar_backdrop_color {bg};
 @define-color sidebar_border_color {border};
 @define-color sidebar_shade_color rgba(0, 0, 0, 0.12);
-@define-color secondary_sidebar_bg_color {sidebar_bg};
+@define-color secondary_sidebar_bg_color {bg};
 @define-color secondary_sidebar_fg_color {fg};
 @define-color secondary_sidebar_backdrop_color {bg};
 @define-color secondary_sidebar_border_color {border};
@@ -242,7 +300,7 @@ pub fn css(p: &Palette) -> String {
 }}
 .omafile-card {{
   background-color: @view_bg_color;
-  border: 1px solid alpha(@window_fg_color, 0.08);
+  border: 1px solid {border};
   border-radius: 12px;
   margin: 0 10px 10px 4px;
 }}
@@ -254,13 +312,13 @@ pub fn css(p: &Palette) -> String {
 }}
 .omafile-files columnview > header {{
   background-color: transparent;
-  border-bottom: 1px solid alpha(@window_fg_color, 0.08);
+  border-bottom: 1px solid {border};
 }}
 .omafile-files columnview > header button {{
   padding: 4px 10px;
   font-size: 0.85em;
   font-weight: 600;
-  color: alpha(@window_fg_color, 0.6);
+  color: {dim};
 }}
 .omafile-files listview > row {{
   border-radius: 8px;
@@ -272,12 +330,12 @@ pub fn css(p: &Palette) -> String {
 }}
 .omafile-files listview > row:hover,
 .omafile-files gridview > child:hover {{
-  background-color: alpha(@window_fg_color, 0.05);
+  background-color: {hover};
 }}
 .omafile-files listview > row:selected,
 .omafile-files gridview > child:selected {{
   background-color: {selected_row};
-  color: @window_fg_color;
+  color: {bright_fg};
 }}
 .omafile-files listview > row:selected:focus-within,
 .omafile-files gridview > child:selected:focus-within {{
@@ -302,7 +360,7 @@ pub fn css(p: &Palette) -> String {
   border-radius: 8px;
 }}
 .omafile-pathbar {{
-  background-color: alpha(@window_fg_color, 0.06);
+  background-color: {hover};
   border-radius: 999px;
   padding: 1px 6px;
   min-height: 30px;
@@ -318,7 +376,7 @@ pub fn css(p: &Palette) -> String {
   color: @accent_color;
 }}
 .omafile-pathbar .separator {{
-  color: alpha(@window_fg_color, 0.35);
+  color: {dim};
   padding: 0 1px;
 }}
 .omafile-path-entry {{
@@ -338,7 +396,7 @@ pub fn css(p: &Palette) -> String {
 }}
 .omafile-preview-card {{
   background-color: @view_bg_color;
-  border: 1px solid alpha(@window_fg_color, 0.08);
+  border: 1px solid {border};
   border-radius: 10px;
 }}
 .omafile-preview-text {{
@@ -355,90 +413,126 @@ pub fn css(p: &Palette) -> String {
   color: {green};
 }}
 .omafile-dim {{
-  color: alpha(@window_fg_color, 0.55);
+  color: {dim};
+}}
+.omafile-split-active .omafile-card {{
+  border-color: alpha(@accent_bg_color, 0.55);
+}}
+.omafile-icon-choice {{
+  border-radius: 10px;
+  padding: 8px;
+}}
+.omafile-icon-choice:checked {{
+  background-color: alpha(@accent_bg_color, 0.25);
 }}
 toast {{
   border-radius: 999px;
 }}
 "#,
         name = p.name,
-        bg = p.bg.hex(),
-        fg = p.fg.hex(),
-        view_bg = view_bg.hex(),
-        headerbar_bg = headerbar_bg.hex(),
-        sidebar_bg = sidebar_bg.hex(),
-        card_bg = card_bg.hex(),
+        bg = p.background.hex(),
+        fg = p.foreground.hex(),
+        view_bg = p.dark_background.hex(),
+        card_bg = p.lighter_background.hex(),
         popover_bg = popover_bg.hex(),
         dialog_bg = dialog_bg.hex(),
-        accent = accent.hex(),
+        accent = p.accent.hex(),
         accent_fg = accent_fg.hex(),
         accent_text = accent_text.hex(),
         red = p.red.hex(),
         green = p.green.hex(),
         yellow = p.yellow.hex(),
+        dim = p.dark_foreground.hex(),
+        bright_fg = p.bright_foreground.hex(),
     )
 }
 
 /// Installs the theme CSS and keeps it in sync with the active Omarchy theme.
 pub struct ThemeManager {
     provider: gtk::CssProvider,
-    dir: PathBuf,
+    palette: RefCell<Palette>,
     monitors: RefCell<Vec<gio::FileMonitor>>,
+    icon_override: RefCell<Option<String>>,
+    pending: RefCell<Option<glib::SourceId>>,
 }
 
 impl ThemeManager {
-    pub fn install() -> Rc<Self> {
+    pub fn install(icon_override: Option<String>) -> Rc<Self> {
         let provider = gtk::CssProvider::new();
         if let Some(display) = gdk::Display::default() {
-            gtk::style_context_add_provider_for_display(
-                &display,
-                &provider,
-                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 10,
-            );
+            gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 10);
         }
         let manager = Rc::new(ThemeManager {
             provider,
-            dir: theme_dir(),
+            palette: RefCell::new(Palette::default()),
             monitors: RefCell::new(Vec::new()),
+            icon_override: RefCell::new(icon_override),
+            pending: RefCell::new(None),
         });
         manager.apply();
         manager.watch();
         manager
     }
 
+    pub fn palette(&self) -> Palette {
+        self.palette.borrow().clone()
+    }
+
+    /// `None` follows the Omarchy theme's `icons.theme`; `Some(name)` forces an icon theme.
+    pub fn set_icon_override(&self, name: Option<String>) {
+        *self.icon_override.borrow_mut() = name;
+        self.apply_icon_theme();
+    }
+
+    fn apply_icon_theme(&self) {
+        let Some(settings) = gtk::Settings::default() else { return };
+        let wanted = self.icon_override.borrow().clone().or_else(|| self.palette.borrow().icon_theme.clone());
+        if let Some(name) = wanted {
+            if settings.gtk_icon_theme_name().as_deref() != Some(name.as_str()) {
+                settings.set_gtk_icon_theme_name(Some(&name));
+            }
+        }
+    }
+
     fn apply(&self) {
-        let palette = load_from(&self.dir);
+        let palette = load_from(&theme_dir());
         let style = adw::StyleManager::default();
         style.set_color_scheme(if palette.light { adw::ColorScheme::ForceLight } else { adw::ColorScheme::ForceDark });
         self.provider.load_from_string(&css(&palette));
+        *self.palette.borrow_mut() = palette;
+        self.apply_icon_theme();
     }
 
     fn watch(self: &Rc<Self>) {
-        // The `current` directory holds the `theme` symlink; the palette file is
-        // watched too so edits to a custom theme show up immediately.
-        let mut targets = vec![self.dir.join("alacritty.toml")];
-        if let Some(parent) = self.dir.parent() {
-            targets.push(parent.to_path_buf());
+        // Watch the `current` directories (the `theme` link lives there) and the
+        // palette files themselves, so edits to a custom theme show up too.
+        let mut targets = Vec::new();
+        for dir in theme_dirs() {
+            if let Some(parent) = dir.parent() {
+                targets.push(parent.to_path_buf());
+            }
+            targets.push(dir.join("colors.toml"));
+            targets.push(dir.join("alacritty.toml"));
+            targets.push(dir.join("icons.theme"));
         }
         for target in targets {
             let file = gio::File::for_path(&target);
-            let Ok(monitor) = file.monitor(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE) else {
-                continue;
-            };
+            let Ok(monitor) = file.monitor(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE) else { continue };
             let weak = Rc::downgrade(self);
-            let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
             monitor.connect_changed(move |_, _, _, _| {
                 let Some(manager) = weak.upgrade() else { return };
-                // Debounce: theme switches touch several files in a burst.
-                if let Some(id) = pending.borrow_mut().take() {
+                // Debounce: a theme switch touches several files in a burst.
+                if let Some(id) = manager.pending.borrow_mut().take() {
                     id.remove();
                 }
-                let pending2 = pending.clone();
-                let id = glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
-                    pending2.borrow_mut().take();
-                    manager.apply();
+                let weak2 = weak.clone();
+                let id = glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
+                    if let Some(m) = weak2.upgrade() {
+                        m.pending.borrow_mut().take();
+                        m.apply();
+                    }
                 });
-                *pending.borrow_mut() = Some(id);
+                *manager.pending.borrow_mut() = Some(id);
             });
             self.monitors.borrow_mut().push(monitor);
         }
@@ -450,20 +544,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_omarchy_palette() {
-        let src = "[colors]\n[colors.primary]\nbackground = \"#1a1b26\"\nforeground = '#a9b1d6' # c\n[colors.normal]\nblack = \"0x32344a\"\n";
-        let map = parse_alacritty(src);
-        assert_eq!(map["primary.background"], Rgb(0x1a, 0x1b, 0x26));
-        assert_eq!(map["primary.foreground"], Rgb(0xa9, 0xb1, 0xd6));
-        assert_eq!(map["normal.black"], Rgb(0x32, 0x34, 0x4a));
+    fn parses_colors_toml() {
+        let src = "mode = \"dark\"\n\naccent = \"#7aa2f7\"\nbackground = \"#1a1b26\" # bg\nforeground = '#a9b1d6'\n";
+        let (colors, strings) = parse_colors(src);
+        assert_eq!(colors["accent"], Rgb(0x7a, 0xa2, 0xf7));
+        assert_eq!(colors["background"], Rgb(0x1a, 0x1b, 0x26));
+        assert_eq!(strings["mode"], "dark");
     }
 
     #[test]
-    fn css_mentions_accent() {
-        let p = Palette::default();
-        let css = css(&p);
-        assert!(css.contains("@define-color accent_bg_color #7aa2f7;"));
-        assert!(css.contains("window_bg_color #1a1b26"));
+    fn parses_legacy_alacritty() {
+        let src = "[colors]\n[colors.primary]\nbackground = \"#1a1b26\"\n[colors.normal]\nblack = \"0x32344a\"\n";
+        let (colors, _) = parse_colors(src);
+        assert_eq!(colors["primary.background"], Rgb(0x1a, 0x1b, 0x26));
+        assert_eq!(colors["normal.black"], Rgb(0x32, 0x34, 0x4a));
+    }
+
+    #[test]
+    fn loads_current_layout() {
+        let dir = std::env::temp_dir().join(format!("omafile-theme-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("colors.toml"), "mode = \"light\"\naccent = \"#56949f\"\nbackground = \"#faf4ed\"\nforeground = \"#575279\"\n").unwrap();
+        std::fs::write(dir.join("icons.theme"), "Yaru-sage\n").unwrap();
+        let p = load_from(&dir);
+        assert!(p.light);
+        assert_eq!(p.accent, Rgb(0x56, 0x94, 0x9f));
+        assert_eq!(p.icon_theme.as_deref(), Some("Yaru-sage"));
+        assert!(css(&p).contains("@define-color accent_bg_color #56949f;"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

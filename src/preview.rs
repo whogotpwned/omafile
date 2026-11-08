@@ -127,6 +127,20 @@ impl PreviewPane {
         if ThumbCache::can_thumbnail(item) {
             self.stack.set_visible_child_name("image");
             self.thumbs.assign(item, &self.picture, 1024);
+            if item.is_pdf() {
+                if let Some(path) = item.target_file().path() {
+                    let this = Rc::downgrade(self);
+                    glib::spawn_future_local(async move {
+                        let pages = gio::spawn_blocking(move || crate::thumbs::pdf_pages(&path)).await.ok().flatten();
+                        let Some(p) = this.upgrade() else { return };
+                        if p.generation.get() == gen {
+                            if let Some(n) = pages {
+                                p.hint.set_text(&format!("{n} {}  ·  first page shown", if n == 1 { "page" } else { "pages" }));
+                            }
+                        }
+                    });
+                }
+            }
             return;
         }
         if item.is_dir() {

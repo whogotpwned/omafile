@@ -2,8 +2,10 @@
 
 use crate::item::FileItem;
 use crate::pane::Pane;
+use crate::prefs::Prefs;
 use crate::preview::PreviewPane;
 use crate::remote;
+use crate::theme::ThemeManager;
 use crate::thumbs::ThumbCache;
 use adw::prelude::*;
 use gtk::{gdk, gio, glib, pango};
@@ -42,7 +44,10 @@ pub struct Window {
     pub split: adw::OverlaySplitView,
     pub preview_split: adw::OverlaySplitView,
     pub preview: Rc<PreviewPane>,
-    pub tab_view: adw::TabView,
+    pub tab_views: [adw::TabView; 2],
+    pub split_paned: gtk::Paned,
+    pub split_boxes: [gtk::Box; 2],
+    pub active_side: Cell<usize>,
     pub pathbar: gtk::Box,
     pub path_entry: gtk::Entry,
     pub path_stack: gtk::Stack,
@@ -54,13 +59,16 @@ pub struct Window {
     pub view_btn: gtk::Button,
     pub panes: RefCell<Vec<Rc<Pane>>>,
     pub thumbs: Rc<ThumbCache>,
+    pub prefs: Rc<Prefs>,
+    pub theme: Rc<ThemeManager>,
+    pub thumbnails_enabled: Cell<bool>,
     pub state: RefCell<WinState>,
     pub syncing_sidebar: Cell<bool>,
     pub sidebar_target: Cell<Option<usize>>,
 }
 
 impl Window {
-    pub fn new(app: &adw::Application, start: gio::File) -> Rc<Self> {
+    pub fn new(app: &adw::Application, start: gio::File, prefs: Rc<Prefs>, theme: Rc<ThemeManager>) -> Rc<Self> {
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .default_width(1120)
@@ -120,16 +128,34 @@ impl Window {
         header.pack_end(&search_btn);
 
         // ---- tabs -----------------------------------------------------------
-        let tab_view = adw::TabView::new();
-        tab_view.set_vexpand(true);
-        let tab_bar = adw::TabBar::builder().view(&tab_view).autohide(true).expand_tabs(false).build();
-        tab_bar.add_css_class("omafile-tabs");
+        let mut tab_views = Vec::new();
+        let mut split_boxes = Vec::new();
+        for _ in 0..2 {
+            let tab_view = adw::TabView::new();
+            tab_view.set_vexpand(true);
+            let tab_bar = adw::TabBar::builder().view(&tab_view).autohide(true).expand_tabs(false).build();
+            tab_bar.add_css_class("omafile-tabs");
+            let b = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            b.append(&tab_bar);
+            b.append(&tab_view);
+            b.set_hexpand(true);
+            tab_views.push(tab_view);
+            split_boxes.push(b);
+        }
+        let split_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+        split_paned.set_start_child(Some(&split_boxes[0]));
+        split_paned.set_end_child(Some(&split_boxes[1]));
+        split_paned.set_resize_start_child(true);
+        split_paned.set_resize_end_child(true);
+        split_paned.set_shrink_start_child(false);
+        split_paned.set_shrink_end_child(false);
+        split_boxes[1].set_visible(false);
 
         // ---- preview --------------------------------------------------------
         let preview = PreviewPane::new(thumbs.clone());
         let preview_split = adw::OverlaySplitView::new();
         preview_split.set_sidebar_position(gtk::PackType::End);
-        preview_split.set_content(Some(&tab_view));
+        preview_split.set_content(Some(&split_paned));
         preview_split.set_sidebar(Some(&preview.root));
         preview_split.set_min_sidebar_width(240.0);
         preview_split.set_max_sidebar_width(420.0);
@@ -140,7 +166,6 @@ impl Window {
         let content = adw::ToolbarView::new();
         content.set_top_bar_style(adw::ToolbarStyle::Flat);
         content.add_top_bar(&header);
-        content.add_top_bar(&tab_bar);
         content.set_content(Some(&preview_split));
 
         // ---- sidebar --------------------------------------------------------
@@ -183,7 +208,10 @@ impl Window {
             split,
             preview_split,
             preview,
-            tab_view,
+            tab_views: [tab_views[0].clone(), tab_views[1].clone()],
+            split_paned,
+            split_boxes: [split_boxes[0].clone(), split_boxes[1].clone()],
+            active_side: Cell::new(0),
             pathbar,
             path_entry,
             path_stack,
@@ -195,7 +223,15 @@ impl Window {
             view_btn,
             panes: RefCell::new(Vec::new()),
             thumbs,
-            state: RefCell::new(WinState { show_hidden: false, view_mode: "list".into(), clipboard: None, places: Vec::new() }),
+            thumbnails_enabled: Cell::new(prefs.get_bool("thumbnails", true)),
+            state: RefCell::new(WinState {
+                show_hidden: prefs.get_bool("show-hidden", false),
+                view_mode: prefs.get("view").unwrap_or_else(|| "list".into()),
+                clipboard: None,
+                places: Vec::new(),
+            }),
+            prefs,
+            theme,
             syncing_sidebar: Cell::new(false),
             sidebar_target: Cell::new(None),
         });
@@ -211,42 +247,143 @@ impl Window {
     // ----- tabs ----------------------------------------------------------------
 
     fn setup_tabs(self: &Rc<Self>) {
-        let this = Rc::downgrade(self);
-        self.tab_view.connect_selected_page_notify(move |_| {
-            if let Some(w) = this.upgrade() {
-                w.sync_active();
+        for side in 0..2 {
+            let this = Rc::downgrade(self);
+            self.tab_views[side].connect_selected_page_notify(move |_| {
+                if let Some(w) = this.upgrade() {
+                    if w.active_side.get() == side {
+                        w.sync_active();
+                    }
+                }
+            });
+            let this = Rc::downgrade(self);
+            self.tab_views[side].connect_close_page(move |view, page| {
+                if let Some(w) = this.upgrade() {
+                    let child = page.child();
+                    w.panes.borrow_mut().retain(|p| p.root.upcast_ref::<gtk::Widget>() != &child);
+                    if view.n_pages() <= 1 {
+                        if side == 1 || w.split_boxes[1].is_visible() {
+                            // Closing the last tab of a side ends the split view.
+                            let keep = if side == 1 { 0 } else { 1 };
+                            w.end_split(keep);
+                        } else {
+                            w.window.close();
+                        }
+                    }
+                }
+                view.close_page_finish(page, true);
+                glib::Propagation::Stop
+            });
+        }
+    }
+
+    pub fn tab_view(&self) -> &adw::TabView {
+        &self.tab_views[self.active_side.get()]
+    }
+
+    pub fn all_panes(&self) -> Vec<Rc<Pane>> {
+        self.panes.borrow().clone()
+    }
+
+    pub fn set_active_side(self: &Rc<Self>, side: usize) {
+        if self.active_side.get() == side {
+            return;
+        }
+        self.active_side.set(side);
+        for (i, b) in self.split_boxes.iter().enumerate() {
+            if i == side {
+                b.add_css_class("omafile-split-active");
+            } else {
+                b.remove_css_class("omafile-split-active");
             }
-        });
-        let this = Rc::downgrade(self);
-        self.tab_view.connect_close_page(move |view, page| {
-            if let Some(w) = this.upgrade() {
+        }
+        self.sync_active();
+    }
+
+    pub fn is_split(&self) -> bool {
+        self.split_boxes[1].is_visible()
+    }
+
+    /// F6: show a second set of tabs beside the first, or hide it again.
+    pub fn toggle_split(self: &Rc<Self>) {
+        if self.is_split() {
+            self.end_split(0);
+        } else {
+            let dir = self.active_pane().map(|p| p.cwd()).unwrap_or_else(|| gio::File::for_path(glib::home_dir()));
+            self.split_boxes[1].set_visible(true);
+            let width = self.split_paned.width();
+            if width > 0 {
+                self.split_paned.set_position(width / 2);
+            }
+            self.active_side.set(1);
+            self.split_boxes[1].add_css_class("omafile-split-active");
+            self.split_boxes[0].remove_css_class("omafile-split-active");
+            self.open_in_new_tab(dir, true);
+        }
+    }
+
+    fn end_split(self: &Rc<Self>, keep: usize) {
+        let drop = if keep == 0 { 1 } else { 0 };
+        // Move remaining tabs of the dropped side over, then hide it.
+        let view = &self.tab_views[drop];
+        while view.n_pages() > 0 {
+            let page = view.nth_page(0);
+            let child = page.child();
+            let pane = self.panes.borrow().iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child).cloned();
+            view.close_page_finish(&page, true);
+            if let Some(pane) = pane {
+                pane.side.set(keep);
+                let new_page = self.tab_views[keep].append(&pane.root);
+                new_page.set_title(&display_name(&pane.cwd()));
+                new_page.set_icon(Some(&gio::ThemedIcon::new("folder-symbolic")));
+            }
+        }
+        if keep == 0 {
+            self.split_boxes[1].set_visible(false);
+        } else {
+            // Keep the layout stable: the surviving side always becomes side 0.
+            let view1 = &self.tab_views[1];
+            while view1.n_pages() > 0 {
+                let page = view1.nth_page(0);
                 let child = page.child();
-                w.panes.borrow_mut().retain(|p| p.root.upcast_ref::<gtk::Widget>() != &child);
-                if view.n_pages() <= 1 {
-                    w.window.close();
+                let pane = self.panes.borrow().iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child).cloned();
+                view1.close_page_finish(&page, true);
+                if let Some(pane) = pane {
+                    pane.side.set(0);
+                    let new_page = self.tab_views[0].append(&pane.root);
+                    new_page.set_title(&display_name(&pane.cwd()));
                 }
             }
-            view.close_page_finish(page, true);
-            glib::Propagation::Stop
-        });
+            self.split_boxes[1].set_visible(false);
+        }
+        for b in &self.split_boxes {
+            b.remove_css_class("omafile-split-active");
+        }
+        self.active_side.set(0);
+        if self.tab_views[0].n_pages() == 0 {
+            self.window.close();
+        } else {
+            self.sync_active();
+        }
     }
 
     pub fn open_in_new_tab(self: &Rc<Self>, file: gio::File, select: bool) {
-        let pane = Pane::new(self, file);
+        let side = self.active_side.get();
+        let pane = Pane::new(self, file, side);
         // Register before appending so the selection notify can find the pane.
         self.panes.borrow_mut().push(pane.clone());
-        let page = self.tab_view.append(&pane.root);
+        let page = self.tab_views[side].append(&pane.root);
         page.set_title(&display_name(&pane.cwd()));
         page.set_icon(Some(&gio::ThemedIcon::new("folder-symbolic")));
         if select {
-            self.tab_view.set_selected_page(&page);
+            self.tab_views[side].set_selected_page(&page);
         }
         pane.apply_view_mode();
         self.pane_navigated(&pane);
     }
 
     pub fn active_pane(&self) -> Option<Rc<Pane>> {
-        let page = self.tab_view.selected_page()?;
+        let page = self.tab_view().selected_page()?;
         let child = page.child();
         self.panes.borrow().iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child).cloned()
     }
@@ -256,12 +393,13 @@ impl Window {
     }
 
     fn page_for(&self, pane: &Rc<Pane>) -> Option<adw::TabPage> {
-        (0..self.tab_view.n_pages()).map(|i| self.tab_view.nth_page(i)).find(|pg| pg.child() == *pane.root.upcast_ref::<gtk::Widget>())
+        let view = &self.tab_views[pane.side.get()];
+        (0..view.n_pages()).map(|i| view.nth_page(i)).find(|pg| pg.child() == *pane.root.upcast_ref::<gtk::Widget>())
     }
 
     pub fn close_active_tab(self: &Rc<Self>) {
-        if let Some(page) = self.tab_view.selected_page() {
-            self.tab_view.close_page(&page);
+        if let Some(page) = self.tab_view().selected_page() {
+            self.tab_view().close_page(&page);
         }
     }
 
@@ -811,6 +949,7 @@ fn main_menu() -> gio::Menu {
     s2.append(Some("Show Hidden Files"), Some("win.show-hidden"));
     s2.append(Some("Show Sidebar"), Some("win.show-sidebar"));
     s2.append(Some("Show Preview"), Some("win.show-preview"));
+    s2.append(Some("Split View"), Some("win.split-view"));
     menu.append_section(None, &s2);
     let view = gio::Menu::new();
     view.append(Some("List"), Some("win.view::list"));
@@ -823,13 +962,14 @@ fn main_menu() -> gio::Menu {
     sort.append(Some("Modified"), Some("win.sort::modified"));
     menu.append_submenu(Some("Sort By"), &sort);
     let s3 = gio::Menu::new();
+    s3.append(Some("Preferences"), Some("win.preferences"));
     s3.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
     s3.append(Some("About Files"), Some("app.about"));
     menu.append_section(None, &s3);
     menu
 }
 
-pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool) -> gio::Menu {
+pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple: bool) -> gio::Menu {
     let menu = gio::Menu::new();
     let open = gio::Menu::new();
     open.append(Some("Open"), Some("win.open"));
@@ -850,8 +990,11 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool) -> gio::
         edit.append(Some("Cut"), Some("win.cut"));
         edit.append(Some("Copy"), Some("win.copy"));
         edit.append(Some("Copy Path"), Some("win.copy-path"));
-        edit.append(Some("Rename…"), Some("win.rename"));
+        edit.append(Some(if multiple { "Batch Rename…" } else { "Rename…" }), Some("win.rename"));
         edit.append(Some("Compress…"), Some("win.compress"));
+        if !multiple {
+            edit.append(Some("Change Icon…"), Some("win.change-icon"));
+        }
         if single_dir {
             edit.append(Some("Add Bookmark"), Some("win.bookmark-selected"));
         }

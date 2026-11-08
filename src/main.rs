@@ -1,9 +1,12 @@
 mod actions;
+mod extras;
 mod item;
 mod ops;
 mod pane;
+mod prefs;
 mod preview;
 mod remote;
+mod search;
 mod theme;
 mod thumbs;
 mod window;
@@ -21,11 +24,13 @@ fn main() -> glib::ExitCode {
         .flags(gio::ApplicationFlags::HANDLES_OPEN)
         .build();
 
+    let prefs = prefs::Prefs::load();
     let theme: Rc<RefCell<Option<Rc<theme::ThemeManager>>>> = Rc::new(RefCell::new(None));
     let theme2 = theme.clone();
+    let prefs2 = prefs.clone();
     app.connect_startup(move |app| {
         gtk::Window::set_default_icon_name("system-file-manager");
-        *theme2.borrow_mut() = Some(theme::ThemeManager::install());
+        *theme2.borrow_mut() = Some(theme::ThemeManager::install(prefs2.get("icon-theme")));
         let quit = gio::SimpleAction::new("quit", None);
         let app2 = app.clone();
         quit.connect_activate(move |_, _| app2.quit());
@@ -40,27 +45,30 @@ fn main() -> glib::ExitCode {
         }
     });
 
-    app.connect_activate(|app| {
+    let (prefs_a, theme_a) = (prefs.clone(), theme.clone());
+    app.connect_activate(move |app| {
         let start = std::env::current_dir().map(gio::File::for_path).unwrap_or_else(|_| gio::File::for_path(glib::home_dir()));
-        open_window(app, start);
+        open_window(app, start, &prefs_a, &theme_a);
     });
 
-    app.connect_open(|app, files, _hint| {
+    let (prefs_o, theme_o) = (prefs.clone(), theme.clone());
+    app.connect_open(move |app, files, _hint| {
         for file in files {
             let target = match file.query_file_type(gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) {
                 gio::FileType::Directory => file.clone(),
                 gio::FileType::Unknown => file.clone(),
                 _ => file.parent().unwrap_or_else(|| file.clone()),
             };
-            open_window(app, target);
+            open_window(app, target, &prefs_o, &theme_o);
         }
     });
 
     app.run()
 }
 
-fn open_window(app: &adw::Application, start: gio::File) {
-    let win = window::Window::new(app, start);
+fn open_window(app: &adw::Application, start: gio::File, prefs: &Rc<prefs::Prefs>, theme: &Rc<RefCell<Option<Rc<theme::ThemeManager>>>>) {
+    let theme = theme.borrow().clone().expect("theme manager is created at startup");
+    let win = window::Window::new(app, start, prefs.clone(), theme);
     // The Rc graph is owned by the GTK window's closures; keep it alive explicitly too.
     unsafe { win.window.set_data("omafile-window", win.clone()) };
     win.window.present();

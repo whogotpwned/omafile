@@ -6,7 +6,7 @@ use crate::thumbs::ThumbCache;
 use crate::window::{self, Window};
 use adw::prelude::*;
 use gtk::{gdk, gio, glib, pango};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
@@ -22,6 +22,9 @@ pub struct PaneState {
     pub monitor_pending: Option<glib::SourceId>,
     pub generation: u64,
     pub loading: bool,
+    /// Showing results of a recursive search instead of the directory.
+    pub deep_results: bool,
+    pub deep_pending: Option<glib::SourceId>,
 }
 
 pub struct Pane {
@@ -36,7 +39,9 @@ pub struct Pane {
     pub empty: adw::StatusPage,
     pub search_bar: gtk::SearchBar,
     pub search_entry: gtk::SearchEntry,
+    pub deep_toggle: gtk::ToggleButton,
     pub status: gtk::Label,
+    pub side: Cell<usize>,
     pub item_menu: gtk::PopoverMenu,
     pub background_menu: gtk::PopoverMenu,
     pub cell_items: RefCell<HashMap<gtk::Widget, gtk::ListItem>>,
@@ -46,7 +51,7 @@ pub struct Pane {
 }
 
 impl Pane {
-    pub fn new(window: &Rc<Window>, start: gio::File) -> Rc<Self> {
+    pub fn new(window: &Rc<Window>, start: gio::File, side: usize) -> Rc<Self> {
         let store = gio::ListStore::new::<FileItem>();
         let filter = gtk::CustomFilter::new(|_| true);
         let filter_model = gtk::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
@@ -66,7 +71,14 @@ impl Pane {
         grid_view.add_css_class("omafile-files");
 
         let search_entry = gtk::SearchEntry::builder().placeholder_text("Filter this folder").hexpand(true).build();
-        let search_bar = gtk::SearchBar::builder().child(&search_entry).build();
+        let deep_toggle = gtk::ToggleButton::builder()
+            .icon_name("folder-saved-search-symbolic")
+            .tooltip_text("Search subfolders too (Ctrl+Shift+F)")
+            .build();
+        let search_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        search_box.append(&search_entry);
+        search_box.append(&deep_toggle);
+        let search_bar = gtk::SearchBar::builder().child(&search_box).build();
         search_bar.connect_entry(&search_entry);
         search_bar.set_key_capture_widget(Some(&window.window));
 
@@ -100,7 +112,7 @@ impl Pane {
         root.append(&search_bar);
         root.append(&card);
 
-        let item_menu = gtk::PopoverMenu::from_model(Some(&window::item_menu_model(false, false, false)));
+        let item_menu = gtk::PopoverMenu::from_model(Some(&window::item_menu_model(false, false, false, false)));
         item_menu.set_has_arrow(false);
         item_menu.set_parent(&view_stack);
         let background_menu = gtk::PopoverMenu::from_model(Some(&window::background_menu_model(false)));
@@ -119,7 +131,9 @@ impl Pane {
             empty,
             search_bar,
             search_entry,
+            deep_toggle,
             status,
+            side: Cell::new(side),
             item_menu,
             background_menu,
             cell_items: RefCell::new(HashMap::new()),
@@ -132,6 +146,8 @@ impl Pane {
                 monitor_pending: None,
                 generation: 0,
                 loading: false,
+                deep_results: false,
+                deep_pending: None,
             }),
             window: Rc::downgrade(window),
             thumbs: window.thumbs.clone(),
@@ -142,8 +158,35 @@ impl Pane {
         pane.setup_views();
         pane.setup_search();
         pane.setup_drop();
+        pane.setup_focus();
         pane.navigate(start, false);
         pane
+    }
+
+    /// Clicking or focusing anything inside the pane makes it the active side.
+    fn setup_focus(self: &Rc<Self>) {
+        let this = Rc::downgrade(self);
+        let click = gtk::GestureClick::new();
+        click.set_button(0);
+        click.set_propagation_phase(gtk::PropagationPhase::Capture);
+        click.connect_pressed(move |_, _, _, _| {
+            if let Some(p) = this.upgrade() {
+                if let Some(w) = p.window.upgrade() {
+                    w.set_active_side(p.side.get());
+                }
+            }
+        });
+        self.root.add_controller(click);
+        let this = Rc::downgrade(self);
+        let focus = gtk::EventControllerFocus::new();
+        focus.connect_enter(move |_| {
+            if let Some(p) = this.upgrade() {
+                if let Some(w) = p.window.upgrade() {
+                    w.set_active_side(p.side.get());
+                }
+            }
+        });
+        self.root.add_controller(focus);
     }
 
     fn with_columns(self: Rc<Self>) -> Rc<Self> {
@@ -173,9 +216,9 @@ impl Pane {
             let thumb = hbox.first_child().and_downcast::<gtk::Stack>().unwrap();
             let label = hbox.last_child().and_downcast::<gtk::Label>().unwrap();
             if let Some(p) = this.upgrade() {
-                bind_thumb(&p.thumbs, &thumb, &item, ICON_LIST);
+                bind_thumb(&p.thumbs, &thumb, &item, ICON_LIST, p.thumbnails_enabled());
             }
-            label.set_text(&item.display_name());
+            label.set_text(&item.display_label());
             apply_item_classes(&hbox, &item);
         });
         let name_col = gtk::ColumnViewColumn::new(Some("Name"), Some(name_factory));
@@ -279,9 +322,9 @@ impl Pane {
             let thumb = vbox.first_child().and_downcast::<gtk::Stack>().unwrap();
             let label = vbox.last_child().and_downcast::<gtk::Label>().unwrap();
             if let Some(p) = this.upgrade() {
-                bind_thumb(&p.thumbs, &thumb, &item, ICON_GRID);
+                bind_thumb(&p.thumbs, &thumb, &item, ICON_GRID, p.thumbnails_enabled());
             }
-            label.set_text(&item.display_name());
+            label.set_text(&item.display_label());
             apply_item_classes(&vbox, &item);
         });
     }
@@ -296,7 +339,7 @@ impl Pane {
                 return false;
             }
             let state = p.state.borrow();
-            if state.search.is_empty() {
+            if state.search.is_empty() || state.deep_results {
                 return true;
             }
             item.display_name().to_lowercase().contains(&state.search)
@@ -361,8 +404,29 @@ impl Pane {
         self.search_entry.connect_search_changed(move |entry| {
             let Some(p) = this.upgrade() else { return };
             p.state.borrow_mut().search = entry.text().to_lowercase();
-            p.filter.changed(gtk::FilterChange::Different);
-            p.update_empty();
+            if p.deep_toggle.is_active() {
+                p.schedule_deep_search();
+            } else {
+                p.filter.changed(gtk::FilterChange::Different);
+                p.update_empty();
+            }
+        });
+        let this = Rc::downgrade(self);
+        self.deep_toggle.connect_toggled(move |toggle| {
+            let Some(p) = this.upgrade() else { return };
+            p.search_entry.set_placeholder_text(Some(if toggle.is_active() { "Search this folder and everything below" } else { "Filter this folder" }));
+            if toggle.is_active() {
+                p.schedule_deep_search();
+            } else if p.state.borrow().deep_results {
+                p.leave_deep_search();
+            }
+        });
+        let this = Rc::downgrade(self);
+        self.search_bar.connect_search_mode_enabled_notify(move |bar| {
+            let Some(p) = this.upgrade() else { return };
+            if !bar.is_search_mode() && p.state.borrow().deep_results {
+                p.leave_deep_search();
+            }
         });
         let this = Rc::downgrade(self);
         self.search_entry.connect_stop_search(move |_| {
@@ -482,7 +546,12 @@ impl Pane {
             state.cwd = file.clone();
             state.search.clear();
             state.generation += 1;
+            state.deep_results = false;
+            if let Some(id) = state.deep_pending.take() {
+                id.remove();
+            }
         }
+        self.deep_toggle.set_active(false);
         self.search_bar.set_search_mode(false);
         self.search_entry.set_text("");
         self.watch_cwd();
@@ -493,6 +562,10 @@ impl Pane {
     }
 
     pub fn reload(self: &Rc<Self>) {
+        if self.state.borrow().deep_results {
+            self.schedule_deep_search();
+            return;
+        }
         let (file, generation) = {
             let mut state = self.state.borrow_mut();
             state.loading = true;
@@ -534,13 +607,87 @@ impl Pane {
         });
     }
 
+    pub fn thumbnails_enabled(&self) -> bool {
+        self.window.upgrade().map(|w| w.thumbnails_enabled.get()).unwrap_or(true)
+    }
+
+    // ----- recursive search ---------------------------------------------------------
+
+    fn schedule_deep_search(self: &Rc<Self>) {
+        let mut state = self.state.borrow_mut();
+        if let Some(id) = state.deep_pending.take() {
+            id.remove();
+        }
+        let this = Rc::downgrade(self);
+        state.deep_pending = Some(glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+            if let Some(p) = this.upgrade() {
+                p.state.borrow_mut().deep_pending = None;
+                p.run_deep_search();
+            }
+        }));
+    }
+
+    fn leave_deep_search(self: &Rc<Self>) {
+        {
+            let mut state = self.state.borrow_mut();
+            state.deep_results = false;
+            state.generation += 1;
+        }
+        self.filter.changed(gtk::FilterChange::Different);
+        self.reload();
+    }
+
+    fn run_deep_search(self: &Rc<Self>) {
+        let query = self.state.borrow().search.clone();
+        if query.chars().count() < 2 {
+            if self.state.borrow().deep_results {
+                self.leave_deep_search();
+            }
+            return;
+        }
+        let generation = {
+            let mut state = self.state.borrow_mut();
+            state.generation += 1;
+            state.deep_results = true;
+            state.generation
+        };
+        let cwd = self.cwd();
+        self.status.set_text("Searching…");
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let show_hidden = this.upgrade().and_then(|p| p.window.upgrade()).map(|w| w.show_hidden()).unwrap_or(false);
+            let files = crate::search::deep_search(&cwd, &query, show_hidden, 400).await;
+            let Some(p) = this.upgrade() else { return };
+            if p.state.borrow().generation != generation {
+                return;
+            }
+            let mut items = Vec::new();
+            for file in files {
+                if let Ok(item) = ops::query(&file).await {
+                    let rel = cwd.relative_path(&file).map(|r| r.to_string_lossy().to_string()).unwrap_or_else(|| item.display_name());
+                    item.set_label(Some(rel));
+                    items.push(item);
+                }
+                if p.state.borrow().generation != generation {
+                    return;
+                }
+            }
+            p.store.remove_all();
+            p.store.extend_from_slice(&items);
+            // The name filter must not hide results whose match is in the path.
+            p.filter.changed(gtk::FilterChange::Different);
+            p.update_empty();
+            p.selection_changed();
+        });
+    }
+
     fn update_empty(&self) {
         let has_items = self.selection.n_items() > 0;
         let mode = self.view_mode();
         if has_items {
             self.view_stack.set_visible_child_name(if mode == "grid" { "grid" } else { "list" });
         } else {
-            let filtering = !self.state.borrow().search.is_empty();
+            let filtering = !self.state.borrow().search.is_empty() || self.state.borrow().deep_results;
             self.empty.set_title(if filtering { "No Matches" } else { "Empty Folder" });
             self.empty.set_icon_name(Some(if filtering { "edit-find-symbolic" } else { "folder-open-symbolic" }));
             self.view_stack.set_visible_child_name("empty");
@@ -697,13 +844,19 @@ impl Pane {
     fn selection_changed(self: &Rc<Self>) {
         let total = self.selection.n_items();
         let selected = self.selected_items();
-        let mut text = format!("{total} {}", if total == 1 { "item" } else { "items" });
+        let deep = self.state.borrow().deep_results;
+        let mut text = if deep {
+            format!("{total} {} found", if total == 1 { "match" } else { "matches" })
+        } else {
+            format!("{total} {}", if total == 1 { "item" } else { "items" })
+        };
         if !selected.is_empty() {
             let size: u64 = selected.iter().filter(|i| !i.is_dir()).map(|i| i.size()).sum();
             text.push_str(&format!(", {} selected", selected.len()));
             if size > 0 {
                 text.push_str(&format!(" ({})", ops::human_size(size)));
             }
+        } else if deep {
         } else if let Some(path) = self.state.borrow().cwd.path() {
             text.push_str(&format!("  ·  {}", window::abbreviate_home(&path)));
         } else {
@@ -748,7 +901,7 @@ impl Pane {
             let items = self.selected_items();
             let single_dir = items.len() == 1 && items[0].is_dir();
             let archive = items.len() == 1 && items[0].is_archive() && items[0].target_file().is_native();
-            self.item_menu.set_menu_model(Some(&window::item_menu_model(single_dir, archive, in_trash)));
+            self.item_menu.set_menu_model(Some(&window::item_menu_model(single_dir, archive, in_trash, items.len() > 1)));
             self.item_menu.set_pointing_to(Some(&rect));
             self.item_menu.popup();
         } else {
@@ -783,14 +936,14 @@ fn make_thumb(size: i32) -> gtk::Stack {
     stack
 }
 
-fn bind_thumb(thumbs: &Rc<ThumbCache>, stack: &gtk::Stack, item: &FileItem, size: i32) {
+fn bind_thumb(thumbs: &Rc<ThumbCache>, stack: &gtk::Stack, item: &FileItem, size: i32, enabled: bool) {
     let image = stack.child_by_name("icon").and_downcast::<gtk::Image>().unwrap();
     let picture = stack.child_by_name("thumb").and_downcast::<gtk::Picture>().unwrap();
     match item.icon() {
         Some(icon) => image.set_from_gicon(&icon),
         None => image.set_icon_name(Some("text-x-generic")),
     }
-    if ThumbCache::can_thumbnail(item) {
+    if enabled && ThumbCache::can_thumbnail(item) {
         thumbs.assign(item, &picture, size * 2);
     } else {
         picture.set_widget_name("");

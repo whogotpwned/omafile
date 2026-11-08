@@ -44,6 +44,10 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.open-new-tab", &["<Control>Return"]),
     ("win.bookmark", &["<Control>d"]),
     ("win.connect", &["<Control><Shift>k"]),
+    ("win.split-view", &["F6"]),
+    ("win.deep-search", &["<Control><Shift>f"]),
+    ("win.preferences", &["<Control>comma"]),
+    ("win.change-icon", &["<Control><Alt>i"]),
     ("win.shortcuts", &["<Control>question"]),
 ];
 
@@ -82,8 +86,8 @@ impl Window {
             w.open_in_new_tab(dir, true);
         }));
         simple("close-tab", Box::new(|w| w.close_active_tab()));
-        simple("next-tab", Box::new(|w| { w.tab_view.select_next_page(); }));
-        simple("prev-tab", Box::new(|w| { w.tab_view.select_previous_page(); }));
+        simple("next-tab", Box::new(|w| { w.tab_view().select_next_page(); }));
+        simple("prev-tab", Box::new(|w| { w.tab_view().select_previous_page(); }));
         simple("open", Box::new(move |w| {
             if let Some(p) = pane(w) {
                 for item in p.selected_items() {
@@ -111,7 +115,29 @@ impl Window {
         }));
         simple("new-folder", Box::new(|w| w.prompt_create(true)));
         simple("new-file", Box::new(|w| w.prompt_create(false)));
-        simple("rename", Box::new(|w| w.prompt_rename()));
+        simple("rename", Box::new(move |w| {
+            let Some(p) = pane(w) else { return };
+            let items = p.selected_items();
+            if items.len() > 1 {
+                w.show_batch_rename(p, items);
+            } else {
+                w.prompt_rename();
+            }
+        }));
+        simple("change-icon", Box::new(|w| {
+            if let Some(item) = w.selected_items().first() {
+                w.show_icon_chooser(item);
+            }
+        }));
+        simple("preferences", Box::new(|w| w.show_preferences()));
+        simple("split-view", Box::new(|w| w.toggle_split()));
+        simple("deep-search", Box::new(move |w| {
+            if let Some(p) = pane(w) {
+                p.search_bar.set_search_mode(true);
+                p.deep_toggle.set_active(true);
+                p.search_entry.grab_focus();
+            }
+        }));
         simple("trash", Box::new(|w| w.trash_selected()));
         simple("delete", Box::new(|w| w.delete_selected()));
         simple("restore", Box::new(|w| w.restore_selected()));
@@ -720,9 +746,11 @@ impl Window {
                 ("Alt+Home", "Home"),
                 ("Ctrl+L", "Type a location"),
                 ("Ctrl+F", "Filter this folder"),
+                ("Ctrl+Shift+F", "Search subfolders"),
                 ("F5", "Reload"),
             ]),
             ("Tabs & panes", &[
+                ("F6", "Split view (two sets of tabs side by side)"),
                 ("Ctrl+T  /  Ctrl+W", "New / close tab"),
                 ("Ctrl+Tab  /  Ctrl+Shift+Tab", "Next / previous tab"),
                 ("Ctrl+Enter  /  middle click", "Open folder in new tab"),
@@ -736,13 +764,14 @@ impl Window {
                 ("Ctrl+Shift+O", "Open with…"),
                 ("F4", "Open terminal here"),
                 ("Ctrl+Shift+N  /  Ctrl+Alt+N", "New folder / file"),
-                ("F2", "Rename"),
+                ("F2", "Rename, batch rename with several selected"),
                 ("Ctrl+C  /  Ctrl+X  /  Ctrl+V", "Copy / cut / paste"),
                 ("Ctrl+Shift+C", "Copy path"),
                 ("Ctrl+D", "Bookmark this folder"),
                 ("Delete  /  Shift+Delete", "Trash / delete permanently"),
                 ("Ctrl+I", "Properties"),
                 ("Ctrl+Shift+K", "Connect to server (SFTP)"),
+                ("Ctrl+,", "Preferences"),
             ]),
         ];
         for (title, rows) in sections {

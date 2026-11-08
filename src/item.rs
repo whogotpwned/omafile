@@ -2,6 +2,7 @@
 //! so it can live in a `gio::ListStore` behind the list and grid views.
 
 use gtk::glib;
+use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use gtk::{gio, pango};
 use std::cell::RefCell;
@@ -9,7 +10,8 @@ use std::cell::RefCell;
 pub const ATTRIBUTES: &str = "standard::name,standard::display-name,standard::type,standard::size,\
 standard::icon,standard::is-hidden,standard::is-backup,standard::is-symlink,standard::symlink-target,\
 standard::content-type,standard::fast-content-type,time::modified,unix::mode,access::can-write,\
-access::can-execute,owner::user,owner::group,standard::target-uri,thumbnail::path,thumbnail::is-valid";
+access::can-execute,owner::user,owner::group,standard::target-uri,thumbnail::path,thumbnail::is-valid,\
+metadata::custom-icon,metadata::custom-icon-name";
 
 mod imp {
     use super::*;
@@ -18,6 +20,7 @@ mod imp {
     pub struct FileItem {
         pub file: RefCell<Option<gio::File>>,
         pub info: RefCell<Option<gio::FileInfo>>,
+        pub label: RefCell<Option<String>>,
     }
 
     #[glib::object_subclass]
@@ -39,6 +42,15 @@ impl FileItem {
         obj.imp().file.replace(Some(file));
         obj.imp().info.replace(Some(info));
         obj
+    }
+
+    /// Label shown instead of the name, e.g. a relative path in search results.
+    pub fn set_label(&self, label: Option<String>) {
+        self.imp().label.replace(label);
+    }
+
+    pub fn display_label(&self) -> String {
+        self.imp().label.borrow().clone().unwrap_or_else(|| self.display_name())
     }
 
     pub fn file(&self) -> gio::File {
@@ -100,8 +112,20 @@ impl FileItem {
         self.modified().map(|d| d.to_unix()).unwrap_or(0)
     }
 
+    /// Custom icons set by omafile or Nautilus take precedence over the type icon.
     pub fn icon(&self) -> Option<gio::Icon> {
-        self.info().icon()
+        let info = self.info();
+        if let Some(name) = info.attribute_string("metadata::custom-icon-name") {
+            if !name.is_empty() {
+                return Some(gio::ThemedIcon::new(&name).upcast());
+            }
+        }
+        if let Some(uri) = info.attribute_string("metadata::custom-icon") {
+            if !uri.is_empty() {
+                return Some(gio::FileIcon::new(&gio::File::for_uri(&uri)).upcast());
+            }
+        }
+        info.icon()
     }
 
     pub fn content_type(&self) -> Option<String> {
@@ -137,6 +161,10 @@ impl FileItem {
 
     pub fn is_image(&self) -> bool {
         self.content_type().map(|ct| ct.starts_with("image/")).unwrap_or(false)
+    }
+
+    pub fn is_pdf(&self) -> bool {
+        self.content_type().as_deref() == Some("application/pdf")
     }
 
     pub fn is_text(&self) -> bool {
