@@ -51,6 +51,13 @@ pub struct Pane {
     pub cell_items: RefCell<HashMap<gtk::Widget, gtk::ListItem>>,
     pub git: RefCell<Option<crate::git::RepoStatus>>,
     pub venv: RefCell<Option<crate::pyenv::Venv>>,
+    pub sort_model: gtk::SortListModel,
+    pub columns_view: RefCell<Option<Rc<crate::views::ColumnsView>>>,
+    pub gallery: RefCell<Option<Rc<crate::views::GalleryView>>>,
+    pub grid_size: Cell<i32>,
+    pub content_toggle: gtk::ToggleButton,
+    /// Spring-loaded folders: (position hovered during a drag, timer).
+    spring: RefCell<Option<(u32, glib::SourceId)>>,
     pub term_paned: gtk::Paned,
     pub term: RefCell<Option<Rc<crate::termpanel::TermPanel>>>,
     pub state: RefCell<PaneState>,
@@ -68,7 +75,7 @@ impl Pane {
         column_view.set_enable_rubberband(true);
         column_view.add_css_class("omafile-files");
         let sort_model = gtk::SortListModel::new(Some(filter_model), column_view.sorter());
-        let selection = gtk::MultiSelection::new(Some(sort_model));
+        let selection = gtk::MultiSelection::new(Some(sort_model.clone()));
         column_view.set_model(Some(&selection));
 
         let grid_factory = gtk::SignalListItemFactory::new();
@@ -83,9 +90,15 @@ impl Pane {
             .icon_name("folder-saved-search-symbolic")
             .tooltip_text("Search subfolders too (Ctrl+Shift+F)")
             .build();
+        let content_toggle = gtk::ToggleButton::builder()
+            .icon_name("edit-find-replace-symbolic")
+            .tooltip_text("Search file contents (ripgrep)")
+            .visible(crate::search::rg_available())
+            .build();
         let search_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         search_box.append(&search_entry);
         search_box.append(&deep_toggle);
+        search_box.append(&content_toggle);
         let search_bar = gtk::SearchBar::builder().child(&search_box).build();
         search_bar.connect_entry(&search_entry);
         search_bar.set_key_capture_widget(Some(&window.window));
@@ -163,6 +176,12 @@ impl Pane {
             cell_items: RefCell::new(HashMap::new()),
             git: RefCell::new(None),
             venv: RefCell::new(None),
+            sort_model,
+            columns_view: RefCell::new(None),
+            gallery: RefCell::new(None),
+            grid_size: Cell::new(window.prefs.get("grid-size").and_then(|v| v.parse().ok()).unwrap_or(ICON_GRID)),
+            content_toggle,
+            spring: RefCell::new(None),
             term_paned,
             term: RefCell::new(None),
             state: RefCell::new(PaneState {
@@ -408,10 +427,11 @@ impl Pane {
         let this = Rc::downgrade(self);
         factory.connect_setup(move |_, obj| {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
+            let size = this.upgrade().map(|p| p.grid_size.get()).unwrap_or(ICON_GRID);
             let vbox = gtk::Box::new(gtk::Orientation::Vertical, 8);
-            vbox.set_width_request(112);
+            vbox.set_width_request(size + 40);
             vbox.add_css_class("omafile-grid-item");
-            let thumb = make_thumb(ICON_GRID, this.clone());
+            let thumb = make_thumb(size, this.clone());
             let label = gtk::Label::builder()
                 .justify(gtk::Justification::Center)
                 .wrap(true)
@@ -442,7 +462,7 @@ impl Pane {
             let label = caption.first_child().and_downcast::<gtk::Label>().unwrap();
             let dot = caption.last_child().and_downcast::<gtk::Box>().unwrap();
             if let Some(p) = this.upgrade() {
-                bind_thumb(&p.thumbs, &thumb, &item, ICON_GRID, p.thumbnails_enabled());
+                bind_thumb(&p.thumbs, &thumb, &item, p.grid_size.get(), p.thumbnails_enabled());
                 bind_tag_dot(&dot, p.tag_of(&item));
             }
             label.set_text(&item.display_label());
@@ -468,6 +488,21 @@ impl Pane {
     }
 
     fn setup_views(self: &Rc<Self>) {
+        {
+            let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+            let this = Rc::downgrade(self);
+            scroll.connect_scroll(move |c, _, dy| {
+                let ctrl = c.current_event_state().contains(gdk::ModifierType::CONTROL_MASK);
+                match (ctrl, this.upgrade()) {
+                    (true, Some(p)) => {
+                        p.zoom(if dy < 0.0 { 8 } else { -8 });
+                        glib::Propagation::Stop
+                    }
+                    _ => glib::Propagation::Proceed,
+                }
+            });
+            self.grid_view.add_controller(scroll);
+        }
         for view in [self.column_view.clone().upcast::<gtk::Widget>(), self.grid_view.clone().upcast()] {
             // Keys that mean something else in text fields are handled on the views only.
             let this = Rc::downgrade(self);
@@ -479,6 +514,11 @@ impl Pane {
                 let Some(w) = p.window.upgrade() else { return glib::Propagation::Proceed };
                 let plain = !state.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK);
                 match key {
+                    gdk::Key::Return | gdk::Key::KP_Enter if plain && !state.contains(gdk::ModifierType::SHIFT_MASK) && w.prefs.get_bool("mac-keys", false) => {
+                        // macOS habit: Enter renames, Ctrl+O / Ctrl+↓ opens.
+                        gio::prelude::ActionGroupExt::activate_action(&w.window, "rename", None);
+                        glib::Propagation::Stop
+                    }
                     gdk::Key::BackSpace if plain && !state.contains(gdk::ModifierType::SHIFT_MASK) => {
                         p.go_up();
                         glib::Propagation::Stop
@@ -560,8 +600,22 @@ impl Pane {
             }
         });
         let this = Rc::downgrade(self);
+        self.content_toggle.connect_toggled(move |toggle| {
+            let Some(p) = this.upgrade() else { return };
+            if toggle.is_active() {
+                p.deep_toggle.set_active(true);
+                p.search_entry.set_placeholder_text(Some("Search inside files below this folder"));
+            }
+            if p.deep_toggle.is_active() {
+                p.schedule_deep_search();
+            }
+        });
+        let this = Rc::downgrade(self);
         self.deep_toggle.connect_toggled(move |toggle| {
             let Some(p) = this.upgrade() else { return };
+            if !toggle.is_active() {
+                p.content_toggle.set_active(false);
+            }
             p.search_entry.set_placeholder_text(Some(if toggle.is_active() { "Search this folder and everything below" } else { "Filter this folder" }));
             if toggle.is_active() {
                 p.schedule_deep_search();
@@ -622,8 +676,49 @@ impl Pane {
     fn setup_drop(self: &Rc<Self>) {
         for view in [self.column_view.clone().upcast::<gtk::Widget>(), self.grid_view.clone().upcast()] {
             let target = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY | gdk::DragAction::MOVE);
+            // Spring-loaded folders: hovering a folder while dragging opens it.
+            let this = Rc::downgrade(self);
+            target.connect_motion(move |t, x, y| {
+                let (Some(p), Some(view)) = (this.upgrade(), t.widget()) else { return gdk::DragAction::COPY };
+                let over = p.position_at(&view, x, y).filter(|pos| p.item_at(*pos).map(|i| i.is_dir()).unwrap_or(false));
+                let pending = p.spring.borrow().as_ref().map(|(pos, _)| *pos);
+                if std::env::var_os("OMAFILE_TRACE").is_some() {
+                    eprintln!("spring motion at {x:.0},{y:.0}: over={over:?} pending={pending:?}");
+                }
+                if over != pending {
+                    if let Some((_, id)) = p.spring.borrow_mut().take() {
+                        id.remove();
+                    }
+                    if let Some(pos) = over {
+                        let weak = Rc::downgrade(&p);
+                        let id = glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || {
+                            let Some(p) = weak.upgrade() else { return };
+                            p.spring.borrow_mut().take();
+                            if let Some(item) = p.item_at(pos).filter(|i| i.is_dir()) {
+                                p.navigate(item.target_file(), true);
+                            }
+                        });
+                        *p.spring.borrow_mut() = Some((pos, id));
+                    }
+                }
+                // One action only: the drop decides copy vs. move itself.
+                gdk::DragAction::MOVE
+            });
+            let this = Rc::downgrade(self);
+            target.connect_leave(move |_| {
+                if let Some(p) = this.upgrade() {
+                    if let Some((_, id)) = p.spring.borrow_mut().take() {
+                        id.remove();
+                    }
+                }
+            });
             let this = Rc::downgrade(self);
             target.connect_drop(move |t, value, x, y| {
+                if let Some(p) = this.upgrade() {
+                    if let Some((_, id)) = p.spring.borrow_mut().take() {
+                        id.remove();
+                    }
+                }
                 let (Some(p), Some(view)) = (this.upgrade(), t.widget()) else { return false };
                 let Ok(list) = value.get::<gdk::FileList>() else { return false };
                 let dest = p
@@ -688,6 +783,9 @@ impl Pane {
         self.watch_cwd();
         self.fade_view();
         self.reload();
+        if let Some(c) = self.columns_view.borrow().clone() {
+            c.on_navigate(&file);
+        }
         if self.terminal_visible() {
             if let (Some(t), Some(dir)) = (self.term.borrow().clone(), file.path()) {
                 t.follow_to(&dir);
@@ -1059,8 +1157,12 @@ impl Pane {
             state.generation
         };
         let cwd = self.cwd();
+        let contents = self.content_toggle.is_active();
+        if std::env::var_os("OMAFILE_TRACE").is_some() {
+            eprintln!("deep search: query={query:?} contents={contents} deep={}", self.deep_toggle.is_active());
+        }
         self.store.remove_all();
-        self.status.set_text("Searching…");
+        self.status.set_text(if contents { "Searching inside files…" } else { "Searching…" });
         self.update_empty();
         let started = std::time::Instant::now();
         let this = Rc::downgrade(self);
@@ -1109,15 +1211,28 @@ impl Pane {
             }
         });
         glib::spawn_future_local(async move {
-            crate::search::deep_search(&cwd, &query, show_hidden, cancel, emit).await;
+            if contents {
+                crate::search::content_search(&cwd, &query, show_hidden, cancel, emit).await;
+            } else {
+                crate::search::deep_search(&cwd, &query, show_hidden, cancel, emit).await;
+            }
         });
     }
 
     fn update_empty(&self) {
         let has_items = self.selection.n_items() > 0;
         let mode = self.view_mode();
+        if mode == "columns" {
+            // Columns show the chain even when the last folder is empty.
+            self.view_stack.set_visible_child_name("columns");
+            return;
+        }
         if has_items {
-            self.view_stack.set_visible_child_name(if mode == "grid" { "grid" } else { "list" });
+            self.view_stack.set_visible_child_name(match mode.as_str() {
+                "grid" => "grid",
+                "gallery" => "gallery",
+                _ => "list",
+            });
         } else {
             let filtering = !self.state.borrow().search.is_empty() || self.state.borrow().deep_results;
             self.empty.set_title(if filtering { "No Matches" } else { "Empty Folder" });
@@ -1204,8 +1319,34 @@ impl Pane {
         self.window.upgrade().map(|w| w.view_mode()).unwrap_or_else(|| "list".into())
     }
 
-    pub fn apply_view_mode(&self) {
+    pub fn apply_view_mode(self: &Rc<Self>) {
+        self.ensure_view_pages();
         self.update_empty();
+        if self.view_mode() == "columns" {
+            if let Some(c) = self.columns_view.borrow().as_ref() {
+                c.update_preview();
+            }
+        }
+        if self.view_mode() == "gallery" {
+            if let Some(g) = self.gallery.borrow().as_ref() {
+                g.update_preview();
+            }
+        }
+    }
+
+    /// Columns and gallery are built on first use (they need the pane's Rc).
+    fn ensure_view_pages(self: &Rc<Self>) {
+        let mode = self.view_mode();
+        if mode == "columns" && self.columns_view.borrow().is_none() {
+            let c = crate::views::ColumnsView::new(self);
+            self.view_stack.add_named(&c.root, Some("columns"));
+            *self.columns_view.borrow_mut() = Some(c);
+        }
+        if mode == "gallery" && self.gallery.borrow().is_none() {
+            let g = crate::views::GalleryView::new(self);
+            self.view_stack.add_named(&g.root, Some("gallery"));
+            *self.gallery.borrow_mut() = Some(g);
+        }
     }
 
     pub fn is_grid(&self) -> bool {
@@ -1213,10 +1354,85 @@ impl Pane {
     }
 
     pub fn focus_view(&self) {
-        if self.is_grid() {
-            self.grid_view.grab_focus();
-        } else {
-            self.column_view.grab_focus();
+        match self.view_mode().as_str() {
+            "grid" => {
+                self.grid_view.grab_focus();
+            }
+            "columns" => {
+                if let Some(c) = self.columns_view.borrow().as_ref() {
+                    c.focus_last();
+                }
+            }
+            "gallery" => {
+                if let Some(g) = self.gallery.borrow().as_ref() {
+                    g.strip.grab_focus();
+                }
+            }
+            _ => {
+                self.column_view.grab_focus();
+            }
+        };
+    }
+
+    /// Grid icon size: Ctrl+Plus / Ctrl+Minus / Ctrl+scroll; 0 resets.
+    pub fn zoom(self: &Rc<Self>, step: i32) {
+        let size = if step == 0 { ICON_GRID } else { (self.grid_size.get() + step).clamp(40, 200) };
+        if size == self.grid_size.get() && step != 0 {
+            return;
+        }
+        self.grid_size.set(size);
+        if let Some(w) = self.window.upgrade() {
+            w.prefs.set("grid-size", Some(&size.to_string()));
+            for p in w.all_panes() {
+                p.grid_size.set(size);
+                let factory = gtk::SignalListItemFactory::new();
+                p.setup_grid(&factory);
+                p.grid_view.set_factory(Some(&factory));
+            }
+        }
+        self.status.set_text(&format!("Icon size {size} px"));
+    }
+
+    /// Group the listing into sections: none, kind, date, size, tag.
+    pub fn set_group(self: &Rc<Self>, key: &str) {
+        let key = key.to_string();
+        if key == "none" {
+            self.sort_model.set_section_sorter(None::<&gtk::Sorter>);
+            self.column_view.set_header_factory(None::<&gtk::ListItemFactory>);
+            return;
+        }
+        let k = key.clone();
+        let this = Rc::downgrade(self);
+        let sorter = gtk::CustomSorter::new(move |a, b| {
+            let (a, b) = (a.downcast_ref::<FileItem>().unwrap(), b.downcast_ref::<FileItem>().unwrap());
+            let tags = this.upgrade().and_then(|p| p.window.upgrade()).map(|w| w.tags.clone());
+            let ka = crate::groups::rank(&k, a, tags.as_deref());
+            let kb = crate::groups::rank(&k, b, tags.as_deref());
+            ka.cmp(&kb).into()
+        });
+        self.sort_model.set_section_sorter(Some(&sorter));
+        // Section headers exist for the list view; the grid keeps the grouped order (GTK 4.14 has no grid headers).
+        {
+            let k = key.clone();
+            let this = Rc::downgrade(self);
+            let factory = gtk::SignalListItemFactory::new();
+            factory.connect_setup(|_, obj| {
+                let header = obj.downcast_ref::<gtk::ListHeader>().unwrap();
+                let label = gtk::Label::builder().xalign(0.0).margin_start(12).margin_top(10).margin_bottom(4).build();
+                label.add_css_class("caption-heading");
+                label.add_css_class("omafile-group-header");
+                header.set_child(Some(&label));
+            });
+            factory.connect_bind(move |_, obj| {
+                let header = obj.downcast_ref::<gtk::ListHeader>().unwrap();
+                let Some(item) = header.item().and_downcast::<FileItem>() else { return };
+                let tags = this.upgrade().and_then(|p| p.window.upgrade()).map(|w| w.tags.clone());
+                let n = header.n_items();
+                if let Some(label) = header.child().and_downcast::<gtk::Label>() {
+                    label.set_text(&format!("{}  ·  {n}", crate::groups::label(&k, &item, tags.as_deref())));
+                }
+            });
+            self.column_view.set_header_factory(Some(&factory));
         }
     }
 
@@ -1383,6 +1599,16 @@ impl Pane {
     }
 
     fn selection_changed(self: &Rc<Self>) {
+        if let Some(c) = self.columns_view.borrow().as_ref() {
+            if self.view_mode() == "columns" {
+                c.update_preview();
+            }
+        }
+        if let Some(g) = self.gallery.borrow().as_ref() {
+            if self.view_mode() == "gallery" {
+                g.update_preview();
+            }
+        }
         let total = self.selection.n_items();
         let selected = self.selected_items();
         let deep = self.state.borrow().deep_results;
@@ -1392,6 +1618,8 @@ impl Pane {
             format!("{total} {} in this smart folder", if total == 1 { "match" } else { "matches" })
         } else if virtual_view {
             format!("{total} tagged {}", if total == 1 { "item" } else { "items" })
+        } else if deep && self.content_toggle.is_active() {
+            format!("{total} {} contain the text", if total == 1 { "file" } else { "files" })
         } else if deep {
             format!("{total} {} found", if total == 1 { "match" } else { "matches" })
         } else {
@@ -1483,6 +1711,10 @@ impl Pane {
                 local: items.iter().all(|i| i.target_file().is_native()),
                 media: items.len() == 1 && items[0].is_media(),
                 py_script: items.len() == 1 && items[0].name().ends_with(".py") && items[0].target_file().is_native(),
+                pdfs: if !items.is_empty() && items.iter().all(|i| i.is_pdf() && i.target_file().is_native()) { items.len() } else { 0 },
+                video: items.len() == 1 && items[0].is_video() && items[0].target_file().is_native(),
+                audio: items.len() == 1 && items[0].is_audio() && items[0].target_file().is_native(),
+                symlink: items.len() == 1 && items[0].is_symlink(),
                 pair: items.len() == 2 && items.iter().all(|i| i.target_file().is_native()),
                 split: self.window.upgrade().map(|w| w.is_split()).unwrap_or(false),
                 theme_archive: items.len() == 1 && items[0].is_archive() && items[0].target_file().path().map(|p| crate::omarchy::archive_is_theme(&p)).unwrap_or(false),
@@ -1513,7 +1745,7 @@ impl Drop for Pane {
 
 /// Icon-or-thumbnail widget used in both views.
 /// Icon / thumbnail stack with a play badge over media files, as Finder shows it.
-fn make_thumb(size: i32, pane: Weak<Pane>) -> gtk::Overlay {
+pub fn make_thumb(size: i32, pane: Weak<Pane>) -> gtk::Overlay {
     let stack = make_thumb_stack(size);
     let overlay = gtk::Overlay::new();
     overlay.set_child(Some(&stack));
@@ -1578,7 +1810,7 @@ fn make_thumb_stack(size: i32) -> gtk::Stack {
     stack
 }
 
-fn bind_thumb(thumbs: &Rc<ThumbCache>, overlay: &gtk::Overlay, item: &FileItem, size: i32, enabled: bool) {
+pub fn bind_thumb(thumbs: &Rc<ThumbCache>, overlay: &gtk::Overlay, item: &FileItem, size: i32, enabled: bool) {
     let stack = overlay.child().and_downcast::<gtk::Stack>().unwrap();
     let stack = &stack;
     if let Some(play) = overlay.last_child().filter(|w| w.is::<gtk::Button>()) {

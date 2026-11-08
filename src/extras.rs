@@ -132,6 +132,14 @@ impl Window {
             }
         });
         views.add(&venv);
+        let mac = adw::SwitchRow::builder().title("macOS keys").subtitle("Enter renames, Ctrl+O or Ctrl+↓ opens, Ctrl+↑ goes up").active(self.prefs.get_bool("mac-keys", false)).build();
+        let this = Rc::downgrade(self);
+        mac.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("mac-keys", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        views.add(&mac);
         page.add(&views);
 
         let trash = adw::PreferencesGroup::builder().title("Trash").build();

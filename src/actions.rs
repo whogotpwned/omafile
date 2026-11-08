@@ -70,6 +70,27 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("image-to-jpg", "Image: Convert to JPEG", "image-x-generic-symbolic"),
     ("image-to-webp", "Image: Convert to WebP", "image-x-generic-symbolic"),
     ("vault-lock-all", "Lock All Encrypted Folders", "changes-prevent-symbolic"),
+    ("new-folder-with-selection", "New Folder with Selection", "folder-new-symbolic"),
+    ("make-alias", "Make Alias (symbolic link)", "insert-link-symbolic"),
+    ("show-original", "Show Original of Alias", "go-jump-symbolic"),
+    ("always-open-with", "Always Open With…", "document-open-symbolic"),
+    ("pdf-from-images", "PDF: Create from Selected Images", "x-office-document-symbolic"),
+    ("pdf-merge", "PDF: Merge Selected", "x-office-document-symbolic"),
+    ("pdf-split", "PDF: Split into Pages", "x-office-document-symbolic"),
+    ("pdf-extract", "PDF: Extract Pages…", "x-office-document-symbolic"),
+    ("video-trim", "Video: Trim…", "video-x-generic-symbolic"),
+    ("video-gif", "Video: Make GIF", "video-x-generic-symbolic"),
+    ("video-audio", "Video: Extract Audio", "audio-x-generic-symbolic"),
+    ("audio-mp3", "Audio: Convert to MP3", "audio-x-generic-symbolic"),
+    ("audio-opus", "Audio: Convert to Opus", "audio-x-generic-symbolic"),
+    ("audio-flac", "Audio: Convert to FLAC", "audio-x-generic-symbolic"),
+    ("view::columns", "Column View", "view-dual-symbolic"),
+    ("view::gallery", "Gallery View", "view-paged-symbolic"),
+    ("group::kind", "Group by Kind", "view-list-symbolic"),
+    ("group::date", "Group by Date", "view-list-symbolic"),
+    ("group::size", "Group by Size", "view-list-symbolic"),
+    ("group::tag", "Group by Tag", "view-list-symbolic"),
+    ("group::none", "Group: None", "view-list-symbolic"),
     ("save-smart", "Save Search as Smart Folder…", "folder-saved-search-symbolic"),
     ("copy-other", "Copy to Other Pane", "edit-copy-symbolic"),
     ("move-other", "Move to Other Pane", "edit-cut-symbolic"),
@@ -94,6 +115,14 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.location", &["<Control>l"]),
     ("win.view::list", &["<Control>1"]),
     ("win.view::grid", &["<Control>2"]),
+    ("win.view::columns", &["<Control>3"]),
+    ("win.view::gallery", &["<Control>4"]),
+    ("win.zoom-in", &["<Control>plus", "<Control>equal", "<Control>KP_Add"]),
+    ("win.zoom-out", &["<Control>minus", "<Control>KP_Subtract"]),
+    ("win.zoom-reset", &["<Control>0", "<Control>KP_0"]),
+    ("win.open", &["<Control>o", "<Control>Down"]),
+    ("win.up-alt", &["<Control>Up"]),
+    ("win.new-folder-with-selection", &["<Control><Shift>m"]),
     ("win.new-tab", &["<Control>t"]),
     ("win.close-tab", &["<Control>w"]),
     ("win.next-tab", &["<Control>Tab", "<Control>Page_Down"]),
@@ -178,7 +207,12 @@ impl Window {
         }));
         simple("location", Box::new(|w| w.show_location_entry()));
         simple("toggle-view", Box::new(|w| {
-            let next = if w.view_mode() == "grid" { "list" } else { "grid" };
+            let next = match w.view_mode().as_str() {
+                "list" => "grid",
+                "grid" => "columns",
+                "columns" => "gallery",
+                _ => "list",
+            };
             gio::prelude::ActionGroupExt::activate_action(&w.window, "view", Some(&next.to_variant()));
         }));
         simple("new-tab", Box::new(|w| {
@@ -252,6 +286,38 @@ impl Window {
         simple("share-scp", Box::new(|w| w.share_copy_scp()));
         simple("share-lan", Box::new(|w| w.share_lan_dialog()));
         simple("save-smart", Box::new(|w| w.save_smart_dialog()));
+        simple("new-folder-with-selection", Box::new(|w| w.new_folder_with_selection()));
+        simple("make-alias", Box::new(|w| w.make_alias()));
+        simple("show-original", Box::new(|w| w.show_original()));
+        simple("always-open-with", Box::new(|w| w.always_open_with()));
+        simple("pdf-from-images", Box::new(|w| w.pdf_from_images()));
+        simple("pdf-merge", Box::new(|w| w.pdf_merge()));
+        simple("pdf-split", Box::new(|w| w.pdf_split()));
+        simple("pdf-extract", Box::new(|w| w.pdf_extract_dialog()));
+        simple("video-trim", Box::new(|w| w.video_trim_dialog()));
+        simple("video-gif", Box::new(|w| w.video_to_gif()));
+        simple("video-audio", Box::new(|w| w.video_extract_audio()));
+        simple("audio-mp3", Box::new(|w| w.audio_convert("mp3")));
+        simple("audio-opus", Box::new(|w| w.audio_convert("opus")));
+        simple("audio-flac", Box::new(|w| w.audio_convert("flac")));
+        simple("zoom-in", Box::new(move |w| { if let Some(p) = pane(w) { p.zoom(16) } }));
+        simple("zoom-out", Box::new(move |w| { if let Some(p) = pane(w) { p.zoom(-16) } }));
+        simple("zoom-reset", Box::new(move |w| { if let Some(p) = pane(w) { p.zoom(0) } }));
+        simple("up-alt", Box::new(move |w| { if let Some(p) = pane(w) { p.go_up() } }));
+        {
+            let group = gio::SimpleAction::new_stateful("group", Some(glib::VariantTy::STRING), &self.prefs.get("group").unwrap_or_else(|| "none".into()).to_variant());
+            let this = Rc::downgrade(self);
+            group.connect_activate(move |action, param| {
+                let Some(w) = this.upgrade() else { return };
+                let Some(key) = param.and_then(|p| p.get::<String>()) else { return };
+                action.set_state(&key.to_variant());
+                w.prefs.set("group", Some(&key));
+                for p in w.all_panes() {
+                    p.set_group(&key);
+                }
+            });
+            self.window.add_action(&group);
+        }
         simple("py-create", Box::new(|w| w.py_create()));
         simple("py-activate", Box::new(|w| w.py_activate()));
         simple("py-install", Box::new(|w| w.py_install()));
@@ -400,8 +466,11 @@ impl Window {
             }
         }));
         simple("properties", Box::new(|w| {
-            if let Some(item) = w.selected_items().first() {
-                w.show_properties(item);
+            let items = w.selected_items();
+            match items.len() {
+                0 => {}
+                1 => w.show_properties(&items[0]),
+                _ => w.show_multi_properties(items),
             }
         }));
         simple("cwd-properties", Box::new(move |w| {
@@ -506,9 +575,15 @@ impl Window {
             let Some(mode) = param.and_then(|p| p.get::<String>()) else { return };
             action.set_state(&mode.to_variant());
             w.state.borrow_mut().view_mode = mode.clone();
-            let grid = mode == "grid";
-            w.view_btn.set_icon_name(if grid { "view-list-symbolic" } else { "view-grid-symbolic" });
-            w.view_btn.set_tooltip_text(Some(if grid { "List view (Ctrl+1)" } else { "Grid view (Ctrl+2)" }));
+            // The header button shows the *next* view in the cycle list → grid → columns → gallery.
+            let (icon, tip) = match mode.as_str() {
+                "list" => ("view-grid-symbolic", "Grid view (Ctrl+2)"),
+                "grid" => ("view-dual-symbolic", "Column view (Ctrl+3)"),
+                "columns" => ("view-paged-symbolic", "Gallery view (Ctrl+4)"),
+                _ => ("view-list-symbolic", "List view (Ctrl+1)"),
+            };
+            w.view_btn.set_icon_name(icon);
+            w.view_btn.set_tooltip_text(Some(tip));
             let panes: Vec<Rc<Pane>> = w.panes.borrow().clone();
             for p in panes {
                 p.apply_view_mode();

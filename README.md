@@ -8,13 +8,13 @@
 
 **The file manager that feels like part of Omarchy.**
 
-GTK 4 · libadwaita · Rust · theme-aware · terminal inside · git inside · Python inside
+GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-39%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-42%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-pdf.png" alt="omafile in Tokyo Night: grid view with image and PDF thumbnails and the preview pane" width="900">
@@ -56,9 +56,9 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 <td><img src="docs/screenshot-vault.png" alt="encrypted folder"><br><b>Encrypted folders</b><br><sub>gocryptfs vaults you can sync anywhere and unlock with a password.</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshot-venv-reqs.png" alt="python requirements"><br><b>Python aware</b><br><sub>venv badge, requirements ✓/✗ against the venv, create / install / freeze from the menu.</sub></td>
+<td><img src="docs/screenshot-columns.png" alt="column view"><br><b>Finder views</b><br><sub>Miller columns, gallery with filmstrip, groups by kind / date / size / tag, <code>Ctrl+scroll</code> zoom.</sub></td>
 <td><img src="docs/screenshot-bindings.png" alt="bindings overlay"><br><b>Every binding, searchable</b><br><sub><code>F1</code> lists all shortcuts, gestures and menu entries, generated from the real table.</sub></td>
-<td><img src="docs/screenshot-light.png" alt="light theme"><br><b>Follows the theme live</b><br><sub><code>omarchy theme set</code> re-skins open windows, icons included, no restart.</sub></td>
+<td><img src="docs/screenshot-venv-reqs.png" alt="python requirements"><br><b>Python aware</b><br><sub>venv badge, requirements ✓/✗ against the venv, create / install / freeze from the menu.</sub></td>
 </tr>
 </table>
 
@@ -70,13 +70,19 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 
 | | |
 |---|---|
-| ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, rubber-band and multi-selection, live reload when a folder changes. **Hidden files** toggle with the eye button or `Ctrl+H`; hidden items are dimmed, italic and greyed, the status line counts them while hidden. |
+| ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, rubber-band and multi-selection, live reload when a folder changes. **Hidden files** toggle with the eye button or `Ctrl+H`; hidden items are dimmed, italic and greyed, the status line counts them while hidden. **Zoom** the grid with `Ctrl+Plus` / `Ctrl+Minus` / `Ctrl+scroll`, `Ctrl+0` resets. |
+| ![columns](docs/screenshot-columns.png) | **Column view** (`Ctrl+3`), Finder's Miller columns: every folder on the way from home is a column, the last one is the live folder, a selected file opens a preview column at the end. `←` and `→` move between columns, `Enter` opens. |
+| ![gallery](docs/screenshot-gallery.png) | **Gallery view** (`Ctrl+4`): a large preview with a filmstrip of thumbnails underneath, metadata beneath the picture. The header button cycles list → grid → columns → gallery. |
+| ![groups](docs/screenshot-groups.png) | **Groups** (menu › Group By): sections by kind (Folders, Images, PDF documents, Documents, Code and config, Music, Videos, Archives), by date (Today, Yesterday, Previous 7 days…), by size or by tag, each with its count; the choice is remembered. |
 | ![thumbnails](docs/screenshot-thumbs.png) | **Previews in the icon**, like Finder and Explorer: text and source files show a page with their first lines, images and SVGs their picture, PDFs their first page, videos a frame (`ffmpegthumbnailer`, else `ffmpeg`), music its cover art, theme folders their `preview.png`. Everything decodes off the main thread and is cached; credential files are never rendered. |
 | ![play badge](docs/screenshot-play-badge.png) | **Play in place**: songs and videos carry a round play badge over their icon; one click starts them. Audio shows cover and transport controls in the preview pane, `Space` (Quick Look) plays right away, `←`/`→` walk the album. GStreamer decodes, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
 | ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview without opening the file. PDFs with page count, images, text, folders with item count, git diffs for changed files. `←`/`→` move through the folder, `Space` or `Esc` closes. The **preview pane** (`F3`) is the persistent sidebar version of the same thing. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs** (`Ctrl+T`), **split view** (`F6`) with two sets of tabs and their own histories, drag files across sides or between a local and a remote tab. **Sessions** bring tabs, split, open terminal panels and window size back on the next start. |
 | ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb becomes a text field with the cursor at the end, folders complete as you type (`Tab` accepts, `↑`/`↓` pick, `Enter` opens). `~`, relative paths, `sftp://` and `user@host` all work. |
 | ![search](docs/screenshot-search.png) | **Recursive search** (`Ctrl+Shift+F`): `fd` streams matches while it walks, results arrive in batches, the previous search is killed as you type on, and the final list is ranked. About 40 ms for a short query on a 5,300-file tree. **Smart folders** (`Ctrl+Alt+S`) save a search with glob and age as a sidebar entry. |
+| ![content search](docs/screenshot-content-search.png) | **Full-text search**: the second toggle in the search bar hands the query to `ripgrep`, so you find the files that *contain* the words, streamed the same way (`.git` skipped, 8 MB per file cap). |
+| ![code preview](docs/screenshot-code-preview.png) | **Quick Look renderers**: source code with syntax highlighting (`bat`), Markdown with headings, lists, links and code, CSV / TSV as an aligned table, JSON formatted by `jq`, font files as a specimen (ImageMagick). Plain text stays plain. |
+| ![media facts](docs/screenshot-media-facts.png) | **Metadata where you look**: images show dimensions, format, camera, date taken and exposure (EXIF); audio and video show codec, sample rate, channels, resolution, frame rate, bitrate and tags, in the preview, Quick Look and the *Media* group of Properties. |
 | ![bindings](docs/screenshot-bindings.png) | **All bindings in one place** (`F1`, `Ctrl+?`): a searchable overlay of every shortcut, gesture and menu entry with keycaps, starting with the Hyprland key that opens omafile. Generated from the accelerator table, kept complete by a test, printable with `omafile --print-bindings`. |
 
 ### Files and operations
@@ -95,6 +101,10 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![image tools](docs/screenshot-image-resize.png) | **Image tools**: rotate, convert to PNG / JPEG / WebP, resize by width, height or percent, set as Omarchy wallpaper. New files are written next to the original and can be undone. |
 | ![checksum](docs/screenshot-checksum.png) | **Checksums**: SHA-256 in Properties with a copy button; *Verify Checksum* compares against a `.sha256` / `SHA256SUMS` sidecar or a hash on the clipboard and says ✓ or ✗. |
 | ![permissions](docs/screenshot-permissions.png) | **Permissions and ownership in plain words**: Properties explains who may read, write and run, shows `rw-r--r--` and `644`, and lets you change it with check boxes, an octal field, special-bit switches, a group picker and (as root) an owner picker. Folders get *Apply to Enclosed Files*. |
+| ![multi properties](docs/screenshot-multi-properties.png) | **Properties for several items**: count, folders and files, total size (folders measured), kinds and shared tags, as "Get Info" on a multi-selection. |
+| ![open with](docs/screenshot-open-with.png) | **Always Open With…**: pick an application for this file type and make it the default, applications that claim the type first. **Make Alias** creates a symbolic link next to the original, **Show Original** jumps to a link's target. **New Folder with Selection** (`Ctrl+Shift+M`) wraps the selected items into a new folder. |
+| ![pdf tools](docs/screenshot-pdf-tools.png) | **PDF quick actions**: images → PDF, merge selected PDFs, split into pages, extract a page range (poppler, ImageMagick). **Video / Audio**: trim without re-encoding, make a GIF of the first ten seconds, extract the audio track, convert to MP3 / Opus / FLAC (ffmpeg). All outputs are new files, undo trashes them. |
+| ![spring](docs/screenshot-spring.png) | **Spring-loaded folders**: hover a folder (or a sidebar place) while dragging and it opens after a moment, so a drop can go several levels deep in one move. **macOS keys** in Preferences: `Enter` renames, `Ctrl+O` / `Ctrl+↓` opens, `Ctrl+↑` goes up. |
 | ![templates](docs/screenshot-templates.png) | **New from Template**: `~/Templates` entries plus built-in scaffolds for a Rust crate, a Python project, an Omarchy shell plugin, a Hyprland snippet and a static web page. |
 
 ### Developer
@@ -175,10 +185,12 @@ Panels move the way the rest of Omarchy moves instead of snapping: the terminal 
 | `Ctrl+T` `Ctrl+W` `Ctrl+Tab` `Ctrl+Enter` | New, close, next tab, open folder in new tab |
 | `F3` `F6` `F9` | Preview pane, split view, sidebar |
 | `` Ctrl+` `` / `F7` | Terminal panel |
-| `Ctrl+1` `Ctrl+2` `Ctrl+H` | List, grid, hidden files |
+| `Ctrl+1` `Ctrl+2` `Ctrl+3` `Ctrl+4` | List, grid, columns, gallery |
+| `Ctrl+Plus` `Ctrl+Minus` `Ctrl+0` | Grid icon size (also Ctrl+scroll) |
+| `Ctrl+H` | Hidden files |
 | `Space` | Quick Look (plays music); `←` `→` walk the folder |
 | `Enter` `Ctrl+Shift+O` `F4` `Ctrl+E` | Open, open with…, terminal here, open in editor |
-| `Ctrl+Shift+N` `Ctrl+Alt+N` | New folder, new file |
+| `Ctrl+Shift+N` `Ctrl+Alt+N` `Ctrl+Shift+M` | New folder, new file, new folder with selection |
 | `F2` / `Shift+F2` | Rename in place / dialog; batch rename with several selected |
 | `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` `Ctrl+Shift+D` | Copy, cut, paste, copy path, duplicate |
 | `Shift+F5` / `Shift+F6` | Copy / move to the other pane of the split |
@@ -274,15 +286,19 @@ omafile is built for a stock Omarchy install and uses what is already there. Onl
 | `gstreamer` + `gst-plugins-good` (`gst-plugins-bad`, `gst-libav`) | audio and video playback in the preview | base and good: yes | the player names the missing decoder |
 | `libarchive` (`bsdtar`) | extract, compress, theme export | yes (pacman) | the archive entries do nothing |
 | `diffutils` | Compare | yes (base) | Compare reports it |
+| `ripgrep` | full-text search | yes | the content toggle is hidden |
+| `bat` | syntax highlighting in previews | yes | code shows as plain text |
+| `jq` | JSON formatting in previews, `plugin/validate.sh` | yes | JSON shows as plain text |
+| `poppler` (`pdfunite`, `pdfseparate`) | PDF merge / split / extract | yes | the PDF menu reports it |
 | `util-linux` (`script`) | master key display for new vaults | yes (base) | vault created without the key shown |
 | `imagemagick` | Image › rotate, convert, resize; EXIF dates | yes | the Image menu says so |
 | `qrencode` | QR code in *Share on Local Network* | yes | link only |
 | `python` | *Share on Local Network*, `python -m venv` fallback | yes | sharing unavailable |
+| `ffmpeg` | trim, GIF, audio extraction and conversion | yes | the Video / Audio menus report it |
 | `uv` | Python › Create venv, Install, Freeze | no (`sudo pacman -S uv`) | stock venv and pip commands |
 | `docker` or `podman` | container volumes in the sidebar | docker: yes | *Containers* stays hidden |
 | `sha256sum` (coreutils) | checksums | yes | SHA-256 rows stay empty |
 | `hyprctl` | `--toggle`, Open in New Workspace | yes | those entries are hidden |
-| `jq` | `plugin/validate.sh`, `omarchy plugin` | yes | plugin development only |
 | `xdg-desktop-portal-hyprland`, `xdg-desktop-portal-gtk` | Open With…, file dialogs | yes | GTK's own dialogs |
 | a terminal: `$TERMINAL`, else `xdg-terminal-exec`, foot, alacritty, kitty, ghostty | terminal windows, project commands | yes | set `TERMINAL` |
 | `omarchy-launch-editor` | Open in Editor | yes | `$VISUAL` / `$EDITOR` in a terminal |
@@ -371,7 +387,7 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 
 | File | Content |
 |---|---|
-| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `trash-auto-days`) |
+| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `trash-auto-days`) |
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
@@ -395,7 +411,7 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 39 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 42 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 
@@ -410,7 +426,9 @@ cargo clippy
 | `bindings` | the bindings table, the searchable overlay, `--print-bindings` |
 | `theme` / `motion` | Omarchy palette → CSS, icon theme, live reload; slide and fade animations |
 | `item` / `ops` / `transfer` / `undo` | file model, async GIO operations, copy/move queue with conflicts and progress, undo journal |
-| `preview` / `quicklook` / `thumbs` | preview pane, Quick Look, thumbnail cache (images, PDFs, text pages, video, cover art) |
+| `preview` / `quicklook` / `thumbs` / `render` | preview pane, Quick Look, thumbnail cache; Markdown / CSV / JSON / bat / font renderers and media metadata |
+| `views` / `groups` | column and gallery views; group keys for sections |
+| `finder` / `mediatools` | New Folder with Selection, aliases, Always Open With, multi-item Properties; PDF, video and audio quick actions |
 | `search` / `smart` / `completion` / `palette` | fd / GIO search, smart folders, path completion, command palette |
 | `git` / `gitui` | status for badges and the status line; stage, commit, branch dialogs |
 | `projects` / `templates` / `pyenv` / `pyui` | project detection and actions, templates, Python venvs |

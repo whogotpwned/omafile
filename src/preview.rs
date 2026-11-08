@@ -247,7 +247,9 @@ impl PreviewPane {
         if let Some(icon) = item.icon() {
             self.icon.set_from_gicon(&icon);
         }
-        if ThumbCache::can_thumbnail(item) {
+        self.load_facts(item, gen);
+        // Text-like files get the renderers below, not their page thumbnail.
+        if ThumbCache::can_thumbnail(item) && !item.is_text() {
             self.stack.set_visible_child_name("image");
             self.thumbs.assign(item, &self.picture, self.image_size);
             if item.is_pdf() {
@@ -281,9 +283,91 @@ impl PreviewPane {
             });
             return;
         }
+        // Rich renderers: fonts as a specimen, Markdown / CSV / JSON / code in the text view.
+        if let Some(path) = item.target_file().path().filter(|_| item.size() > 0) {
+            let name = item.name();
+            let dark = adw::StyleManager::default().is_dark();
+            if crate::render::is_font(&name) {
+                self.stack.set_visible_child_name("image");
+                self.picture.set_paintable(None::<&gdk::Paintable>);
+                let this = Rc::downgrade(self);
+                glib::spawn_future_local(async move {
+                    let png = gio::spawn_blocking(move || crate::render::font_specimen(&path, dark)).await.ok().flatten();
+                    let Some(p) = this.upgrade() else { return };
+                    if p.generation.get() != gen {
+                        return;
+                    }
+                    match png.and_then(|b| gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok()) {
+                        Some(t) => {
+                            p.picture.set_paintable(Some(&t));
+                            p.hint.set_text("Font specimen (ImageMagick)");
+                        }
+                        None => p.stack.set_visible_child_name("icon"),
+                    }
+                });
+                return;
+            }
+            let kind = if crate::render::is_markdown(&name) {
+                Some("markdown")
+            } else if crate::render::is_csv(&name) {
+                Some("csv")
+            } else if crate::render::is_json(&name) {
+                Some("json")
+            } else if crate::render::is_code(&name) && crate::render::bat_binary().is_some() {
+                Some("code")
+            } else {
+                None
+            };
+            if let Some(kind) = kind {
+                self.stack.set_visible_child_name("text");
+                self.text.buffer().set_text("");
+                let this = Rc::downgrade(self);
+                let file = item.target_file();
+                glib::spawn_future_local(async move {
+                    let path2 = path.clone();
+                    let rendered: Option<Rendered> = gio::spawn_blocking(move || match kind {
+                        "json" => crate::render::pretty_json(&path2).map(Rendered::Code),
+                        "code" => crate::render::highlight(&path2, 400, dark).map(Rendered::Ansi),
+                        _ => None,
+                    })
+                    .await
+                    .ok()
+                    .flatten();
+                    let head = read_head(&file).await;
+                    let Some(p) = this.upgrade() else { return };
+                    if p.generation.get() != gen {
+                        return;
+                    }
+                    match (kind, rendered, head) {
+                        ("markdown", _, Some(text)) => {
+                            p.render_spans(crate::render::markdown(&text));
+                            p.hint.set_text("Markdown");
+                        }
+                        ("csv", _, Some(text)) => {
+                            let rows = crate::render::csv_rows(&text, 200);
+                            p.render_table(&rows);
+                            p.hint.set_text(&format!("{} rows shown  ·  {} columns", rows.len(), rows.first().map(|r| r.len()).unwrap_or(0)));
+                        }
+                        ("json", Some(Rendered::Code(pretty)), _) => {
+                            p.text.buffer().set_text(&pretty);
+                            p.hint.set_text("JSON, formatted with jq");
+                        }
+                        ("code", Some(Rendered::Ansi(ansi)), _) => {
+                            p.render_ansi(&ansi);
+                            p.hint.set_text("Syntax highlighting by bat");
+                        }
+                        (_, _, Some(text)) => p.text.buffer().set_text(&text),
+                        _ => p.stack.set_visible_child_name("icon"),
+                    }
+                });
+                return;
+            }
+        }
         if item.is_text() && item.size() > 0 {
             self.stack.set_visible_child_name("text");
             self.text.buffer().set_text("");
+            self.text.set_monospace(true);
+            self.text.set_wrap_mode(gtk::WrapMode::None);
             let file = item.target_file();
             let this = Rc::downgrade(self);
             glib::spawn_future_local(async move {
@@ -304,7 +388,149 @@ impl PreviewPane {
     }
 }
 
+enum Rendered {
+    Code(String),
+    Ansi(String),
+}
+
+fn gen_of(p: &PreviewPane) -> u64 {
+    p.generation.get()
+}
+
 impl PreviewPane {
+    /// Dimensions, camera, duration, codec… appended to the hint line once known.
+    fn load_facts(self: &Rc<Self>, item: &FileItem, gen: u64) {
+        let (Some(path), Some(ct)) = (item.target_file().path(), item.content_type()) else { return };
+        if !(ct.starts_with("image/") || ct.starts_with("audio/") || ct.starts_with("video/")) {
+            return;
+        }
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let facts = gio::spawn_blocking(move || crate::render::media_facts(&path, &ct)).await.unwrap_or_default();
+            let Some(p) = this.upgrade() else { return };
+            if p.generation.get() != gen || facts.is_empty() {
+                return;
+            }
+            // The player already shows the duration; everything else goes on the hint line.
+            let line: Vec<String> = facts.iter().filter(|(k, _)| k != "Duration").map(|(k, v)| if k == "Dimensions" || k == "Video" || k == "Audio" { v.clone() } else { format!("{k}: {v}") }).collect();
+            let existing = p.hint.text().to_string();
+            let joined = line.join("  ·  ");
+            p.hint.set_text(&if existing.is_empty() { joined } else { format!("{joined}\n{existing}") });
+        });
+    }
+
+    fn tag(&self, name: &str, setup: impl Fn(&gtk::TextTag)) -> gtk::TextTag {
+        let table = self.text.buffer().tag_table();
+        match table.lookup(name) {
+            Some(t) => t,
+            None => {
+                let t = gtk::TextTag::new(Some(name));
+                setup(&t);
+                table.add(&t);
+                t
+            }
+        }
+    }
+
+    /// Markdown spans into the text view with heading / bold / code tags.
+    fn render_spans(&self, spans: Vec<crate::render::Span>) {
+        let palette = crate::theme::current();
+        let accent = palette.as_ref().map(|p| p.accent.hex());
+        let muted = palette.as_ref().map(|p| p.muted.hex());
+        let buffer = self.text.buffer();
+        buffer.set_text("");
+        let h1 = self.tag("md-h1", |t| { t.set_weight(800); t.set_scale(1.5); t.set_pixels_above_lines(10); });
+        let h2 = self.tag("md-h2", |t| { t.set_weight(700); t.set_scale(1.25); t.set_pixels_above_lines(8); });
+        let h3 = self.tag("md-h3", |t| { t.set_weight(700); t.set_scale(1.1); t.set_pixels_above_lines(6); });
+        let bold = self.tag("md-bold", |t| t.set_weight(700));
+        let italic = self.tag("md-italic", |t| t.set_style(pango::Style::Italic));
+        let code = self.tag("md-code", |t| { t.set_family(Some("monospace")); t.set_scale(0.95); });
+        let quote = self.tag("md-quote", |t| t.set_style(pango::Style::Italic));
+        let link = self.tag("md-link", |t| t.set_underline(pango::Underline::Single));
+        let dim = self.tag("md-dim", |_| {});
+        if let Some(a) = &accent {
+            h1.set_foreground(Some(a));
+            h2.set_foreground(Some(a));
+            link.set_foreground(Some(a));
+        }
+        if let Some(m) = &muted {
+            quote.set_foreground(Some(m));
+            dim.set_foreground(Some(m));
+        }
+        let mut end = buffer.end_iter();
+        for (text, kind) in spans {
+            let t = match kind {
+                "h1" => Some(&h1),
+                "h2" => Some(&h2),
+                "h3" => Some(&h3),
+                "bold" => Some(&bold),
+                "italic" => Some(&italic),
+                "code" => Some(&code),
+                "quote" => Some(&quote),
+                "link" => Some(&link),
+                "dim" => Some(&dim),
+                _ => None,
+            };
+            match t {
+                Some(t) => buffer.insert_with_tags(&mut end, &text, &[t]),
+                None => buffer.insert(&mut end, &text),
+            }
+        }
+        self.text.set_monospace(false);
+        self.text.set_wrap_mode(gtk::WrapMode::WordChar);
+    }
+
+    /// CSV rows as aligned columns, header bold.
+    fn render_table(&self, rows: &[Vec<String>]) {
+        let buffer = self.text.buffer();
+        buffer.set_text("");
+        let cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+        let widths: Vec<usize> = (0..cols).map(|c| rows.iter().map(|r| r.get(c).map(|v| v.chars().count()).unwrap_or(0)).max().unwrap_or(0).min(28)).collect();
+        let header = self.tag("csv-head", |t| t.set_weight(700));
+        let mut end = buffer.end_iter();
+        for (i, row) in rows.iter().enumerate() {
+            let line: Vec<String> = (0..cols)
+                .map(|c| {
+                    let v: String = row.get(c).map(|v| v.chars().take(28).collect()).unwrap_or_default();
+                    format!("{:<w$}", v, w = widths[c])
+                })
+                .collect();
+            let text = format!("{}\n", line.join(" │ "));
+            if i == 0 {
+                buffer.insert_with_tags(&mut end, &text, &[&header]);
+                buffer.insert(&mut end, &format!("{}\n", widths.iter().map(|w| "─".repeat(*w)).collect::<Vec<_>>().join("─┼─")));
+            } else {
+                buffer.insert(&mut end, &text);
+            }
+        }
+        self.text.set_monospace(true);
+        self.text.set_wrap_mode(gtk::WrapMode::None);
+    }
+
+    /// bat's ANSI output into coloured text tags.
+    fn render_ansi(&self, ansi: &str) {
+        let buffer = self.text.buffer();
+        buffer.set_text("");
+        let mut end = buffer.end_iter();
+        for (text, style) in crate::render::ansi_spans(ansi) {
+            let name = format!("ansi-{}-{}-{:?}", style.bold as u8, style.italic as u8, style.fg);
+            let t = self.tag(&name, |t| {
+                if style.bold {
+                    t.set_weight(700);
+                }
+                if style.italic {
+                    t.set_style(pango::Style::Italic);
+                }
+                if let Some((r, g, b)) = style.fg {
+                    t.set_foreground(Some(&format!("#{r:02x}{g:02x}{b:02x}")));
+                }
+            });
+            buffer.insert_with_tags(&mut end, &text, &[&t]);
+        }
+        self.text.set_monospace(true);
+        self.text.set_wrap_mode(gtk::WrapMode::None);
+    }
+
     /// Package / requirement list with ✓ (installed, green) and ✗ (missing, red).
     fn show_python(self: &Rc<Self>, item: &FileItem, details: &str, rows: Vec<(String, Option<()>)>, hint: &str) {
         self.name.set_text(&item.display_name());
@@ -348,6 +574,7 @@ impl PreviewPane {
             self.icon.set_from_gicon(&icon);
             self.media_icon.set_from_gicon(&icon);
         }
+        self.load_facts(item, gen_of(self));
         let media = gtk::MediaFile::for_file(&item.target_file());
         let art = self.video.parent().and_downcast::<gtk::Stack>().expect("media art stack");
         if item.is_video() {

@@ -106,6 +106,89 @@ async fn fd_search(fd: &str, root: &std::path::Path, query: &str, show_hidden: b
     true
 }
 
+pub fn rg_available() -> bool {
+    glib::find_program_in_path("rg").is_some()
+}
+
+/// Full-text search with ripgrep: files below `root` whose contents contain
+/// `query` (case-insensitive, literal), streamed like the name search.
+pub async fn content_search(root: &gio::File, query: &str, show_hidden: bool, cancel: gio::Cancellable, emit: Rc<dyn Fn(Vec<gio::File>, bool)>) {
+    let Some(path) = root.path() else {
+        emit(Vec::new(), true);
+        return;
+    };
+    let mut argv: Vec<String> = vec![
+        "rg".into(),
+        "--files-with-matches".into(),
+        "--ignore-case".into(),
+        "--fixed-strings".into(),
+        "--no-messages".into(),
+        "--max-count".into(),
+        "1".into(),
+        "--max-filesize".into(),
+        "8M".into(),
+        "--max-depth".into(),
+        "16".into(),
+        "--glob".into(),
+        "!.git".into(),
+        "--color".into(),
+        "never".into(),
+    ];
+    if show_hidden {
+        argv.push("--hidden".into());
+    }
+    argv.push("--".into());
+    argv.push(query.into());
+    argv.push(path.to_string_lossy().to_string());
+    let args: Vec<&std::ffi::OsStr> = argv.iter().map(std::ffi::OsStr::new).collect();
+    if std::env::var_os("OMAFILE_TRACE").is_some() {
+        eprintln!("content search: {}", argv.join(" "));
+    }
+    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::STDOUT_PIPE | gio::SubprocessFlags::STDERR_SILENCE);
+    let process = match launcher.spawn(&args) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("content search: cannot start rg: {}", e.message());
+            emit(Vec::new(), true);
+            return;
+        }
+    };
+    let Some(stdout) = process.stdout_pipe() else {
+        emit(Vec::new(), true);
+        return;
+    };
+    let reader = gio::DataInputStream::new(&stdout);
+    let mut batch = Vec::new();
+    let mut total = 0usize;
+    loop {
+        if cancel.is_cancelled() {
+            process.force_exit();
+            return;
+        }
+        match reader.read_line_utf8_future(glib::Priority::DEFAULT).await {
+            Ok(Some(line)) => {
+                let line = line.trim_end_matches('\n');
+                if line.is_empty() {
+                    continue;
+                }
+                batch.push(gio::File::for_path(line));
+                total += 1;
+                if batch.len() >= BATCH {
+                    emit(std::mem::take(&mut batch), false);
+                }
+                if total >= MAX_RESULTS {
+                    process.force_exit();
+                    break;
+                }
+            }
+            _ => break,
+        }
+    }
+    if !cancel.is_cancelled() {
+        emit(batch, true);
+    }
+}
+
 /// Breadth-first walk with GIO, so remote locations work too.
 async fn walk_search(root: &gio::File, needle: &str, show_hidden: bool, cancel: &gio::Cancellable, emit: Rc<dyn Fn(Vec<gio::File>, bool)>) {
     let mut queue = std::collections::VecDeque::from([(root.clone(), 0u32)]);

@@ -592,6 +592,9 @@ impl Window {
             self.tab_views[side].set_selected_page(&page);
         }
         pane.apply_view_mode();
+        if let Some(key) = self.prefs.get("group").filter(|k| k != "none") {
+            pane.set_group(&key);
+        }
         self.pane_navigated(&pane);
     }
 
@@ -912,10 +915,52 @@ impl Window {
         });
         self.sidebar_list.add_controller(right);
 
-        // Dropping files on a sidebar place copies/moves them there.
+        // Dropping files on a sidebar place copies/moves them there; hovering one opens it.
         let target = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY | gdk::DragAction::MOVE);
+        let spring: Rc<RefCell<Option<(i32, glib::SourceId)>>> = Rc::new(RefCell::new(None));
+        {
+            let this = Rc::downgrade(self);
+            let spring_m = spring.clone();
+            target.connect_motion(move |_, _, y| {
+                let spring = &spring_m;
+                let Some(w) = this.upgrade() else { return gdk::DragAction::COPY };
+                let index = w.sidebar_list.row_at_y(y as i32).map(|r| r.index());
+                let pending = spring.borrow().as_ref().map(|(i, _)| *i);
+                if index != pending {
+                    if let Some((_, id)) = spring.borrow_mut().take() {
+                        id.remove();
+                    }
+                    if let Some(i) = index {
+                        let this2 = this.clone();
+                        let spring2 = spring.clone();
+                        let id = glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || {
+                            spring2.borrow_mut().take();
+                            let Some(w) = this2.upgrade() else { return };
+                            let file = match w.state.borrow().places.get(i as usize) {
+                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_)) => Some(file.clone()),
+                                _ => None,
+                            };
+                            if let Some(f) = file {
+                                w.navigate(f);
+                            }
+                        });
+                        *spring.borrow_mut() = Some((i, id));
+                    }
+                }
+                gdk::DragAction::MOVE
+            });
+            let spring = spring.clone();
+            target.connect_leave(move |_| {
+                if let Some((_, id)) = spring.borrow_mut().take() {
+                    id.remove();
+                }
+            });
+        }
         let this = Rc::downgrade(self);
         target.connect_drop(move |_, value, _, y| {
+            if let Some((_, id)) = spring.borrow_mut().take() {
+                id.remove();
+            }
             let Some(w) = this.upgrade() else { return false };
             let Ok(list) = value.get::<gdk::FileList>() else { return false };
             let Some(row) = w.sidebar_list.row_at_y(y as i32) else { return false };
@@ -1564,7 +1609,16 @@ fn main_menu() -> gio::Menu {
     let view = gio::Menu::new();
     view.append(Some("List"), Some("win.view::list"));
     view.append(Some("Grid"), Some("win.view::grid"));
+    view.append(Some("Columns"), Some("win.view::columns"));
+    view.append(Some("Gallery"), Some("win.view::gallery"));
     menu.append_section(Some("View"), &view);
+    let group = gio::Menu::new();
+    group.append(Some("None"), Some("win.group::none"));
+    group.append(Some("Kind"), Some("win.group::kind"));
+    group.append(Some("Date Modified"), Some("win.group::date"));
+    group.append(Some("Size"), Some("win.group::size"));
+    group.append(Some("Tag"), Some("win.group::tag"));
+    menu.append_submenu(Some("Group By"), &group);
     let sort = gio::Menu::new();
     sort.append(Some("Name"), Some("win.sort::name"));
     sort.append(Some("Size"), Some("win.sort::size"));
@@ -1617,6 +1671,13 @@ pub struct MenuFlags {
     pub local: bool,
     /// A single .py file with a venv around it.
     pub py_script: bool,
+    /// Every selected item is a PDF (local).
+    pub pdfs: usize,
+    /// A single local video / audio file.
+    pub video: bool,
+    pub audio: bool,
+    /// A single symbolic link.
+    pub symlink: bool,
     /// A single audio or video file.
     pub media: bool,
     /// Exactly two items selected (compare).
@@ -1692,12 +1753,46 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     if f.py_script && !in_trash {
         open.append(Some("Run in venv (Terminal Panel)"), Some("win.py-run"));
     }
+    if !multiple && !in_trash && !single_dir {
+        open.append(Some("Always Open With…"), Some("win.always-open-with"));
+    }
+    if f.symlink && !in_trash {
+        open.append(Some("Show Original"), Some("win.show-original"));
+    }
+    if f.pdfs > 0 && !in_trash {
+        let pdf = gio::Menu::new();
+        if f.pdfs >= 2 {
+            pdf.append(Some("Merge into One PDF"), Some("win.pdf-merge"));
+        }
+        if f.pdfs == 1 {
+            pdf.append(Some("Split into Pages"), Some("win.pdf-split"));
+            pdf.append(Some("Extract Pages…"), Some("win.pdf-extract"));
+        }
+        open.append_submenu(Some("PDF"), &pdf);
+    }
+    if f.video && !in_trash {
+        let v = gio::Menu::new();
+        v.append(Some("Trim…"), Some("win.video-trim"));
+        v.append(Some("Make GIF (first 10 s)"), Some("win.video-gif"));
+        v.append(Some("Extract Audio"), Some("win.video-audio"));
+        v.append(Some("Audio to MP3"), Some("win.audio-mp3"));
+        open.append_submenu(Some("Video"), &v);
+    }
+    if f.audio && !in_trash {
+        let a = gio::Menu::new();
+        a.append(Some("Trim…"), Some("win.video-trim"));
+        a.append(Some("Convert to MP3"), Some("win.audio-mp3"));
+        a.append(Some("Convert to Opus"), Some("win.audio-opus"));
+        a.append(Some("Convert to FLAC"), Some("win.audio-flac"));
+        open.append_submenu(Some("Audio"), &a);
+    }
     if f.images && !in_trash {
         let img = gio::Menu::new();
         img.append(Some("Set as Wallpaper"), Some("win.set-wallpaper"));
         img.append(Some("Rotate Left"), Some("win.image-rotate::-90"));
         img.append(Some("Rotate Right"), Some("win.image-rotate::90"));
         img.append(Some("Resize…"), Some("win.image-resize"));
+        img.append(Some("Create PDF from Images"), Some("win.pdf-from-images"));
         let conv = gio::Menu::new();
         conv.append(Some("PNG"), Some("win.image-convert::png"));
         conv.append(Some("JPEG"), Some("win.image-convert::jpg"));
@@ -1720,6 +1815,8 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
             edit.append(Some("Move to Other Pane"), Some("win.move-other"));
         }
         edit.append(Some("Duplicate"), Some("win.duplicate"));
+        edit.append(Some("Make Alias"), Some("win.make-alias"));
+        edit.append(Some(if multiple { "New Folder with Selection" } else { "New Folder with Item" }), Some("win.new-folder-with-selection"));
         edit.append(Some(if multiple { "Batch Rename…" } else { "Rename…" }), Some("win.rename"));
         edit.append(Some("Compress…"), Some("win.compress"));
         if !multiple {
