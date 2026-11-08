@@ -439,6 +439,32 @@ pub fn css(p: &Palette) -> String {
 .omafile-hidden picture {{
   filter: grayscale(0.9);
 }}
+.omafile-play-badge {{
+  background-color: rgba(0, 0, 0, 0.55);
+  color: white;
+  border-radius: 999px;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  opacity: 0.85;
+  -gtk-icon-size: 12px;
+}}
+.omafile-play-badge:hover {{
+  background-color: {accent};
+  opacity: 1;
+}}
+.omafile-play-badge-large {{
+  min-width: 30px;
+  min-height: 30px;
+  -gtk-icon-size: 18px;
+}}
+.omafile-play-badge-small {{
+  min-width: 14px;
+  min-height: 14px;
+  margin: -3px;
+  -gtk-icon-size: 9px;
+}}
 .omafile-video {{
   border-radius: 10px;
   background-color: black;

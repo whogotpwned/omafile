@@ -226,7 +226,7 @@ impl Pane {
         name_factory.connect_setup(move |_, obj| {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-            let thumb = make_thumb(ICON_LIST);
+            let thumb = make_thumb(ICON_LIST, this.clone());
             let label = gtk::Label::builder().xalign(0.0).ellipsize(pango::EllipsizeMode::Middle).hexpand(true).build();
             hbox.append(&thumb);
             hbox.append(&label);
@@ -264,7 +264,7 @@ impl Pane {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let Some(item) = list_item.item().and_downcast::<FileItem>() else { return };
             let hbox = list_item.child().and_downcast::<gtk::Box>().unwrap();
-            let thumb = hbox.first_child().and_downcast::<gtk::Stack>().unwrap();
+            let thumb = hbox.first_child().and_downcast::<gtk::Overlay>().unwrap();
             let badge = hbox.last_child().and_downcast::<gtk::Label>().unwrap();
             let lock = badge.prev_sibling().and_downcast::<gtk::Image>().unwrap();
             let dot = lock.prev_sibling().and_downcast::<gtk::Box>().unwrap();
@@ -389,7 +389,7 @@ impl Pane {
             let vbox = gtk::Box::new(gtk::Orientation::Vertical, 8);
             vbox.set_width_request(112);
             vbox.add_css_class("omafile-grid-item");
-            let thumb = make_thumb(ICON_GRID);
+            let thumb = make_thumb(ICON_GRID, this.clone());
             let label = gtk::Label::builder()
                 .justify(gtk::Justification::Center)
                 .wrap(true)
@@ -415,7 +415,7 @@ impl Pane {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let Some(item) = list_item.item().and_downcast::<FileItem>() else { return };
             let vbox = list_item.child().and_downcast::<gtk::Box>().unwrap();
-            let thumb = vbox.first_child().and_downcast::<gtk::Stack>().unwrap();
+            let thumb = vbox.first_child().and_downcast::<gtk::Overlay>().unwrap();
             let caption = vbox.last_child().and_downcast::<gtk::Box>().unwrap();
             let label = caption.first_child().and_downcast::<gtk::Label>().unwrap();
             let dot = caption.last_child().and_downcast::<gtk::Box>().unwrap();
@@ -1345,7 +1345,48 @@ impl Drop for Pane {
 }
 
 /// Icon-or-thumbnail widget used in both views.
-fn make_thumb(size: i32) -> gtk::Stack {
+/// Icon / thumbnail stack with a play badge over media files, as Finder shows it.
+fn make_thumb(size: i32, pane: Weak<Pane>) -> gtk::Overlay {
+    let stack = make_thumb_stack(size);
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&stack));
+    let play = gtk::Button::from_icon_name("media-playback-start-symbolic");
+    play.add_css_class("omafile-play-badge");
+    play.add_css_class(if size >= 48 { "omafile-play-badge-large" } else { "omafile-play-badge-small" });
+    play.set_tooltip_text(Some("Play"));
+    play.set_can_focus(false);
+    play.set_visible(false);
+    if size >= 48 {
+        play.set_halign(gtk::Align::Center);
+        play.set_valign(gtk::Align::Center);
+    } else {
+        play.set_halign(gtk::Align::End);
+        play.set_valign(gtk::Align::End);
+    }
+    play.connect_clicked(move |b| {
+        let Some(p) = pane.upgrade() else { return };
+        // Walk up to the cell to find which item this badge belongs to.
+        let mut w: Option<gtk::Widget> = b.parent();
+        let position = loop {
+            let Some(cur) = w else { break None };
+            if let Some(li) = p.cell_items.borrow().get(&cur) {
+                break Some(li.position());
+            }
+            w = cur.parent();
+        };
+        let Some(pos) = position else { return };
+        p.selection.select_item(pos, true);
+        if let Some(win) = p.window.upgrade() {
+            win.quicklook.play(&p, &win.window);
+        }
+    });
+    overlay.add_overlay(&play);
+    overlay.set_valign(gtk::Align::Center);
+    overlay.set_halign(gtk::Align::Center);
+    overlay
+}
+
+fn make_thumb_stack(size: i32) -> gtk::Stack {
     let stack = gtk::Stack::new();
     stack.set_hhomogeneous(true);
     stack.set_vhomogeneous(true);
@@ -1368,7 +1409,12 @@ fn make_thumb(size: i32) -> gtk::Stack {
     stack
 }
 
-fn bind_thumb(thumbs: &Rc<ThumbCache>, stack: &gtk::Stack, item: &FileItem, size: i32, enabled: bool) {
+fn bind_thumb(thumbs: &Rc<ThumbCache>, overlay: &gtk::Overlay, item: &FileItem, size: i32, enabled: bool) {
+    let stack = overlay.child().and_downcast::<gtk::Stack>().unwrap();
+    let stack = &stack;
+    if let Some(play) = overlay.last_child().filter(|w| w.is::<gtk::Button>()) {
+        play.set_visible(item.is_media());
+    }
     let image = stack.child_by_name("icon").and_downcast::<gtk::Image>().unwrap();
     let picture = stack.child_by_name("thumb").and_downcast::<gtk::Picture>().unwrap();
     match item.icon() {
