@@ -21,6 +21,8 @@ mod palette;
 mod pane;
 mod perms;
 mod prefs;
+mod pyenv;
+mod pyui;
 mod projects;
 mod preview;
 mod quicklook;

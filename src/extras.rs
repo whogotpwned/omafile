@@ -124,6 +124,14 @@ impl Window {
             }
         });
         views.add(&archives);
+        let venv = adw::SwitchRow::builder().title("Activate Python venvs in the terminal panel").subtitle("Entering a project with a .venv sources it, leaving runs deactivate").active(self.prefs.get_bool("venv-auto-activate", true)).build();
+        let this = Rc::downgrade(self);
+        venv.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("venv-auto-activate", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        views.add(&venv);
         page.add(&views);
 
         let trash = adw::PreferencesGroup::builder().title("Trash").build();

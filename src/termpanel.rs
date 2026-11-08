@@ -21,6 +21,10 @@ pub struct TermPanel {
     /// Folder the shell is in as far as we know (from `cd`s we sent or OSC 7).
     shell_dir: RefCell<Option<PathBuf>>,
     syncing: Cell<bool>,
+    /// Shell binary, for the right activate script (bash/zsh vs fish).
+    shell: RefCell<String>,
+    /// Venv we activated in this shell, if any.
+    venv_active: RefCell<Option<PathBuf>>,
 }
 
 fn rgba(c: Rgb) -> gdk::RGBA {
@@ -80,6 +84,8 @@ impl TermPanel {
             pane: Rc::downgrade(pane),
             window: Rc::downgrade(window),
             shell_dir: RefCell::new(None),
+            shell: RefCell::new(String::new()),
+            venv_active: RefCell::new(None),
             syncing: Cell::new(false),
         });
 
@@ -182,10 +188,22 @@ impl TermPanel {
 
     fn spawn(self: &Rc<Self>, dir: Option<PathBuf>) {
         let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/bash".into());
+        *self.shell.borrow_mut() = shell.clone();
+        *self.venv_active.borrow_mut() = None;
         let dir = dir.unwrap_or_else(glib::home_dir);
         let cwd = dir.to_string_lossy().to_string();
         *self.shell_dir.borrow_mut() = Some(dir.clone());
         self.set_title(&dir);
+        {
+            // The shell reads stdin once it is up, so the activate line can go in right away.
+            let weak = Rc::downgrade(self);
+            let start = dir.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+                if let Some(t) = weak.upgrade() {
+                    t.auto_venv(&start);
+                }
+            });
+        }
         let env: Vec<String> = vec!["TERM=xterm-256color".into(), "COLORTERM=truecolor".into(), "OMAFILE_TERMINAL=1".into()];
         let env: Vec<&str> = env.iter().map(String::as_str).collect();
         let this = Rc::downgrade(self);
@@ -210,7 +228,8 @@ impl TermPanel {
     }
 
     fn set_title(&self, dir: &std::path::Path) {
-        self.title.set_text(&format!("Terminal · {}", crate::window::abbreviate_home(dir)));
+        let venv = self.venv_active.borrow().as_ref().and_then(|v| v.file_name().map(|n| format!("  ·  ({})", n.to_string_lossy()))).unwrap_or_default();
+        self.title.set_text(&format!("Terminal · {}{venv}", crate::window::abbreviate_home(dir)));
     }
 
     /// The file view moved: send the shell there too (leading space keeps it out of history).
@@ -225,6 +244,43 @@ impl TermPanel {
         self.set_title(dir);
         let quoted = format!("'{}'", dir.to_string_lossy().replace('\'', "'\\''"));
         self.terminal.feed_child(format!(" cd {quoted}\n").as_bytes());
+        self.auto_venv(dir);
+    }
+
+    /// Type a command into the shell (leading space keeps it out of history).
+    pub fn run_line(&self, command: &str) {
+        self.terminal.feed_child(format!(" {command}\n").as_bytes());
+        self.focus();
+    }
+
+    /// `source .venv/bin/activate` for this shell flavour.
+    pub fn activate_venv(&self, venv: &crate::pyenv::Venv) {
+        let line = crate::pyenv::activate_line(venv, &self.shell.borrow());
+        self.terminal.feed_child(format!("{line}\n").as_bytes());
+        *self.venv_active.borrow_mut() = Some(venv.root.clone());
+        if let Some(dir) = self.shell_dir.borrow().as_ref() {
+            self.set_title(dir);
+        }
+    }
+
+    /// Entering a Python project activates its venv, leaving it deactivates (preference).
+    fn auto_venv(&self, dir: &std::path::Path) {
+        let enabled = self.window.upgrade().map(|w| w.prefs.get_bool("venv-auto-activate", true)).unwrap_or(true);
+        if !enabled {
+            return;
+        }
+        let found = crate::pyenv::find(dir);
+        let active = self.venv_active.borrow().clone();
+        match (found, active) {
+            (Some(v), Some(a)) if v.root == a => {}
+            (Some(v), _) => self.activate_venv(&v),
+            (None, Some(_)) => {
+                self.terminal.feed_child(b" deactivate 2>/dev/null\n");
+                *self.venv_active.borrow_mut() = None;
+                self.set_title(dir);
+            }
+            (None, None) => {}
+        }
     }
 
     pub fn focus(&self) {

@@ -1246,6 +1246,16 @@ impl Window {
         for file in self.recent.borrow().iter().skip(1) {
             entries.push(PaletteEntry { title: display_name(file), detail: format!("Recent · {}", location_text(file)), icon: "document-open-recent-symbolic", target: PaletteTarget::Folder(file.clone()) });
         }
+        if let Some(py) = self.active_pane().and_then(|p| p.cwd().path()).and_then(|d| crate::pyui::menu_state(&d, false)) {
+            let rows: Vec<(&str, &str)> = if py.has_venv {
+                vec![("py-activate", "Python: Activate venv in Terminal Panel"), ("py-install", "Python: Install Requirements"), ("py-freeze", "Python: Freeze to requirements.txt"), ("py-repl", "Python: REPL in venv"), ("py-recreate", "Python: Recreate venv…")]
+            } else {
+                vec![("py-create", "Python: Create venv here"), ("py-repl", "Python: REPL")]
+            };
+            for (action, label) in rows {
+                entries.push(PaletteEntry { title: label.into(), detail: "terminal panel".into(), icon: "applications-science-symbolic", target: PaletteTarget::Action(action.into()) });
+            }
+        }
         for (i, t) in crate::templates::list().iter().enumerate() {
             entries.push(PaletteEntry { title: format!("New from Template: {}", crate::templates::label(t)), detail: "creates it here".into(), icon: "folder-templates-symbolic", target: PaletteTarget::Action(format!("new-from-template::{i}")) });
         }
@@ -1605,6 +1615,8 @@ pub struct MenuFlags {
     pub theme: bool,
     /// Selection is local (share / scp make sense).
     pub local: bool,
+    /// A single .py file with a venv around it.
+    pub py_script: bool,
     /// A single audio or video file.
     pub media: bool,
     /// Exactly two items selected (compare).
@@ -1677,6 +1689,9 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     if single_dir && !in_trash && crate::hypr::available() {
         open.append(Some("Open in New Workspace"), Some("win.open-workspace"));
     }
+    if f.py_script && !in_trash {
+        open.append(Some("Run in venv (Terminal Panel)"), Some("win.py-run"));
+    }
     if f.images && !in_trash {
         let img = gio::Menu::new();
         img.append(Some("Set as Wallpaper"), Some("win.set-wallpaper"));
@@ -1746,6 +1761,30 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
 }
 
 pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>, in_repo: bool) -> gio::Menu {
+    background_menu_model_ext(in_trash, project, in_repo, None)
+}
+
+pub fn python_menu(py: &crate::pyui::PyMenu) -> gio::Menu {
+    let m = gio::Menu::new();
+    if py.has_venv {
+        m.append(Some("Activate venv in Terminal Panel"), Some("win.py-activate"));
+        if py.has_requirements {
+            m.append(Some(if crate::pyenv::uv_available() { "Install Requirements (uv)" } else { "Install Requirements (pip)" }), Some("win.py-install"));
+        }
+        m.append(Some("Freeze to requirements.txt"), Some("win.py-freeze"));
+        m.append(Some("Python REPL in venv"), Some("win.py-repl"));
+        if py.gitignore_missing {
+            m.append(Some("Add venv to .gitignore"), Some("win.py-gitignore"));
+        }
+        m.append(Some("Recreate venv…"), Some("win.py-recreate"));
+    } else {
+        m.append(Some(if crate::pyenv::uv_available() { "Create venv here (uv venv .venv)" } else { "Create venv here (python -m venv .venv)" }), Some("win.py-create"));
+        m.append(Some("Python REPL"), Some("win.py-repl"));
+    }
+    m
+}
+
+pub fn background_menu_model_ext(in_trash: bool, project: Option<&projects::Project>, in_repo: bool, python: Option<&crate::pyui::PyMenu>) -> gio::Menu {
     let menu = gio::Menu::new();
     if in_trash {
         let s = gio::Menu::new();
@@ -1772,7 +1811,13 @@ pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>
             sub.append(Some(&action.label), Some(&format!("win.project-run::{i}")));
         }
         menu.append_submenu(Some(&format!("{} project", project.kind)), &sub);
+        if let Some(py) = python {
+            menu.append_submenu(Some("Python"), &python_menu(py));
+        }
     } else {
+        if let Some(py) = python {
+            menu.append_submenu(Some("Python"), &python_menu(py));
+        }
         let s = gio::Menu::new();
         s.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
         menu.append_section(None, &s);

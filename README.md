@@ -38,6 +38,8 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![archive](docs/screenshot-archive.png) | **Browse archives in place**: `Enter` on a `.zip` / `.tar.*` opens it like a folder through GVFS; copy single files out, *Extract Here* stays in the menu. Off in Preferences if you prefer the default app. |
 | ![batch rename](docs/screenshot-batch-meta.png) | **Batch rename with metadata and regex**: `[exif]` photo date, `[artist]` `[title]` `[album]` `[track]` from audio tags (ffprobe), `[N:3]` zero-padded counters, and a regular-expression find with `$1` groups in the replacement. |
 | ![theme export](docs/screenshot-theme-export.png) | **Omarchy theme sharing**: *Export Omarchy Theme…* packs a theme folder (with its `preview.png`) into `~/Downloads/<name>.tar.gz`; *Install as Omarchy Theme* on such an archive unpacks it into `~/.config/omarchy/themes`, ready for `omarchy-theme-set`. Publishing to others still goes through a git repository and `omarchy-theme-install <url>`. |
+| ![venv](docs/screenshot-venv-terminal.png) | **Python virtual environments**: a `.venv` (or `venv`, `env`) is recognised by its `pyvenv.cfg` and shows a flask badge with Python version, package count and the tool that made it (uv, virtualenv, venv); the status line says `.venv · Python 3.13 · 42 packages (uv)` while you are in the project. The terminal panel activates the venv when you enter the project and deactivates it when you leave (switchable in Preferences); the panel title shows `(.venv)`. |
+| ![requirements](docs/screenshot-venv-reqs.png) | **Requirements at a glance**: selecting `requirements.txt` or `pyproject.toml` lists every requirement with ✓ installed (and version) or ✗ missing against the project's venv; selecting the venv folder lists its packages. Context menu › *Python*: Create venv (`uv venv`, else `python -m venv`), Activate in Terminal Panel (`Ctrl+Alt+V`), Install Requirements (`uv pip install -r` / `uv sync` / pip), Freeze, REPL in the venv, Add venv to .gitignore, Recreate venv. A `.py` file gets *Run in venv*. Moving a venv warns you that it must be recreated. |
 | ![hidden](docs/screenshot-hidden.png) | **Hidden files**: the eye button in the header (or `Ctrl+H`) shows or hides dotfiles and backups. While hidden the status line says how many there are (`14 items (+2 hidden)`); while shown they stay clearly apart: dimmed, italic, with a greyed icon. |
 | ![music](docs/screenshot-music.png) | **Play music and video in place**: an audio file shows its cover and transport controls in the preview pane, `Space` (Quick Look) starts playing right away, *Play* in the context menu does the same; `←`/`→` move through the album. Videos play in the preview and in Quick Look with GTK's player. GStreamer does the decoding, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs and the preview pane** (`F3`). Images, PDFs (first page, page count), text files in monospace, folder item counts. |
@@ -136,6 +138,7 @@ package list or pulled in by one that is (Nautilus, Evince, pacman):
 | `imagemagick` (`magick`) | Image › rotate, convert, resize | yes | the Image menu reports that it is missing |
 | `qrencode` | QR code in *Share on Local Network* | yes | the dialog shows the link only |
 | `python` | *Share on Local Network* (`http.server`) | yes | sharing is unavailable |
+| `uv` (else `python -m venv` / `pip`) | Python › Create venv, Install, Freeze | no (`sudo pacman -S uv`) | the stock venv and pip commands are used |
 | `docker` or `podman` | container volumes in the sidebar | docker: yes | the *Containers* section stays hidden |
 | `jq` | `plugin/validate.sh`, `omarchy plugin` commands | yes | only needed for plugin development |
 | `xdg-desktop-portal-hyprland`, `xdg-desktop-portal-gtk` | Open With…, file dialogs | yes | GTK falls back to its own dialogs |
@@ -248,6 +251,7 @@ widget, drops it from the bar layout and deletes the checkout.
 | `Ctrl+Alt+C` / `Ctrl+Alt+B` | Git commit / switch branch (click a badge to stage or unstage) |
 | `Shift+F5` / `Shift+F6` | Copy / move to the other pane of the split |
 | `Ctrl+Alt+D` `Ctrl+Alt+M` `Ctrl+Alt+S` | Compare, edit note, save search as smart folder |
+| `Ctrl+Alt+V` | Activate the project's Python venv in the terminal panel |
 | `Ctrl+Alt+I` | Change icon |
 | `Ctrl+Alt+1…7` / `Ctrl+Alt+0` | Tag red, orange, yellow, green, blue, purple, gray / remove tag |
 | `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` | Copy, cut, paste, copy path |
@@ -453,6 +457,7 @@ cargo clippy
 | `bindings` | the bindings table, the searchable overlay, `--print-bindings` |
 | `features` | smart folders, dual pane, compare, bulk commands, checksums, notes, templates, theme export, archives |
 | `perms` | permissions and ownership editor |
+| `pyenv` / `pyui` | Python venv detection, requirements check, venv actions, terminal auto-activation |
 | `smart` / `compare` / `bulk` / `checksum` / `templates` / `notes` / `hypr` / `trashauto` | the logic behind those features, each with tests |
 | `completion` / `quicklook` | path completion, Quick Look |
 | `prefs` | the preferences file |

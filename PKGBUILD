@@ -23,6 +23,7 @@ optdepends=(
   'qrencode: QR code for "Share on Local Network"'
   'python: serves "Share on Local Network" (http.server)'
   'docker: container volumes in the sidebar (or podman)'
+  'uv: fast Python venv creation and installs from the Python menu'
   'xdg-desktop-portal-hyprland: "Open With" chooser'
   'alacritty: terminal for "Open Terminal Here"'
   'uwsm: launch the terminal as a proper session app'

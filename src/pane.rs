@@ -50,6 +50,7 @@ pub struct Pane {
     pub background_menu: gtk::PopoverMenu,
     pub cell_items: RefCell<HashMap<gtk::Widget, gtk::ListItem>>,
     pub git: RefCell<Option<crate::git::RepoStatus>>,
+    pub venv: RefCell<Option<crate::pyenv::Venv>>,
     pub term_paned: gtk::Paned,
     pub term: RefCell<Option<Rc<crate::termpanel::TermPanel>>>,
     pub state: RefCell<PaneState>,
@@ -161,6 +162,7 @@ impl Pane {
             background_menu,
             cell_items: RefCell::new(HashMap::new()),
             git: RefCell::new(None),
+            venv: RefCell::new(None),
             term_paned,
             term: RefCell::new(None),
             state: RefCell::new(PaneState {
@@ -290,8 +292,16 @@ impl Pane {
                     None => note.set_visible(false),
                 }
                 let secret = item.is_secret();
-                lock.set_visible(is_vault || is_open_mount || secret);
-                if secret {
+                let venv_dir = item.is_dir() && !is_vault && path.as_ref().map(|d| crate::pyenv::is_venv_dir(d)).unwrap_or(false);
+                lock.set_visible(is_vault || is_open_mount || secret || venv_dir);
+                lock.remove_css_class("omafile-venv");
+                if venv_dir {
+                    lock.set_icon_name(Some("applications-science-symbolic"));
+                    lock.add_css_class("omafile-venv");
+                    let v = p.venv.borrow();
+                    let info = v.as_ref().filter(|v| Some(&v.root) == path.as_ref()).map(crate::pyenv::summary).unwrap_or_else(|| "Python virtual environment".into());
+                    lock.set_tooltip_text(Some(&info));
+                } else if secret {
                     lock.set_icon_name(Some("dialog-password-symbolic"));
                     lock.add_css_class("omafile-secret");
                     lock.set_tooltip_text(Some("Looks like a secret: preview is masked, copying asks first"));
@@ -712,19 +722,30 @@ impl Pane {
         let this = Rc::downgrade(self);
         glib::spawn_future_local(async move {
             let git_wanted = file.is_native() && crate::git::available();
-            let (result, git) = futures_util::future::join(ops::list_dir(&file), async {
-                if git_wanted {
-                    crate::git::status(&file.path().unwrap_or_default()).await
-                } else {
-                    None
-                }
-            })
+            let venv_path = file.path();
+            let (result, git, venv) = futures_util::future::join3(
+                ops::list_dir(&file),
+                async {
+                    if git_wanted {
+                        crate::git::status(&file.path().unwrap_or_default()).await
+                    } else {
+                        None
+                    }
+                },
+                async {
+                    match venv_path {
+                        Some(d) => gio::spawn_blocking(move || crate::pyenv::find(&d)).await.ok().flatten(),
+                        None => None,
+                    }
+                },
+            )
             .await;
             let Some(p) = this.upgrade() else { return };
             if p.state.borrow().generation != generation {
                 return;
             }
             *p.git.borrow_mut() = git;
+            *p.venv.borrow_mut() = venv;
             p.state.borrow_mut().loading = false;
             p.check_disk_space(&file);
             let selected: Vec<gio::File> = p.selected_items().iter().map(|i| i.file()).collect();
@@ -1392,6 +1413,11 @@ impl Pane {
         } else if deep {
         } else if let Some(repo) = self.git.borrow().as_ref() {
             text.push_str(&format!("  ·  {}", repo.summary()));
+            if let Some(v) = self.venv.borrow().as_ref() {
+                text.push_str(&format!("  ·  {}", crate::pyenv::summary(v)));
+            }
+        } else if let (Some(v), Some(path)) = (self.venv.borrow().as_ref(), self.state.borrow().cwd.path()) {
+            text.push_str(&format!("  ·  {}  ·  {}", window::abbreviate_home(&path), crate::pyenv::summary(v)));
         } else if let Some(path) = self.state.borrow().cwd.path() {
             text.push_str(&format!("  ·  {}", window::abbreviate_home(&path)));
         } else {
@@ -1456,6 +1482,7 @@ impl Pane {
                 theme,
                 local: items.iter().all(|i| i.target_file().is_native()),
                 media: items.len() == 1 && items[0].is_media(),
+                py_script: items.len() == 1 && items[0].name().ends_with(".py") && items[0].target_file().is_native(),
                 pair: items.len() == 2 && items.iter().all(|i| i.target_file().is_native()),
                 split: self.window.upgrade().map(|w| w.is_split()).unwrap_or(false),
                 theme_archive: items.len() == 1 && items[0].is_archive() && items[0].target_file().path().map(|p| crate::omarchy::archive_is_theme(&p)).unwrap_or(false),
@@ -1465,8 +1492,9 @@ impl Pane {
             self.item_menu.popup();
         } else {
             let project = self.cwd().path().and_then(|d| crate::projects::detect(&d));
+            let python = self.cwd().path().and_then(|d| crate::pyui::menu_state(&d, self.git.borrow().is_some()));
             let in_repo = self.git.borrow().is_some();
-            self.background_menu.set_menu_model(Some(&window::background_menu_model(in_trash, project.as_ref(), in_repo)));
+            self.background_menu.set_menu_model(Some(&window::background_menu_model_ext(in_trash, project.as_ref(), in_repo, python.as_ref())));
             self.background_menu.set_pointing_to(Some(&rect));
             self.background_menu.popup();
         }

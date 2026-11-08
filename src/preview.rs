@@ -159,6 +159,32 @@ impl PreviewPane {
             return;
         }
         if let Some(item) = item {
+            if let Some(path) = item.target_file().path() {
+                if item.is_dir() && crate::pyenv::is_venv_dir(&path) {
+                    if let Some(v) = crate::pyenv::read(&path) {
+                        self.show_python(item, &format!("Python {}  ·  {}  ·  {} packages", v.version, v.tool, v.packages.len()), v.packages.iter().map(|(n, ver)| (format!("{n} {ver}"), Some(()))).collect(), "Virtual environment  ·  Python › Activate puts it into the terminal panel");
+                        return;
+                    }
+                }
+                let name = item.name();
+                if name == "requirements.txt" || name == "pyproject.toml" || name.starts_with("requirements") && name.ends_with(".txt") {
+                    if let Ok(text) = std::fs::read_to_string(&path) {
+                        let reqs = if name == "pyproject.toml" { crate::pyenv::pyproject_deps(&text) } else { crate::pyenv::requirements_txt(&text) };
+                        if !reqs.is_empty() {
+                            let venv = path.parent().and_then(crate::pyenv::find);
+                            let checked = crate::pyenv::check(&reqs, venv.as_ref());
+                            let missing = checked.iter().filter(|(_, v)| v.is_none()).count();
+                            let rows: Vec<(String, Option<()>)> = checked.iter().map(|(n, v)| (match v { Some(ver) => format!("{n} {ver}"), None => n.clone() }, v.as_ref().map(|_| ()))).collect();
+                            let hint = match &venv {
+                                Some(v) => format!("{}  ·  {} of {} installed{}", crate::pyenv::summary(v), reqs.len() - missing, reqs.len(), if missing > 0 { "  ·  Python › Install Requirements" } else { "" }),
+                                None => "No venv found  ·  Python › Create venv here".into(),
+                            };
+                            self.show_python(item, &format!("{}  ·  {} requirements", item.type_description(), reqs.len()), rows, &hint);
+                            return;
+                        }
+                    }
+                }
+            }
             if item.is_secret() {
                 self.name.set_text(&item.display_name());
                 self.details.set_text(&format!("{}  ·  {}", item.type_description(), ops::human_size(item.size())));
@@ -279,6 +305,40 @@ impl PreviewPane {
 }
 
 impl PreviewPane {
+    /// Package / requirement list with ✓ (installed, green) and ✗ (missing, red).
+    fn show_python(self: &Rc<Self>, item: &FileItem, details: &str, rows: Vec<(String, Option<()>)>, hint: &str) {
+        self.name.set_text(&item.display_name());
+        self.details.set_text(details);
+        self.hint.set_text(hint);
+        if let Some(icon) = item.icon() {
+            self.icon.set_from_gicon(&icon);
+        }
+        self.stack.set_visible_child_name("text");
+        let buffer = self.text.buffer();
+        buffer.set_text("");
+        let table = buffer.tag_table();
+        let palette = crate::theme::current();
+        let tag = |name: &str, color: Option<String>| -> gtk::TextTag {
+            let t = table.lookup(name).unwrap_or_else(|| {
+                let t = gtk::TextTag::new(Some(name));
+                table.add(&t);
+                t
+            });
+            if let Some(c) = color {
+                t.set_foreground(Some(&c));
+            }
+            t
+        };
+        let ok = tag("diff-add", palette.as_ref().map(|p| p.green.hex()));
+        let bad = tag("diff-del", palette.as_ref().map(|p| p.red.hex()));
+        let mut end = buffer.end_iter();
+        for (label, installed) in rows {
+            let (mark, t) = if installed.is_some() { ("✓ ", &ok) } else { ("✗ ", &bad) };
+            buffer.insert_with_tags(&mut end, mark, &[t]);
+            buffer.insert(&mut end, &format!("{label}\n"));
+        }
+    }
+
     /// Audio or video: GTK's media player (GStreamer backend) in the pane.
     fn show_media(self: &Rc<Self>, item: &FileItem) {
         self.name.set_text(&item.display_name());

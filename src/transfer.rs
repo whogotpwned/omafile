@@ -222,8 +222,11 @@ impl Window {
         if cancel.is_cancelled() {
             message.push_str(", cancelled");
         }
+        let moved_venv = req.mode == Mode::Move && pairs.iter().any(|(src, _)| src.path().map(|p| crate::pyenv::is_venv_dir(&p) || crate::pyenv::VENV_NAMES.iter().any(|n| crate::pyenv::is_venv_dir(&p.join(n)))).unwrap_or(false));
         if let Some(e) = error {
             self.toast_error(&e);
+        } else if moved_venv {
+            self.record(match req.mode { Mode::Copy => Op::Copy(pairs), Mode::Move => Op::Move(pairs) }, &format!("{message}  ·  a Python venv moved: recreate it (Python › Recreate venv)"));
         } else if n > 0 {
             let op = match req.mode {
                 Mode::Copy => Op::Copy(pairs),

@@ -143,6 +143,7 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.compare", &["<Control><Alt>d"]),
     ("win.edit-note", &["<Control><Alt>m"]),
     ("win.save-smart", &["<Control><Alt>s"]),
+    ("win.py-activate", &["<Control><Alt>v"]),
 ];
 
 impl Window {
@@ -251,6 +252,14 @@ impl Window {
         simple("share-scp", Box::new(|w| w.share_copy_scp()));
         simple("share-lan", Box::new(|w| w.share_lan_dialog()));
         simple("save-smart", Box::new(|w| w.save_smart_dialog()));
+        simple("py-create", Box::new(|w| w.py_create()));
+        simple("py-activate", Box::new(|w| w.py_activate()));
+        simple("py-install", Box::new(|w| w.py_install()));
+        simple("py-freeze", Box::new(|w| w.py_freeze()));
+        simple("py-repl", Box::new(|w| w.py_repl()));
+        simple("py-run", Box::new(|w| w.py_run()));
+        simple("py-gitignore", Box::new(|w| w.py_gitignore()));
+        simple("py-recreate", Box::new(|w| w.py_recreate()));
         simple("copy-other", Box::new(|w| w.transfer_to_other_pane(crate::transfer::Mode::Copy)));
         simple("move-other", Box::new(|w| w.transfer_to_other_pane(crate::transfer::Mode::Move)));
         simple("compare", Box::new(|w| w.compare_selected()));
@@ -1133,6 +1142,18 @@ impl Window {
             group.add(&row("Note", &note));
         }
         page.add(&group);
+        if let Some(venv) = item.target_file().path().filter(|p| item.is_dir() && crate::pyenv::is_venv_dir(p)).and_then(|p| crate::pyenv::read(&p)) {
+            let py = adw::PreferencesGroup::builder().title("Python virtual environment").build();
+            py.add(&row("Python", if venv.version.is_empty() { "unknown" } else { &venv.version }));
+            py.add(&row("Base interpreter", &venv.base));
+            py.add(&row("Created with", &venv.tool));
+            if !venv.prompt.is_empty() {
+                py.add(&row("Prompt", &venv.prompt));
+            }
+            let list: Vec<String> = venv.packages.iter().map(|(n, v)| format!("{n} {v}")).collect();
+            py.add(&row(&format!("{} packages", venv.packages.len()), &list.join(", ")));
+            page.add(&py);
+        }
         page.add(&self.permissions_group(item));
 
         let icon = gtk::Image::new();
