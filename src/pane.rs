@@ -25,6 +25,9 @@ pub struct PaneState {
     /// Showing results of a recursive search instead of the directory.
     pub deep_results: bool,
     pub deep_pending: Option<glib::SourceId>,
+    pub deep_cancel: Option<gio::Cancellable>,
+    /// Title shown in the path bar for virtual listings such as a tag.
+    pub virtual_title: Option<String>,
 }
 
 pub struct Pane {
@@ -148,6 +151,8 @@ impl Pane {
                 loading: false,
                 deep_results: false,
                 deep_pending: None,
+                deep_cancel: None,
+                virtual_title: None,
             }),
             window: Rc::downgrade(window),
             thumbs: window.thumbs.clone(),
@@ -202,6 +207,7 @@ impl Pane {
             let label = gtk::Label::builder().xalign(0.0).ellipsize(pango::EllipsizeMode::Middle).hexpand(true).build();
             hbox.append(&thumb);
             hbox.append(&label);
+            hbox.append(&make_tag_dot());
             list_item.set_child(Some(&hbox));
             if let Some(p) = this.upgrade() {
                 p.cell_items.borrow_mut().insert(hbox.clone().upcast(), list_item.clone());
@@ -214,9 +220,11 @@ impl Pane {
             let Some(item) = list_item.item().and_downcast::<FileItem>() else { return };
             let hbox = list_item.child().and_downcast::<gtk::Box>().unwrap();
             let thumb = hbox.first_child().and_downcast::<gtk::Stack>().unwrap();
-            let label = hbox.last_child().and_downcast::<gtk::Label>().unwrap();
+            let dot = hbox.last_child().and_downcast::<gtk::Box>().unwrap();
+            let label = dot.prev_sibling().and_downcast::<gtk::Label>().unwrap();
             if let Some(p) = this.upgrade() {
                 bind_thumb(&p.thumbs, &thumb, &item, ICON_LIST, p.thumbnails_enabled());
+                bind_tag_dot(&dot, p.tag_of(&item));
             }
             label.set_text(&item.display_label());
             apply_item_classes(&hbox, &item);
@@ -306,8 +314,12 @@ impl Pane {
                 .ellipsize(pango::EllipsizeMode::Middle)
                 .max_width_chars(14)
                 .build();
+            let caption = gtk::Box::new(gtk::Orientation::Horizontal, 5);
+            caption.set_halign(gtk::Align::Center);
+            caption.append(&label);
+            caption.append(&make_tag_dot());
             vbox.append(&thumb);
-            vbox.append(&label);
+            vbox.append(&caption);
             list_item.set_child(Some(&vbox));
             if let Some(p) = this.upgrade() {
                 p.cell_items.borrow_mut().insert(vbox.clone().upcast(), list_item.clone());
@@ -320,9 +332,12 @@ impl Pane {
             let Some(item) = list_item.item().and_downcast::<FileItem>() else { return };
             let vbox = list_item.child().and_downcast::<gtk::Box>().unwrap();
             let thumb = vbox.first_child().and_downcast::<gtk::Stack>().unwrap();
-            let label = vbox.last_child().and_downcast::<gtk::Label>().unwrap();
+            let caption = vbox.last_child().and_downcast::<gtk::Box>().unwrap();
+            let label = caption.first_child().and_downcast::<gtk::Label>().unwrap();
+            let dot = caption.last_child().and_downcast::<gtk::Box>().unwrap();
             if let Some(p) = this.upgrade() {
                 bind_thumb(&p.thumbs, &thumb, &item, ICON_GRID, p.thumbnails_enabled());
+                bind_tag_dot(&dot, p.tag_of(&item));
             }
             label.set_text(&item.display_label());
             apply_item_classes(&vbox, &item);
@@ -348,6 +363,27 @@ impl Pane {
 
     fn setup_views(self: &Rc<Self>) {
         for view in [self.column_view.clone().upcast::<gtk::Widget>(), self.grid_view.clone().upcast()] {
+            // Keys that mean something else in text fields are handled on the views only.
+            let this = Rc::downgrade(self);
+            let keys = gtk::EventControllerKey::new();
+            keys.connect_key_pressed(move |_, key, _, state| {
+                let Some(p) = this.upgrade() else { return glib::Propagation::Proceed };
+                let Some(w) = p.window.upgrade() else { return glib::Propagation::Proceed };
+                let plain = !state.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK);
+                match key {
+                    gdk::Key::BackSpace if plain && !state.contains(gdk::ModifierType::SHIFT_MASK) => {
+                        p.go_up();
+                        glib::Propagation::Stop
+                    }
+                    gdk::Key::Delete if plain => {
+                        let action = if state.contains(gdk::ModifierType::SHIFT_MASK) { "delete" } else { "trash" };
+                        gio::prelude::ActionGroupExt::activate_action(&w.window, action, None);
+                        glib::Propagation::Stop
+                    }
+                    _ => glib::Propagation::Proceed,
+                }
+            });
+            view.add_controller(keys);
             let this = Rc::downgrade(self);
             let right = gtk::GestureClick::new();
             right.set_button(gdk::BUTTON_SECONDARY);
@@ -547,8 +583,12 @@ impl Pane {
             state.search.clear();
             state.generation += 1;
             state.deep_results = false;
+            state.virtual_title = None;
             if let Some(id) = state.deep_pending.take() {
                 id.remove();
+            }
+            if let Some(c) = state.deep_cancel.take() {
+                c.cancel();
             }
         }
         self.deep_toggle.set_active(false);
@@ -562,6 +602,13 @@ impl Pane {
     }
 
     pub fn reload(self: &Rc<Self>) {
+        if let Some(title) = self.virtual_title() {
+            if let Some(color) = title.strip_prefix("Tag: ") {
+                let color = color.to_lowercase();
+                self.show_tag(&color);
+            }
+            return;
+        }
         if self.state.borrow().deep_results {
             self.schedule_deep_search();
             return;
@@ -587,6 +634,15 @@ impl Pane {
                     for f in &selected {
                         p.select_file(f, false);
                     }
+                    // Keep the keyboard cursor on the selection instead of jumping to the top.
+                    if let Some(first) = (0..p.selection.n_items()).find(|i| p.selection.is_selected(*i)) {
+                        let flags = gtk::ListScrollFlags::FOCUS;
+                        if p.is_grid() {
+                            p.grid_view.scroll_to(first, flags, None);
+                        } else {
+                            p.column_view.scroll_to(first, None, flags, None);
+                        }
+                    }
                 }
                 Err(e) => {
                     p.store.remove_all();
@@ -607,6 +663,52 @@ impl Pane {
         });
     }
 
+    pub fn tag_of(&self, item: &FileItem) -> Option<String> {
+        self.window.upgrade().and_then(|w| w.tags.get(&item.file()))
+    }
+
+    /// Show every file carrying `color` as a virtual listing.
+    pub fn show_tag(self: &Rc<Self>, color: &str) {
+        let Some(w) = self.window.upgrade() else { return };
+        let files = w.tags.files_with(color);
+        {
+            let mut state = self.state.borrow_mut();
+            state.generation += 1;
+            state.deep_results = true;
+            state.virtual_title = Some(format!("Tag: {}", crate::tags::label(color)));
+            if let Some(c) = state.deep_cancel.take() {
+                c.cancel();
+            }
+        }
+        self.search_bar.set_search_mode(false);
+        let generation = self.state.borrow().generation;
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let infos = futures_util::future::join_all(files.iter().map(ops::query)).await;
+            let Some(p) = this.upgrade() else { return };
+            if p.state.borrow().generation != generation {
+                return;
+            }
+            let mut items = Vec::new();
+            for (file, info) in files.iter().zip(infos) {
+                if let Ok(item) = info {
+                    item.set_label(Some(window::location_text(file)));
+                    items.push(item);
+                }
+            }
+            p.store.remove_all();
+            p.store.extend_from_slice(&items);
+            p.filter.changed(gtk::FilterChange::Different);
+            p.update_empty();
+            p.selection_changed();
+        });
+        w.pane_navigated(self);
+    }
+
+    pub fn virtual_title(&self) -> Option<String> {
+        self.state.borrow().virtual_title.clone()
+    }
+
     pub fn thumbnails_enabled(&self) -> bool {
         self.window.upgrade().map(|w| w.thumbnails_enabled.get()).unwrap_or(true)
     }
@@ -619,7 +721,7 @@ impl Pane {
             id.remove();
         }
         let this = Rc::downgrade(self);
-        state.deep_pending = Some(glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+        state.deep_pending = Some(glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
             if let Some(p) = this.upgrade() {
                 p.state.borrow_mut().deep_pending = None;
                 p.run_deep_search();
@@ -631,7 +733,11 @@ impl Pane {
         {
             let mut state = self.state.borrow_mut();
             state.deep_results = false;
+            state.virtual_title = None;
             state.generation += 1;
+            if let Some(c) = state.deep_cancel.take() {
+                c.cancel();
+            }
         }
         self.filter.changed(gtk::FilterChange::Different);
         self.reload();
@@ -645,39 +751,69 @@ impl Pane {
             }
             return;
         }
+        let cancel = gio::Cancellable::new();
         let generation = {
             let mut state = self.state.borrow_mut();
+            if let Some(c) = state.deep_cancel.take() {
+                c.cancel();
+            }
+            state.deep_cancel = Some(cancel.clone());
             state.generation += 1;
             state.deep_results = true;
             state.generation
         };
         let cwd = self.cwd();
+        self.store.remove_all();
         self.status.set_text("Searching…");
+        self.update_empty();
+        let started = std::time::Instant::now();
         let this = Rc::downgrade(self);
+        let show_hidden = self.window.upgrade().map(|w| w.show_hidden()).unwrap_or(false);
+        // Every batch of paths is turned into items concurrently and appended
+        // at once, so the view fills while fd is still walking the tree.
+        let emit: Rc<dyn Fn(Vec<gio::File>, bool)> = Rc::new({
+            let this = this.clone();
+            let cwd = cwd.clone();
+            let query = query.clone();
+            move |files, done| {
+                let Some(p) = this.upgrade() else { return };
+                let this = this.clone();
+                let cwd = cwd.clone();
+                let query = query.clone();
+                let _ = p;
+                glib::spawn_future_local(async move {
+                    let infos = futures_util::future::join_all(files.iter().map(ops::query)).await;
+                    let Some(p) = this.upgrade() else { return };
+                    if p.state.borrow().generation != generation {
+                        return;
+                    }
+                    let mut items = Vec::new();
+                    for (file, info) in files.iter().zip(infos) {
+                        if let Ok(item) = info {
+                            let rel = cwd.relative_path(file).map(|r| r.to_string_lossy().to_string()).unwrap_or_else(|| item.display_name());
+                            item.set_label(Some(rel));
+                            items.push(item);
+                        }
+                    }
+                    p.store.extend_from_slice(&items);
+                    if done {
+                        p.store.sort(|a, b| {
+                            let a = a.downcast_ref::<FileItem>().unwrap();
+                            let b = b.downcast_ref::<FileItem>().unwrap();
+                            crate::search::rank(&a.display_label(), &query).cmp(&crate::search::rank(&b.display_label(), &query))
+                        });
+                        p.state.borrow_mut().deep_cancel = None;
+                        if std::env::var_os("OMAFILE_TRACE").is_some() {
+                            eprintln!("search \"{query}\": {} results in {} ms", p.store.n_items(), started.elapsed().as_millis());
+                        }
+                    }
+                    p.update_empty();
+                    p.selection_changed();
+                });
+            }
+        });
         glib::spawn_future_local(async move {
-            let show_hidden = this.upgrade().and_then(|p| p.window.upgrade()).map(|w| w.show_hidden()).unwrap_or(false);
-            let files = crate::search::deep_search(&cwd, &query, show_hidden, 400).await;
-            let Some(p) = this.upgrade() else { return };
-            if p.state.borrow().generation != generation {
-                return;
-            }
-            let mut items = Vec::new();
-            for file in files {
-                if let Ok(item) = ops::query(&file).await {
-                    let rel = cwd.relative_path(&file).map(|r| r.to_string_lossy().to_string()).unwrap_or_else(|| item.display_name());
-                    item.set_label(Some(rel));
-                    items.push(item);
-                }
-                if p.state.borrow().generation != generation {
-                    return;
-                }
-            }
-            p.store.remove_all();
-            p.store.extend_from_slice(&items);
-            // The name filter must not hide results whose match is in the path.
-            p.filter.changed(gtk::FilterChange::Different);
-            p.update_empty();
-            p.selection_changed();
+            crate::search::deep_search(&cwd, &query, show_hidden, cancel, emit).await;
         });
     }
 
@@ -845,7 +981,10 @@ impl Pane {
         let total = self.selection.n_items();
         let selected = self.selected_items();
         let deep = self.state.borrow().deep_results;
-        let mut text = if deep {
+        let virtual_view = self.state.borrow().virtual_title.is_some();
+        let mut text = if virtual_view {
+            format!("{total} tagged {}", if total == 1 { "item" } else { "items" })
+        } else if deep {
             format!("{total} {} found", if total == 1 { "match" } else { "matches" })
         } else {
             format!("{total} {}", if total == 1 { "item" } else { "items" })
@@ -912,6 +1051,16 @@ impl Pane {
     }
 }
 
+impl Drop for Pane {
+    fn drop(&mut self) {
+        self.item_menu.unparent();
+        self.background_menu.unparent();
+        if let Some(c) = self.state.borrow_mut().deep_cancel.take() {
+            c.cancel();
+        }
+    }
+}
+
 /// Icon-or-thumbnail widget used in both views.
 fn make_thumb(size: i32) -> gtk::Stack {
     let stack = gtk::Stack::new();
@@ -950,6 +1099,28 @@ fn bind_thumb(thumbs: &Rc<ThumbCache>, stack: &gtk::Stack, item: &FileItem, size
         picture.set_paintable(None::<&gdk::Paintable>);
     }
     stack.set_visible_child_name(if picture.paintable().is_some() { "thumb" } else { "icon" });
+}
+
+fn make_tag_dot() -> gtk::Box {
+    let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    dot.add_css_class("omafile-tag-dot");
+    dot.set_valign(gtk::Align::Center);
+    dot.set_visible(false);
+    dot
+}
+
+fn bind_tag_dot(dot: &gtk::Box, color: Option<String>) {
+    for (name, _, _) in crate::tags::COLORS {
+        dot.remove_css_class(&format!("omafile-tag-{name}"));
+    }
+    match color {
+        Some(c) => {
+            dot.add_css_class(&format!("omafile-tag-{c}"));
+            dot.set_tooltip_text(Some(&format!("Tag: {}", crate::tags::label(&c))));
+            dot.set_visible(true);
+        }
+        None => dot.set_visible(false),
+    }
 }
 
 fn apply_item_classes(widget: &impl IsA<gtk::Widget>, item: &FileItem) {

@@ -1,5 +1,13 @@
 # omafile
 
+[![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button-omarchy-shell-plugin)
+[![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
+[![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
+[![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
+[![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
+
+`omarchy` · `hyprland` · `wayland` · `file-manager` · `gtk4` · `libadwaita` · `rust` · `sftp` · `quickshell-plugin` · `tags` · `thumbnails`
+
 A native GTK 4 / libadwaita file manager for [Omarchy](https://omarchy.org),
 plus an Omarchy shell plugin that puts it on the bar. It looks like it shipped
 with the system: colours, accent, light/dark mode and the icon theme come from
@@ -14,11 +22,12 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, image and PDF thumbnails, rubber-band and multi-selection, hidden-file toggle, live reload when a folder changes. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs and the preview pane** (`F3`). Images, PDFs (first page, page count), text files in monospace, folder item counts. |
 | ![split](docs/screenshot-split.png) | **Split view** (`F6`): two sets of tabs side by side, each with its own history. Drag files across, or between a local and a remote tab. The active side carries the accent border. |
-| ![search](docs/screenshot-search.png) | **Recursive search** (`Ctrl+Shift+F`) through the current folder and everything below, powered by `fd` when installed, with a GIO walk as fallback so it also works on servers. Results show their relative path. |
+| ![search](docs/screenshot-search.png) | **Recursive search** (`Ctrl+Shift+F`) through the current folder and everything below. `fd` streams matches while it walks, results appear in batches as they arrive, the previous search is killed the moment you type on, and the final list is ranked (name starts with the query, name contains it, path contains it). On a 5,300-file tree a short query returns in about 40 ms, a query with 200+ hits in under 300 ms including the file information for every hit. A GIO walk takes over where `fd` cannot go, such as SFTP servers. |
 | ![batch rename](docs/screenshot-batch.png) | **Batch rename**: select several files and press `F2`. Pattern with `[name]`, `[ext]`, `[N]`, `[date]`, then find/replace, with a live preview and conflict detection. |
 | ![sftp](docs/screenshot-sftp.png) | **SFTP / SCP**: hosts from `~/.ssh/config` in the sidebar, *Connect to Server…* for `user@host[:port]/path`, native credential prompts, mounted servers under *Devices*. Copy, paste, drag and drop, rename and preview work on remote files like on local ones. |
 | ![icon chooser](docs/screenshot-icon.png) | **Custom icons** per folder or file (`Ctrl+Alt+I`): pick one from the icon theme or use your own image. Stored as GIO metadata, so Nautilus shows the same icon. |
 | ![preferences](docs/screenshot-prefs.png) | **Preferences** (`Ctrl+,`): override the icon theme (by default omafile follows the Yaru variant Omarchy's theme asks for), thumbnails, default view, hidden files. |
+| ![tags](docs/screenshot-tags.png) | **Tags**, Finder style: give folders and files one of seven colours (`Ctrl+Alt+1…7`, `Ctrl+Alt+0` removes). The dot shows in list and grid, every colour in use appears under *Tags* in the sidebar and lists all tagged items wherever they are. Tags are stored as GIO metadata on the file and in an index, and follow renames and moves done in omafile. |
 | ![light](docs/screenshot-light.png) | **Theme following**: here the same build after `omarchy theme set "Catppuccin Latte"`, which turned the window light and the folders blue, without a restart. |
 
 Also: bookmarks shared with the GTK file chooser (`Ctrl+D`), *Recent* and
@@ -41,6 +50,10 @@ Connect to Server
 Custom folder icon applied
 
 ![custom icon](docs/screenshot-icon-applied.png)
+
+A tag opened from the sidebar lists every tagged item with its location
+
+![tag listing](docs/screenshot-tagview.png)
 
 </details>
 
@@ -69,7 +82,19 @@ Build dependencies on Omarchy: `sudo pacman -S --needed rust gtk4 libadwaita`.
 Runtime extras are already part of a stock install: `gvfs` (trash, drives,
 SFTP), `poppler` (PDF previews), `fd` (fast search), `libarchive` (archives).
 
-Arch package: `makepkg -si`.
+Arch package: `makepkg -si`, remove with `sudo pacman -Rns omafile`.
+
+### Uninstall
+
+```sh
+./uninstall.sh            # binary, desktop entry, shortcuts, default-app setting
+./uninstall.sh --purge    # also ~/.config/omafile (preferences, tags)
+omarchy plugin remove whogotpwned.omafile   # the bar button, if you added it
+```
+
+`uninstall.sh` reverses `install.sh` step by step: it hands folders back to
+Nautilus if omafile was the default, removes only the binding lines
+`install.sh` appended, and leaves everything else in your config untouched.
 
 ### Bar button (Omarchy shell plugin)
 
@@ -90,8 +115,24 @@ omarchy bar set  whogotpwned.omafile path ~/Projects        # folder opened on c
 ```
 
 Drag and drop in the bar and *Appearance › Menu Bar* in the Omarchy menu work
-too. Left click opens the configured folder, right click the active terminal's
-directory (like Omarchy's own "File manager (cwd)" binding), middle click `/`.
+too. `omarchy plugin add` asks for the section interactively as well.
+
+What the button does:
+
+| Click | Action |
+|---|---|
+| Left | Raises the omafile window that is already open (`omarchy-launch-or-focus`), otherwise opens the configured folder |
+| Right | Places menu: Home, Downloads, Documents, Pictures, Projects, Trash, the folder of the active terminal, new window |
+| Middle | Opens the folder of the active terminal (like Omarchy's own "File manager (cwd)" binding) |
+
+The icon is a Nerd Font folder glyph drawn with the bar's font, exactly like
+the first-party widgets, so it matches the bar in every theme. `omarchy bar
+set whogotpwned.omafile icon "󰉋"` swaps it for any other glyph. The popup uses
+the shell's own `PopupCard` and `PopupMenuRow` components and therefore takes
+the theme's popup colours and corner radius.
+
+Removal is `omarchy plugin remove whogotpwned.omafile`, which disables the
+widget, drops it from the bar layout and deletes the checkout.
 
 ## Keyboard shortcuts
 
@@ -108,10 +149,17 @@ directory (like Omarchy's own "File manager (cwd)" binding), middle click `/`.
 | `Ctrl+Shift+N` `Ctrl+Alt+N` | New folder, new file |
 | `F2` | Rename, batch rename with several files selected |
 | `Ctrl+Alt+I` | Change icon |
+| `Ctrl+Alt+1…7` / `Ctrl+Alt+0` | Tag red, orange, yellow, green, blue, purple, gray / remove tag |
 | `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` | Copy, cut, paste, copy path |
 | `Delete` `Shift+Delete` | Trash, delete permanently |
 | `Ctrl+D` `Ctrl+Shift+K` `Ctrl+I` | Bookmark, connect to server, properties |
 | `Ctrl+,` `Ctrl+?` `Ctrl+Q` | Preferences, shortcuts, quit |
+
+Every shortcut is exercised by an automated run (`OMAFILE_TRACE=1` logs each
+action; a script presses every accelerator under Xvfb and checks that the
+matching action fired). Shortcuts that also mean something in a text field
+(`Ctrl+A/C/X/V`, `Backspace`, `Delete`) act on the text while a field has
+focus and on files otherwise.
 
 ## How it follows Omarchy
 
@@ -167,7 +215,8 @@ view = grid
 show-hidden = false
 ```
 
-Delete it to go back to following the theme for everything.
+Tags live next to it in `~/.config/omafile/tags` (`uri<TAB>colour` per line).
+Delete the directory to go back to following the theme for everything.
 
 ## Development
 
@@ -189,6 +238,7 @@ cargo clippy
 | `search` | recursive search with fd or a GIO walk |
 | `remote` | ssh config hosts, server URIs, GTK bookmarks |
 | `extras` | preferences, icon chooser, batch rename |
+| `tags` | colour tags: metadata, index file, virtual listings |
 | `prefs` | the preferences file |
 | `actions` | window actions, clipboard, dialogs, properties, shortcuts |
 | `plugin/` | the Omarchy shell bar widget |

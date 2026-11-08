@@ -14,7 +14,7 @@ type Handler = Box<dyn Fn(&Rc<Window>)>;
 pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.back", &["<Alt>Left"]),
     ("win.forward", &["<Alt>Right"]),
-    ("win.up", &["<Alt>Up", "BackSpace"]),
+    ("win.up", &["<Alt>Up"]),
     ("win.home", &["<Alt>Home"]),
     ("win.reload", &["F5", "<Control>r"]),
     ("win.show-hidden", &["<Control>h"]),
@@ -31,7 +31,6 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.new-folder", &["<Control><Shift>n"]),
     ("win.new-file", &["<Control><Alt>n"]),
     ("win.rename", &["F2"]),
-    ("win.trash", &["Delete"]),
     ("win.delete", &["<Shift>Delete"]),
     ("win.copy", &["<Control>c"]),
     ("win.cut", &["<Control>x"]),
@@ -48,15 +47,28 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.deep-search", &["<Control><Shift>f"]),
     ("win.preferences", &["<Control>comma"]),
     ("win.change-icon", &["<Control><Alt>i"]),
+    ("win.tag::red", &["<Control><Alt>1"]),
+    ("win.tag::orange", &["<Control><Alt>2"]),
+    ("win.tag::yellow", &["<Control><Alt>3"]),
+    ("win.tag::green", &["<Control><Alt>4"]),
+    ("win.tag::blue", &["<Control><Alt>5"]),
+    ("win.tag::purple", &["<Control><Alt>6"]),
+    ("win.tag::gray", &["<Control><Alt>7"]),
+    ("win.tag::none", &["<Control><Alt>0"]),
     ("win.shortcuts", &["<Control>question"]),
 ];
 
 impl Window {
     pub fn setup_actions(self: &Rc<Self>) {
+        let trace = std::env::var_os("OMAFILE_TRACE").is_some();
         let simple = |name: &str, f: Handler| {
             let action = gio::SimpleAction::new(name, None);
             let this = Rc::downgrade(self);
+            let name = name.to_string();
             action.connect_activate(move |_, _| {
+                if trace {
+                    eprintln!("action {name}");
+                }
                 if let Some(w) = this.upgrade() {
                     f(&w);
                 }
@@ -130,6 +142,7 @@ impl Window {
             }
         }));
         simple("preferences", Box::new(|w| w.show_preferences()));
+        simple("sidebar-tags", Box::new(|w| w.refresh_sidebar()));
         simple("split-view", Box::new(|w| w.toggle_split()));
         simple("deep-search", Box::new(move |w| {
             if let Some(p) = pane(w) {
@@ -139,13 +152,20 @@ impl Window {
             }
         }));
         simple("trash", Box::new(|w| w.trash_selected()));
-        simple("delete", Box::new(|w| w.delete_selected()));
+        simple("delete", Box::new(|w| if !w.focus_in_editable() { w.delete_selected() }));
         simple("restore", Box::new(|w| w.restore_selected()));
         simple("empty-trash", Box::new(|w| w.empty_trash()));
-        simple("copy", Box::new(|w| w.clip_selected(false)));
-        simple("cut", Box::new(|w| w.clip_selected(true)));
-        simple("paste", Box::new(|w| w.paste()));
-        simple("select-all", Box::new(move |w| { if let Some(p) = pane(w) { p.selection.select_all(); } }));
+        // Clipboard shortcuts belong to the text field while one has focus.
+        simple("copy", Box::new(|w| if !w.forward_to_editable("clipboard.copy") { w.clip_selected(false) }));
+        simple("cut", Box::new(|w| if !w.forward_to_editable("clipboard.cut") { w.clip_selected(true) }));
+        simple("paste", Box::new(|w| if !w.forward_to_editable("clipboard.paste") { w.paste() }));
+        simple("select-all", Box::new(move |w| {
+            if !w.forward_to_editable("selection.select-all") {
+                if let Some(p) = pane(w) {
+                    p.selection.select_all();
+                }
+            }
+        }));
         simple("copy-path", Box::new(|w| {
             let paths: Vec<String> = w.selected_items().iter().map(|i| crate::window::location_text(&i.target_file())).collect();
             if !paths.is_empty() {
@@ -210,6 +230,9 @@ impl Window {
         let hidden = gio::SimpleAction::new_stateful("show-hidden", None, &false.to_variant());
         let this = Rc::downgrade(self);
         hidden.connect_activate(move |action, _| {
+            if trace {
+                eprintln!("action show-hidden");
+            }
             let Some(w) = this.upgrade() else { return };
             let on = !action.state().and_then(|s| s.get::<bool>()).unwrap_or(false);
             action.set_state(&on.to_variant());
@@ -225,6 +248,9 @@ impl Window {
         let sidebar = gio::SimpleAction::new_stateful("show-sidebar", None, &true.to_variant());
         let this = Rc::downgrade(self);
         sidebar.connect_activate(move |action, _| {
+            if trace {
+                eprintln!("action show-sidebar");
+            }
             let Some(w) = this.upgrade() else { return };
             let on = !action.state().and_then(|s| s.get::<bool>()).unwrap_or(true);
             action.set_state(&on.to_variant());
@@ -235,6 +261,9 @@ impl Window {
         let preview = gio::SimpleAction::new_stateful("show-preview", None, &false.to_variant());
         let this = Rc::downgrade(self);
         preview.connect_activate(move |action, _| {
+            if trace {
+                eprintln!("action show-preview");
+            }
             let Some(w) = this.upgrade() else { return };
             let on = !action.state().and_then(|s| s.get::<bool>()).unwrap_or(false);
             action.set_state(&on.to_variant());
@@ -248,6 +277,9 @@ impl Window {
         let view = gio::SimpleAction::new_stateful("view", Some(glib::VariantTy::STRING), &"list".to_variant());
         let this = Rc::downgrade(self);
         view.connect_activate(move |action, param| {
+            if trace {
+                eprintln!("action view {:?}", param.and_then(|p| p.get::<String>()));
+            }
             let Some(w) = this.upgrade() else { return };
             let Some(mode) = param.and_then(|p| p.get::<String>()) else { return };
             action.set_state(&mode.to_variant());
@@ -265,9 +297,24 @@ impl Window {
         });
         self.window.add_action(&view);
 
+        let tag = gio::SimpleAction::new("tag", Some(glib::VariantTy::STRING));
+        let this = Rc::downgrade(self);
+        tag.connect_activate(move |_, param| {
+            if trace {
+                eprintln!("action tag {:?}", param.and_then(|p| p.get::<String>()));
+            }
+            let Some(w) = this.upgrade() else { return };
+            let Some(color) = param.and_then(|p| p.get::<String>()) else { return };
+            w.tag_selected(if color == "none" { None } else { Some(color) });
+        });
+        self.window.add_action(&tag);
+
         let sort = gio::SimpleAction::new_stateful("sort", Some(glib::VariantTy::STRING), &"name".to_variant());
         let this = Rc::downgrade(self);
         sort.connect_activate(move |action, param| {
+            if trace {
+                eprintln!("action sort {:?}", param.and_then(|p| p.get::<String>()));
+            }
             let Some(w) = this.upgrade() else { return };
             let Some(key) = param.and_then(|p| p.get::<String>()) else { return };
             action.set_state(&key.to_variant());
@@ -277,6 +324,49 @@ impl Window {
             }
         });
         self.window.add_action(&sort);
+    }
+
+    /// True when keyboard focus is inside a text field.
+    pub fn focus_in_editable(&self) -> bool {
+        gtk::prelude::GtkWindowExt::focus(&self.window)
+            .map(|f| f.is::<gtk::Text>() || f.is::<gtk::Editable>() || f.is::<gtk::TextView>() || f.ancestor(gtk::Entry::static_type()).is_some() || f.ancestor(gtk::SearchEntry::static_type()).is_some())
+            .unwrap_or(false)
+    }
+
+    /// Run a text-field action (`clipboard.copy`, …) on the focused widget instead of the file action.
+    pub fn forward_to_editable(&self, action: &str) -> bool {
+        let Some(focus) = gtk::prelude::GtkWindowExt::focus(&self.window) else { return false };
+        if !self.focus_in_editable() {
+            return false;
+        }
+        gtk::prelude::WidgetExt::activate_action(&focus, action, None).is_ok()
+    }
+
+    /// Dialogs take keyboard focus with them when they close; hand it back to the files.
+    pub fn refocus(self: &Rc<Self>) {
+        let this = Rc::downgrade(self);
+        glib::idle_add_local_once(move || {
+            let Some(w) = this.upgrade() else { return };
+            match w.active_pane() {
+                Some(p) => p.focus_view(),
+                None => gtk::prelude::GtkWindowExt::set_focus(&w.window, None::<&gtk::Widget>),
+            }
+            if std::env::var_os("OMAFILE_TRACE").is_some() {
+                let focus = gtk::prelude::GtkWindowExt::focus(&w.window).map(|f| f.type_().name().to_string());
+                eprintln!("refocus: pane={} focus={focus:?}", w.active_pane().is_some());
+            }
+        });
+    }
+
+    /// Present an adw::Dialog and restore focus to the file view afterwards.
+    pub fn present_dialog(self: &Rc<Self>, dialog: &adw::Dialog) {
+        let this = Rc::downgrade(self);
+        dialog.connect_closed(move |_| {
+            if let Some(w) = this.upgrade() {
+                w.refocus();
+            }
+        });
+        dialog.present(Some(&self.window));
     }
 
     fn open_terminal(&self, dir: &gio::File) {
@@ -352,6 +442,9 @@ impl Window {
                 let result = if cut { ops::move_file(src.clone(), dst.clone()).await } else { ops::copy_recursive(src.clone(), dst.clone()).await };
                 match result {
                     Ok(()) => {
+                        if cut {
+                            w.tags.moved(src, &dst);
+                        }
                         done += 1;
                         last = Some(dst);
                     }
@@ -391,6 +484,9 @@ impl Window {
         glib::spawn_future_local(async move {
             let (done, error) = run_each(&items, |item| ops::trash(item.file())).await;
             let Some(w) = this.upgrade() else { return };
+            for item in items.iter().take(done) {
+                w.tags.removed(&item.file());
+            }
             pane.reload();
             match error {
                 Some(e) => w.toast_error(&e),
@@ -437,6 +533,12 @@ impl Window {
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
         let this = Rc::downgrade(self);
+        let refocus = Rc::downgrade(self);
+        dialog.connect_closed(move |_| {
+            if let Some(w) = refocus.upgrade() {
+                w.refocus();
+            }
+        });
         dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
             if response != "empty" {
                 return;
@@ -471,6 +573,12 @@ impl Window {
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
         let this = Rc::downgrade(self);
+        let refocus = Rc::downgrade(self);
+        dialog.connect_closed(move |_| {
+            if let Some(w) = refocus.upgrade() {
+                w.refocus();
+            }
+        });
         dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
             if response != "delete" {
                 return;
@@ -479,6 +587,9 @@ impl Window {
             glib::spawn_future_local(async move {
                 let (done, error) = run_each(&items, |item| ops::delete_recursive(item.file())).await;
                 let Some(w) = this.upgrade() else { return };
+                for item in items.iter().take(done) {
+                    w.tags.removed(&item.file());
+                }
                 pane.reload();
                 match error {
                     Some(e) => w.toast_error(&e),
@@ -535,6 +646,12 @@ impl Window {
         dialog.set_close_response("cancel");
         let this = Rc::downgrade(self);
         let entry2 = entry.clone();
+        let refocus = Rc::downgrade(self);
+        dialog.connect_closed(move |_| {
+            if let Some(w) = refocus.upgrade() {
+                w.refocus();
+            }
+        });
         dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
             let Some(w) = this.upgrade() else { return };
             if response != "create" {
@@ -586,6 +703,12 @@ impl Window {
         dialog.set_close_response("cancel");
         let this = Rc::downgrade(self);
         let entry2 = entry.clone();
+        let refocus = Rc::downgrade(self);
+        dialog.connect_closed(move |_| {
+            if let Some(w) = refocus.upgrade() {
+                w.refocus();
+            }
+        });
         dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
             let Some(w) = this.upgrade() else { return };
             if response != "connect" {
@@ -618,6 +741,12 @@ impl Window {
         dialog.set_close_response("cancel");
         let this = Rc::downgrade(self);
         let entry2 = entry.clone();
+        let refocus = Rc::downgrade(self);
+        dialog.connect_closed(move |_| {
+            if let Some(w) = refocus.upgrade() {
+                w.refocus();
+            }
+        });
         dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
             let Some(w) = this.upgrade() else { return };
             if response != "create" {
@@ -661,6 +790,12 @@ impl Window {
         dialog.set_close_response("cancel");
         let this = Rc::downgrade(self);
         let entry2 = entry.clone();
+        let refocus = Rc::downgrade(self);
+        dialog.connect_closed(move |_| {
+            if let Some(w) = refocus.upgrade() {
+                w.refocus();
+            }
+        });
         dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
             let Some(w) = this.upgrade() else { return };
             if response != "rename" {
@@ -676,6 +811,7 @@ impl Window {
                 let Some(w) = this.upgrade() else { return };
                 match result {
                     Ok(new_file) => {
+                        w.tags.moved(&item.file(), &new_file);
                         pane.reload();
                         pane.select_file_later(new_file);
                     }
@@ -687,7 +823,7 @@ impl Window {
         entry.select_region(0, stem_end.map(|i| i as i32).unwrap_or(-1));
     }
 
-    pub fn show_properties(&self, item: &FileItem) {
+    pub fn show_properties(self: &Rc<Self>, item: &FileItem) {
         let page = adw::PreferencesPage::new();
         let group = adw::PreferencesGroup::new();
         let row = |title: &str, subtitle: &str| {
@@ -734,10 +870,10 @@ impl Window {
         vbox.append(&page);
         content.set_content(Some(&vbox));
         let dialog = adw::Dialog::builder().title("Properties").content_width(440).content_height(560).child(&content).build();
-        dialog.present(Some(&self.window));
+        self.present_dialog(&dialog);
     }
 
-    fn show_shortcuts(&self) {
+    fn show_shortcuts(self: &Rc<Self>) {
         let page = adw::PreferencesPage::new();
         let sections: &[(&str, &[(&str, &str)])] = &[
             ("Navigate", &[
@@ -790,7 +926,7 @@ impl Window {
         content.add_top_bar(&adw::HeaderBar::new());
         content.set_content(Some(&page));
         let dialog = adw::Dialog::builder().title("Keyboard Shortcuts").content_width(480).content_height(640).child(&content).build();
-        dialog.present(Some(&self.window));
+        self.present_dialog(&dialog);
     }
 }
 

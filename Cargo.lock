@@ -447,6 +447,7 @@ dependencies = [
 name = "omafile"
 version = "0.4.0"
 dependencies = [
+ "futures-util",
  "gio",
  "gtk4",
  "libadwaita",

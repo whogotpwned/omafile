@@ -2,21 +2,36 @@
   "schemaVersion": 1,
   "id": "whogotpwned.omafile",
   "name": "Omafile",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": "whogotpwned",
   "description": "Bar button that opens Omafile, the Omarchy-native file manager",
-  "kinds": ["bar-widget"],
-  "entryPoints": { "barWidget": "plugin/BarWidget.qml" },
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "plugin/BarWidget.qml"
+  },
   "barWidget": {
     "displayName": "Files",
-    "description": "Opens Omafile. Left click: the configured folder, right click: the active terminal's directory, middle click: a window at /",
+    "description": "Opens Omafile. Left click raises or opens the file manager, right click shows a places menu, middle click opens the active terminal's folder",
     "category": "Apps",
     "allowMultiple": false,
     "defaultSection": "left",
-    "defaults": { "path": "~", "icon": "" },
+    "defaults": {
+      "path": "~",
+      "icon": ""
+    },
     "schema": [
-      { "key": "path", "type": "string", "label": "Folder to open" },
-      { "key": "icon", "type": "string", "label": "Icon glyph (Nerd Font)" }
+      {
+        "key": "path",
+        "type": "string",
+        "label": "Folder for a left click"
+      },
+      {
+        "key": "icon",
+        "type": "string",
+        "label": "Icon glyph (Nerd Font)"
+      }
     ]
   }
 }

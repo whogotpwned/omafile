@@ -108,7 +108,7 @@ impl Window {
         page.add(&views);
 
         dialog.add(&page);
-        dialog.present(Some(&self.window));
+        self.present_dialog(dialog.upcast_ref());
     }
 
     // ----- custom icons --------------------------------------------------------------
@@ -201,7 +201,7 @@ impl Window {
                 }
             });
         });
-        dialog.present(Some(&self.window));
+        self.present_dialog(&dialog);
     }
 
     fn set_custom_icon(self: &Rc<Self>, file: &gio::File, value: Option<(&str, String)>) {
@@ -352,7 +352,7 @@ impl Window {
                 }
             });
         });
-        dialog.present(Some(&self.window));
+        self.present_dialog(&dialog);
     }
 }
 

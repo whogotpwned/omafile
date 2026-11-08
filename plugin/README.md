@@ -20,8 +20,13 @@ omarchy bar set  whogotpwned.omafile path ~/Projects
 or drag it in the bar, or use the menu under *Appearance › Menu Bar*. Valid
 sections are `left`, `centerBegin`, `center`, `centerEnd`, `right` and `tray`.
 
-Clicks: left opens the configured folder (`~` by default), right opens the
-active terminal's directory, middle opens a window at `/`.
+Clicks: left raises the open omafile window or opens the configured folder
+(`~` by default), right shows a places menu (Home, Downloads, Documents,
+Pictures, Projects, Trash, folder of the active terminal, new window), middle
+opens the active terminal's folder. The icon is a Nerd Font glyph in the bar's
+font; change it with `omarchy bar set whogotpwned.omafile icon "󰉋"`.
+
+Remove with `omarchy plugin remove whogotpwned.omafile`.
 
 Validate after changes:
 

@@ -7,6 +7,7 @@ mod prefs;
 mod preview;
 mod remote;
 mod search;
+mod tags;
 mod theme;
 mod thumbs;
 mod window;

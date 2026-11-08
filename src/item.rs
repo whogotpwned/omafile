@@ -205,7 +205,11 @@ impl FileItem {
     }
 
     pub fn symlink_target(&self) -> Option<String> {
-        self.info().symlink_target().map(|p| p.to_string_lossy().to_string())
+        let info = self.info();
+        if !info.has_attribute(gio::FILE_ATTRIBUTE_STANDARD_SYMLINK_TARGET) {
+            return None;
+        }
+        info.symlink_target().map(|p| p.to_string_lossy().to_string())
     }
 
     /// Sort key: directories first, then case-insensitive natural-ish name order.

@@ -17,6 +17,7 @@ path = "src/main.rs"
 gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_5"] }
 gio = { version = "0.22", features = ["v2_72"] }
+futures-util = "0.3"
 
 [profile.release]
 opt-level = 3

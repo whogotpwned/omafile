@@ -5,6 +5,7 @@ use crate::pane::Pane;
 use crate::prefs::Prefs;
 use crate::preview::PreviewPane;
 use crate::remote;
+use crate::tags::TagIndex;
 use crate::theme::ThemeManager;
 use crate::thumbs::ThumbCache;
 use adw::prelude::*;
@@ -29,6 +30,7 @@ pub enum PlaceKind {
     Bookmark,
     Ssh(String),
     Mount(gio::Mount),
+    Tag(String),
 }
 
 pub struct WinState {
@@ -48,6 +50,7 @@ pub struct Window {
     pub split_paned: gtk::Paned,
     pub split_boxes: [gtk::Box; 2],
     pub active_side: Cell<usize>,
+    pub ending_split: Cell<bool>,
     pub pathbar: gtk::Box,
     pub path_entry: gtk::Entry,
     pub path_stack: gtk::Stack,
@@ -61,6 +64,7 @@ pub struct Window {
     pub thumbs: Rc<ThumbCache>,
     pub prefs: Rc<Prefs>,
     pub theme: Rc<ThemeManager>,
+    pub tags: Rc<TagIndex>,
     pub thumbnails_enabled: Cell<bool>,
     pub state: RefCell<WinState>,
     pub syncing_sidebar: Cell<bool>,
@@ -212,6 +216,7 @@ impl Window {
             split_paned,
             split_boxes: [split_boxes[0].clone(), split_boxes[1].clone()],
             active_side: Cell::new(0),
+            ending_split: Cell::new(false),
             pathbar,
             path_entry,
             path_stack,
@@ -232,6 +237,7 @@ impl Window {
             }),
             prefs,
             theme,
+            tags: TagIndex::load(),
             syncing_sidebar: Cell::new(false),
             sidebar_target: Cell::new(None),
         });
@@ -256,23 +262,24 @@ impl Window {
                     }
                 }
             });
+            // Pages close through the tab view itself; this only cleans up afterwards.
             let this = Rc::downgrade(self);
-            self.tab_views[side].connect_close_page(move |view, page| {
-                if let Some(w) = this.upgrade() {
-                    let child = page.child();
-                    w.panes.borrow_mut().retain(|p| p.root.upcast_ref::<gtk::Widget>() != &child);
-                    if view.n_pages() <= 1 {
-                        if side == 1 || w.split_boxes[1].is_visible() {
-                            // Closing the last tab of a side ends the split view.
-                            let keep = if side == 1 { 0 } else { 1 };
-                            w.end_split(keep);
-                        } else {
-                            w.window.close();
-                        }
-                    }
+            self.tab_views[side].connect_page_detached(move |view, page, _| {
+                let Some(w) = this.upgrade() else { return };
+                if w.ending_split.get() {
+                    return; // pages are being moved between sides, not closed
                 }
-                view.close_page_finish(page, true);
-                glib::Propagation::Stop
+                let child = page.child();
+                w.panes.borrow_mut().retain(|p| p.root.upcast_ref::<gtk::Widget>() != &child);
+                if view.n_pages() == 0 {
+                    if w.is_split() {
+                        w.end_split();
+                    } else {
+                        w.window.close();
+                    }
+                } else {
+                    w.refocus();
+                }
             });
         }
     }
@@ -307,7 +314,7 @@ impl Window {
     /// F6: show a second set of tabs beside the first, or hide it again.
     pub fn toggle_split(self: &Rc<Self>) {
         if self.is_split() {
-            self.end_split(0);
+            self.end_split();
         } else {
             let dir = self.active_pane().map(|p| p.cwd()).unwrap_or_else(|| gio::File::for_path(glib::home_dir()));
             self.split_boxes[1].set_visible(true);
@@ -322,48 +329,29 @@ impl Window {
         }
     }
 
-    fn end_split(self: &Rc<Self>, keep: usize) {
-        let drop = if keep == 0 { 1 } else { 0 };
-        // Move remaining tabs of the dropped side over, then hide it.
-        let view = &self.tab_views[drop];
-        while view.n_pages() > 0 {
-            let page = view.nth_page(0);
+    /// Fold the right side into the left: its tabs move over, then it hides.
+    fn end_split(self: &Rc<Self>) {
+        self.ending_split.set(true);
+        let (from, to) = (&self.tab_views[1], &self.tab_views[0]);
+        while from.n_pages() > 0 {
+            let page = from.nth_page(0);
             let child = page.child();
-            let pane = self.panes.borrow().iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child).cloned();
-            view.close_page_finish(&page, true);
-            if let Some(pane) = pane {
-                pane.side.set(keep);
-                let new_page = self.tab_views[keep].append(&pane.root);
-                new_page.set_title(&display_name(&pane.cwd()));
-                new_page.set_icon(Some(&gio::ThemedIcon::new("folder-symbolic")));
+            if let Some(pane) = self.panes.borrow().iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child) {
+                pane.side.set(0);
             }
+            from.transfer_page(&page, to, to.n_pages());
         }
-        if keep == 0 {
-            self.split_boxes[1].set_visible(false);
-        } else {
-            // Keep the layout stable: the surviving side always becomes side 0.
-            let view1 = &self.tab_views[1];
-            while view1.n_pages() > 0 {
-                let page = view1.nth_page(0);
-                let child = page.child();
-                let pane = self.panes.borrow().iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child).cloned();
-                view1.close_page_finish(&page, true);
-                if let Some(pane) = pane {
-                    pane.side.set(0);
-                    let new_page = self.tab_views[0].append(&pane.root);
-                    new_page.set_title(&display_name(&pane.cwd()));
-                }
-            }
-            self.split_boxes[1].set_visible(false);
-        }
+        self.ending_split.set(false);
+        self.split_boxes[1].set_visible(false);
         for b in &self.split_boxes {
             b.remove_css_class("omafile-split-active");
         }
         self.active_side.set(0);
-        if self.tab_views[0].n_pages() == 0 {
+        if to.n_pages() == 0 {
             self.window.close();
         } else {
             self.sync_active();
+            self.refocus();
         }
     }
 
@@ -527,6 +515,21 @@ impl Window {
         while let Some(child) = self.pathbar.first_child() {
             self.pathbar.remove(&child);
         }
+        if let Some(title) = self.active_pane().and_then(|p| p.virtual_title()) {
+            let button = gtk::Button::new();
+            button.add_css_class("flat");
+            button.add_css_class("current");
+            button.set_child(Some(&icon_label("tag-symbolic", &title)));
+            let this = Rc::downgrade(self);
+            let back = cwd.clone();
+            button.connect_clicked(move |_| {
+                if let Some(w) = this.upgrade() {
+                    w.navigate(back.clone());
+                }
+            });
+            self.pathbar.append(&button);
+            return;
+        }
         let home = gio::File::for_path(glib::home_dir());
         let mut chain = vec![cwd.clone()];
         let mut cursor = cwd.clone();
@@ -593,6 +596,11 @@ impl Window {
             if let Some((file, kind)) = place {
                 match kind {
                     PlaceKind::Ssh(_) => w.connect_to(file, true),
+                    PlaceKind::Tag(color) => {
+                        if let Some(p) = w.active_pane() {
+                            p.show_tag(&color);
+                        }
+                    }
                     _ => w.navigate(file),
                 }
             }
@@ -608,6 +616,7 @@ impl Window {
                 let state = w.state.borrow();
                 match state.places.get(index) {
                     Some(Place::Entry { kind: PlaceKind::Bookmark, .. }) => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Remove Bookmark", "win.sidebar-remove-bookmark")]),
+                    Some(Place::Entry { kind: PlaceKind::Tag(_), .. }) => return,
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_unmount() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Unmount", "win.sidebar-unmount")]),
                     Some(Place::Entry { .. }) => menu_of(&[("Open in New Tab", "win.sidebar-new-tab")]),
                     _ => return,
@@ -628,7 +637,7 @@ impl Window {
             let Ok(list) = value.get::<gdk::FileList>() else { return false };
             let Some(row) = w.sidebar_list.row_at_y(y as i32) else { return false };
             let dest = match w.state.borrow().places.get(row.index() as usize) {
-                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_)) => file.clone(),
+                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_)) => file.clone(),
                 _ => return false,
             };
             if let Some(p) = w.active_pane() {
@@ -703,6 +712,18 @@ impl Window {
             }
         }
 
+        let used = self.tags.colors_in_use();
+        if !used.is_empty() {
+            places.push(Place::Header("Tags".into()));
+            for color in used {
+                places.push(Place::Entry {
+                    name: crate::tags::label(&color),
+                    icon: format!("tag:{color}"),
+                    file: gio::File::for_uri(&format!("omafile-tag:///{color}")),
+                    kind: PlaceKind::Tag(color),
+                });
+            }
+        }
         places.push(Place::Header("Remote".into()));
         for host in remote::ssh_hosts() {
             places.push(Place::Entry {
@@ -746,7 +767,16 @@ impl Window {
                 }
                 Place::Entry { name, icon, kind, .. } => {
                     let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-                    hbox.append(&gtk::Image::from_icon_name(icon));
+                    if let Some(color) = icon.strip_prefix("tag:") {
+                        let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                        dot.add_css_class("omafile-tag-dot");
+                        dot.add_css_class("omafile-tag-sidebar");
+                        dot.add_css_class(&format!("omafile-tag-{color}"));
+                        dot.set_valign(gtk::Align::Center);
+                        hbox.append(&dot);
+                    } else {
+                        hbox.append(&gtk::Image::from_icon_name(icon));
+                    }
                     hbox.append(&gtk::Label::builder().label(name).xalign(0.0).hexpand(true).ellipsize(pango::EllipsizeMode::End).build());
                     if let PlaceKind::Mount(m) = kind {
                         if m.can_unmount() {
@@ -772,9 +802,13 @@ impl Window {
     }
 
     fn sync_sidebar(&self, cwd: &gio::File) {
+        let tag = self.active_pane().and_then(|p| p.virtual_title()).and_then(|t| t.strip_prefix("Tag: ").map(|c| c.to_lowercase()));
         let index = {
             let state = self.state.borrow();
-            state.places.iter().position(|p| matches!(p, Place::Entry { file, .. } if file.equal(cwd)))
+            match tag {
+                Some(color) => state.places.iter().position(|p| matches!(p, Place::Entry { kind: PlaceKind::Tag(c), .. } if *c == color)),
+                None => state.places.iter().position(|p| matches!(p, Place::Entry { file, kind, .. } if file.equal(cwd) && !matches!(kind, PlaceKind::Tag(_)))),
+            }
         };
         self.syncing_sidebar.set(true);
         match index.and_then(|i| self.sidebar_list.row_at_index(i as i32)) {
@@ -835,6 +869,27 @@ impl Window {
                 Err(e) => w.toast_error(&format!("Cannot unmount {name}: {}", e.message())),
             }
         });
+    }
+
+    pub fn tag_selected(self: &Rc<Self>, color: Option<String>) {
+        let items = self.selected_items();
+        if items.is_empty() {
+            return;
+        }
+        for item in &items {
+            if let Err(e) = self.tags.set(&item.file(), color.as_deref()) {
+                self.toast_error(&format!("Cannot tag {}: {}", item.display_name(), e.message()));
+                return;
+            }
+        }
+        match &color {
+            Some(c) => self.toast(&format!("Tagged {} {} {}", items.len(), if items.len() == 1 { "item" } else { "items" }, crate::tags::label(c).to_lowercase())),
+            None => self.toast("Tag removed"),
+        }
+        for p in self.all_panes() {
+            p.reload();
+        }
+        self.refresh_sidebar();
     }
 
     // ----- misc helpers -------------------------------------------------------------
@@ -995,6 +1050,12 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple
         if !multiple {
             edit.append(Some("Change Icon…"), Some("win.change-icon"));
         }
+        let tags = gio::Menu::new();
+        for (name, _, _) in crate::tags::COLORS {
+            tags.append(Some(&crate::tags::label(name)), Some(&format!("win.tag::{name}")));
+        }
+        tags.append(Some("No Tag"), Some("win.tag::none"));
+        edit.append_submenu(Some("Tag"), &tags);
         if single_dir {
             edit.append(Some("Add Bookmark"), Some("win.bookmark-selected"));
         }

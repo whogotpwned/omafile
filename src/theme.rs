@@ -73,6 +73,7 @@ pub struct Palette {
     pub dark_foreground: Rgb,
     pub bright_foreground: Rgb,
     pub red: Rgb,
+    pub orange: Rgb,
     pub yellow: Rgb,
     pub green: Rgb,
     pub blue: Rgb,
@@ -97,6 +98,7 @@ impl Default for Palette {
             dark_foreground: Rgb(0x56, 0x5f, 0x89),
             bright_foreground: Rgb(0xc0, 0xca, 0xf5),
             red: Rgb(0xf7, 0x76, 0x8e),
+            orange: Rgb(0xeb, 0x92, 0x7b),
             yellow: Rgb(0xe0, 0xaf, 0x68),
             green: Rgb(0x9e, 0xce, 0x6a),
             blue: Rgb(0x7a, 0xa2, 0xf7),
@@ -188,6 +190,7 @@ pub fn load_from(dir: &Path) -> Palette {
             p.blue = pick("blue", p.accent);
             p.red = pick("red", p.red);
             p.yellow = pick("yellow", p.yellow);
+            p.orange = pick("orange", p.red.mix(p.yellow, 0.5));
             p.green = pick("green", p.green);
             p.magenta = pick("magenta", p.magenta);
             p.cyan = pick("cyan", p.cyan);
@@ -218,6 +221,7 @@ pub fn load_from(dir: &Path) -> Palette {
             p.accent = p.blue;
             p.red = pick("normal.red", p.red);
             p.yellow = pick("normal.yellow", p.yellow);
+            p.orange = p.red.mix(p.yellow, 0.5);
             p.green = pick("normal.green", p.green);
             p.magenta = pick("normal.magenta", p.magenta);
             p.cyan = pick("normal.cyan", p.cyan);
@@ -428,6 +432,25 @@ pub fn css(p: &Palette) -> String {
 toast {{
   border-radius: 999px;
 }}
+.omafile-tag-dot {{
+  min-width: 10px;
+  min-height: 10px;
+  border-radius: 999px;
+  margin: 0 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}}
+.omafile-tag-sidebar {{
+  min-width: 14px;
+  min-height: 14px;
+  margin: 0 1px;
+}}
+.omafile-tag-red {{ background-color: {red}; }}
+.omafile-tag-orange {{ background-color: {orange}; }}
+.omafile-tag-yellow {{ background-color: {yellow}; }}
+.omafile-tag-green {{ background-color: {green}; }}
+.omafile-tag-blue {{ background-color: {blue}; }}
+.omafile-tag-purple {{ background-color: {magenta}; }}
+.omafile-tag-gray {{ background-color: {dim}; }}
 "#,
         name = p.name,
         bg = p.background.hex(),
@@ -440,8 +463,11 @@ toast {{
         accent_fg = accent_fg.hex(),
         accent_text = accent_text.hex(),
         red = p.red.hex(),
+        orange = p.orange.hex(),
         green = p.green.hex(),
         yellow = p.yellow.hex(),
+        blue = p.blue.hex(),
+        magenta = p.magenta.hex(),
         dim = p.dark_foreground.hex(),
         bright_fg = p.bright_foreground.hex(),
     )
