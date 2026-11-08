@@ -274,6 +274,15 @@ impl Window {
         let dialog = adw::Dialog::builder().title("Keyboard Shortcuts").content_width(680).content_height(720).child(&content).build();
         dialog.add_css_class("omafile-bindings-dialog");
         search.set_key_capture_widget(Some(&dialog));
+        // Esc in the search entry ends the search; a second Esc (or an empty field) closes.
+        let d2 = dialog.clone();
+        search.connect_stop_search(move |e| {
+            if e.text().is_empty() {
+                d2.close();
+            } else {
+                e.set_text("");
+            }
+        });
         self.present_dialog(&dialog);
         search.grab_focus();
     }
