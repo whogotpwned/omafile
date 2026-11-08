@@ -135,6 +135,11 @@ impl Window {
         let search_btn = gtk::Button::builder().icon_name("edit-find-symbolic").tooltip_text("Filter (Ctrl+F)").action_name("win.search").build();
         let view_btn = gtk::Button::builder().icon_name("view-grid-symbolic").tooltip_text("Grid view (Ctrl+2)").action_name("win.toggle-view").build();
         let preview_btn = gtk::ToggleButton::builder().icon_name("sidebar-show-right-symbolic").tooltip_text("Preview pane (F3)").action_name("win.show-preview").build();
+        let hidden_btn = gtk::ToggleButton::builder().icon_name("view-conceal-symbolic").tooltip_text("Show hidden files (Ctrl+H)").action_name("win.show-hidden").build();
+        hidden_btn.connect_active_notify(|b| {
+            b.set_icon_name(if b.is_active() { "view-reveal-symbolic" } else { "view-conceal-symbolic" });
+            b.set_tooltip_text(Some(if b.is_active() { "Hide hidden files (Ctrl+H)" } else { "Show hidden files (Ctrl+H)" }));
+        });
         let menu_button = gtk::MenuButton::builder().icon_name("open-menu-symbolic").tooltip_text("Menu").menu_model(&main_menu()).primary(true).build();
 
         let header = adw::HeaderBar::new();
@@ -145,6 +150,7 @@ impl Window {
         header.pack_end(&menu_button);
         header.pack_end(&preview_btn);
         header.pack_end(&view_btn);
+        header.pack_end(&hidden_btn);
         header.pack_end(&search_btn);
 
         // ---- tabs -----------------------------------------------------------
@@ -1494,6 +1500,8 @@ pub struct MenuFlags {
     pub theme: bool,
     /// Selection is local (share / scp make sense).
     pub local: bool,
+    /// A single audio or video file.
+    pub media: bool,
 }
 
 pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple: bool, vault: VaultState, in_repo: bool) -> gio::Menu {
@@ -1505,6 +1513,9 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     let menu = gio::Menu::new();
     let open = gio::Menu::new();
     open.append(Some("Open"), Some("win.open"));
+    if f.media {
+        open.append(Some("Play"), Some("win.play"));
+    }
     open.append(Some("Quick Look"), Some("win.quick-look"));
     if single_dir {
         open.append(Some("Open in New Tab"), Some("win.open-new-tab"));

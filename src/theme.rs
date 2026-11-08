@@ -432,7 +432,19 @@ pub fn css(p: &Palette) -> String {
   font-size: 0.85em;
 }}
 .omafile-hidden {{
-  opacity: 0.55;
+  opacity: 0.5;
+  font-style: italic;
+}}
+.omafile-hidden image,
+.omafile-hidden picture {{
+  filter: grayscale(0.9);
+}}
+.omafile-video {{
+  border-radius: 10px;
+  background-color: black;
+}}
+.omafile-media-controls {{
+  margin-bottom: 4px;
 }}
 .omafile-symlink {{
   font-style: italic;

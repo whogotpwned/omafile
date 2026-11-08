@@ -24,6 +24,7 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("show-hidden", "Toggle Hidden Files", "view-reveal-symbolic"),
     ("toggle-view", "Toggle List / Grid", "view-grid-symbolic"),
     ("quick-look", "Quick Look", "view-reveal-symbolic"),
+    ("play", "Play (audio / video)", "media-playback-start-symbolic"),
     ("search", "Filter This Folder", "edit-find-symbolic"),
     ("deep-search", "Search Subfolders", "folder-saved-search-symbolic"),
     ("location", "Edit Path", "folder-symbolic"),
@@ -218,6 +219,11 @@ impl Window {
         simple("git-commit", Box::new(|w| w.git_commit_dialog()));
         simple("git-branch", Box::new(|w| w.git_branch_dialog()));
         simple("image-resize", Box::new(|w| w.image_resize_dialog()));
+        simple("play", Box::new(|w| {
+            if let Some(p) = w.active_pane() {
+                w.quicklook.play(&p, &w.window);
+            }
+        }));
         simple("image-rotate-left", Box::new(|w| w.image_rotate(-90)));
         simple("image-rotate-right", Box::new(|w| w.image_rotate(90)));
         simple("image-to-png", Box::new(|w| w.image_convert("png")));
@@ -428,6 +434,8 @@ impl Window {
             w.preview_split.set_show_sidebar(on);
             if on {
                 w.sync_active();
+            } else {
+                w.preview.stop();
             }
         });
         self.window.add_action(&preview);
@@ -1099,7 +1107,7 @@ impl Window {
                 ("F3", "Preview pane"),
                 ("F9", "Sidebar"),
                 ("Ctrl+1  /  Ctrl+2", "List / grid view"),
-                ("Ctrl+H", "Hidden files"),
+                ("Ctrl+H  /  eye button", "Show or hide hidden files"),
             ]),
             ("Developer", &[
                 ("Ctrl+`  /  F7", "Terminal panel below the files (your shell, follows the folder)"),
@@ -1116,7 +1124,7 @@ impl Window {
             ]),
             ("Files", &[
                 ("Enter", "Open"),
-                ("Space", "Quick Look: large preview, arrows walk the folder"),
+                ("Space", "Quick Look: large preview, arrows walk the folder; plays music"),
                 ("Ctrl+Shift+O", "Open with…"),
                 ("F4", "Open terminal here"),
                 ("Ctrl+Shift+N  /  Ctrl+Alt+N", "New folder / file"),

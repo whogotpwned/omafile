@@ -5,7 +5,7 @@ use crate::ops;
 use crate::thumbs::ThumbCache;
 use adw::prelude::*;
 use gtk::{gdk, gio, glib, pango};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 const TEXT_BYTES: usize = 64 * 1024;
@@ -21,6 +21,12 @@ pub struct PreviewPane {
     hint: gtk::Label,
     thumbs: Rc<ThumbCache>,
     generation: Cell<u64>,
+    /// Audio / video player.
+    video: gtk::Video,
+    cover: gtk::Picture,
+    media_icon: gtk::Image,
+    controls: gtk::MediaControls,
+    media: RefCell<Option<gtk::MediaFile>>,
     /// Pixel size requested for images and PDF pages.
     image_size: i32,
 }
@@ -79,10 +85,37 @@ impl PreviewPane {
         icon.set_vexpand(true);
         icon.set_valign(gtk::Align::Center);
 
+        // Media: a video surface, or cover art / icon with transport controls for audio.
+        let video = gtk::Video::builder().autoplay(false).loop_(false).vexpand(true).build();
+        video.add_css_class("omafile-video");
+        let cover = gtk::Picture::new();
+        cover.set_content_fit(gtk::ContentFit::Contain);
+        cover.set_can_shrink(true);
+        cover.set_vexpand(true);
+        cover.add_css_class("omafile-preview-image");
+        let media_icon = gtk::Image::new();
+        media_icon.set_pixel_size(128);
+        media_icon.set_vexpand(true);
+        media_icon.set_valign(gtk::Align::Center);
+        let art = gtk::Stack::new();
+        art.set_vexpand(true);
+        art.add_named(&video, Some("video"));
+        art.add_named(&cover, Some("cover"));
+        art.add_named(&media_icon, Some("icon"));
+        let controls = gtk::MediaControls::new(None::<&gtk::MediaStream>);
+        controls.add_css_class("omafile-media-controls");
+        controls.set_margin_start(12);
+        controls.set_margin_end(12);
+        let media_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        media_box.set_margin_top(12);
+        media_box.append(&art);
+        media_box.append(&controls);
+
         stack.add_named(&placeholder, Some("none"));
         stack.add_named(&picture_box, Some("image"));
         stack.add_named(&text_scroll, Some("text"));
         stack.add_named(&icon, Some("icon"));
+        stack.add_named(&media_box, Some("media"));
 
         let name = gtk::Label::builder()
             .xalign(0.0)
@@ -92,8 +125,8 @@ impl PreviewPane {
             .ellipsize(pango::EllipsizeMode::End)
             .css_classes(["title-4"])
             .build();
-        let details = gtk::Label::builder().xalign(0.0).wrap(true).css_classes(["omafile-dim", "caption"]).build();
-        let hint = gtk::Label::builder().xalign(0.0).wrap(true).css_classes(["omafile-dim", "caption"]).build();
+        let details = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(48).css_classes(["omafile-dim", "caption"]).build();
+        let hint = gtk::Label::builder().xalign(0.0).wrap(true).max_width_chars(48).css_classes(["omafile-dim", "caption"]).build();
         let info = gtk::Box::new(gtk::Orientation::Vertical, 4);
         info.set_margin_top(12);
         info.set_margin_bottom(14);
@@ -108,7 +141,7 @@ impl PreviewPane {
         root.append(&stack);
         root.append(&info);
 
-        Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size })
+        Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None) })
     }
 
     pub fn show(self: &Rc<Self>, item: Option<&FileItem>, count: usize) {
@@ -120,6 +153,11 @@ impl PreviewPane {
     pub fn show_git(self: &Rc<Self>, item: Option<&FileItem>, count: usize, git: Option<(std::path::PathBuf, crate::git::Status)>) {
         let gen = self.generation.get() + 1;
         self.generation.set(gen);
+        self.stop();
+        if let Some(item) = item.filter(|i| i.is_media()) {
+            self.show_media(item);
+            return;
+        }
         if let Some(item) = item {
             if item.is_secret() {
                 self.name.set_text(&item.display_name());
@@ -241,6 +279,82 @@ impl PreviewPane {
 }
 
 impl PreviewPane {
+    /// Audio or video: GTK's media player (GStreamer backend) in the pane.
+    fn show_media(self: &Rc<Self>, item: &FileItem) {
+        self.name.set_text(&item.display_name());
+        self.details.set_text(&format!("{}  ·  {}", item.type_description(), ops::human_size(item.size())));
+        self.hint.set_text("");
+        if let Some(icon) = item.icon() {
+            self.icon.set_from_gicon(&icon);
+            self.media_icon.set_from_gicon(&icon);
+        }
+        let media = gtk::MediaFile::for_file(&item.target_file());
+        let art = self.video.parent().and_downcast::<gtk::Stack>().expect("media art stack");
+        if item.is_video() {
+            self.video.set_media_stream(Some(&media));
+            art.set_visible_child_name("video");
+        } else {
+            self.video.set_media_stream(None::<&gtk::MediaStream>);
+            if ThumbCache::can_thumbnail(item) {
+                self.thumbs.assign(item, &self.cover, self.image_size);
+                art.set_visible_child_name("cover");
+                let art2 = art.clone();
+                let cover = self.cover.clone();
+                // No cover art inside the file: fall back to the icon once we know.
+                glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+                    if cover.paintable().is_none() && art2.visible_child_name().as_deref() == Some("cover") {
+                        art2.set_visible_child_name("icon");
+                    }
+                });
+            } else {
+                art.set_visible_child_name("icon");
+            }
+        }
+        self.controls.set_media_stream(Some(&media));
+        let hint = self.hint.clone();
+        media.connect_error_notify(move |m| {
+            if let Some(e) = m.error() {
+                // GStreamer errors are essays; keep the useful line.
+                let msg = e.message();
+                let missing: Vec<&str> = msg.lines().filter(|l| l.starts_with("Missing decoder") || l.starts_with("Missing demuxer")).map(|l| l.split(" (").next().unwrap_or(l)).collect();
+                let short = if !missing.is_empty() {
+                    format!("{} (install gst-plugins-good, gst-plugins-bad or gst-libav)", missing.join(", "))
+                } else {
+                    msg.lines().next().unwrap_or("unknown error").to_string()
+                };
+                hint.set_text(&format!("Cannot play: {short}"));
+            }
+        });
+        let hint2 = self.hint.clone();
+        media.connect_duration_notify(move |m| {
+            let secs = m.duration() / 1_000_000;
+            if secs > 0 && hint2.text().is_empty() {
+                hint2.set_text(&format!("{}:{:02}  ·  Space in Quick Look plays, Enter opens the default player", secs / 60, secs % 60));
+            }
+        });
+        *self.media.borrow_mut() = Some(media);
+        self.stack.set_visible_child_name("media");
+    }
+
+    /// Start playback of the media shown (Quick Look on an audio file, "Play").
+    pub fn play(&self) {
+        if let Some(m) = self.media.borrow().as_ref() {
+            m.play();
+        }
+    }
+
+    /// Stop and release the player (selection changed, pane hidden, dialog closed).
+    pub fn stop(&self) {
+        if let Some(m) = self.media.borrow_mut().take() {
+            m.pause();
+            m.set_file(None::<&gio::File>);
+        }
+        self.controls.set_media_stream(None::<&gtk::MediaStream>);
+        self.video.set_media_stream(None::<&gtk::MediaStream>);
+        self.cover.set_widget_name("");
+        self.cover.set_paintable(None::<&gdk::Paintable>);
+    }
+
     fn show_plain_text(self: &Rc<Self>, file: &gio::File, gen: u64) {
         let file = file.clone();
         let this = Rc::downgrade(self);

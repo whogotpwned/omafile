@@ -58,8 +58,22 @@ impl QuickLook {
             }
         });
         this.dialog.add_controller(keys);
+        let weak = Rc::downgrade(&this);
+        this.dialog.connect_closed(move |_| {
+            if let Some(q) = weak.upgrade() {
+                q.preview.stop();
+            }
+        });
         let _ = window;
         this
+    }
+
+    /// Open on the selection and start playing it (context menu "Play").
+    pub fn play(self: &Rc<Self>, pane: &Rc<Pane>, window: &adw::ApplicationWindow) {
+        if !self.is_open() {
+            self.toggle(pane, window);
+        }
+        self.preview.play();
     }
 
     pub fn is_open(&self) -> bool {
@@ -83,6 +97,10 @@ impl QuickLook {
         self.title.set_subtitle(&item.type_description());
         let git = self.pane.borrow().as_ref().and_then(|w| w.upgrade()).and_then(|p| p.git_info_for(item));
         self.preview.show_git(Some(item), 1, git);
+        if item.is_audio() {
+            // Space on a song: hear it right away, as Finder does.
+            self.preview.play();
+        }
     }
 
     /// Move the pane's selection by `delta` and preview the new item.

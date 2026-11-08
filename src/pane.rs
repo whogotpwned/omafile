@@ -1240,6 +1240,13 @@ impl Pane {
         } else {
             format!("{total} {}", if total == 1 { "item" } else { "items" })
         };
+        let show_hidden = self.window.upgrade().map(|w| w.state.borrow().show_hidden).unwrap_or(true);
+        if !show_hidden && !deep && !virtual_view {
+            let hidden = (0..self.store.n_items()).filter(|i| self.store.item(*i).and_downcast::<FileItem>().map(|x| x.is_hidden()).unwrap_or(false)).count();
+            if hidden > 0 {
+                text.push_str(&format!(" (+{hidden} hidden)"));
+            }
+        }
         if !selected.is_empty() {
             let size: u64 = selected.iter().filter(|i| !i.is_dir()).map(|i| i.size()).sum();
             text.push_str(&format!(", {} selected", selected.len()));
@@ -1312,6 +1319,7 @@ impl Pane {
                 images: Window::image_menu_applies(&items),
                 theme,
                 local: items.iter().all(|i| i.target_file().is_native()),
+                media: items.len() == 1 && items[0].is_media(),
             };
             self.item_menu.set_menu_model(Some(&window::item_menu_model_ext(flags, vault)));
             self.item_menu.set_pointing_to(Some(&rect));

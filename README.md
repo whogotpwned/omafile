@@ -23,7 +23,10 @@ the active Omarchy theme and follow along live when you switch themes.
 
 | | |
 |---|---|
-| ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, image and PDF thumbnails, rubber-band and multi-selection, hidden-file toggle, live reload when a folder changes. |
+| ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, rubber-band and multi-selection, live reload when a folder changes. |
+| ![thumbnails](docs/screenshot-thumbs.png) | **Previews in the icon**, like Finder and Explorer: text and source files show a small page with their first lines, images and SVGs their picture, PDFs their first page, videos a frame (`ffmpegthumbnailer`, else `ffmpeg`), music its cover art, theme folders their `preview.png`. Everything decodes off the main thread and is cached; credential files are never rendered. |
+| ![hidden](docs/screenshot-hidden.png) | **Hidden files**: the eye button in the header (or `Ctrl+H`) shows or hides dotfiles and backups. While hidden the status line says how many there are (`14 items (+2 hidden)`); while shown they stay clearly apart: dimmed, italic, with a greyed icon. |
+| ![music](docs/screenshot-music.png) | **Play music and video in place**: an audio file shows its cover and transport controls in the preview pane, `Space` (Quick Look) starts playing right away, *Play* in the context menu does the same; `←`/`→` move through the album. Videos play in the preview and in Quick Look with GTK's player. GStreamer does the decoding, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs and the preview pane** (`F3`). Images, PDFs (first page, page count), text files in monospace, folder item counts. |
 | ![split](docs/screenshot-split.png) | **Split view** (`F6`): two sets of tabs side by side, each with its own history. Drag files across, or between a local and a remote tab. The active side carries the accent border. |
 | ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb turns into a text field with the cursor at the end, so you fix one segment instead of retyping (`Ctrl+A` selects it all to start over). Folders complete as you type: `Tab` accepts, `↑`/`↓` pick, `Enter` opens. `~`, relative paths, `sftp://` and `user@host` all work. |
@@ -112,6 +115,8 @@ package list or pulled in by one that is (Nautilus, Evince, pacman):
 | `git` | status badges, branch line, git actions | yes | badges simply stay off |
 | `fd` | fast recursive search | yes | omafile falls back to a slower GIO walk |
 | `poppler` (`pdftoppm`, `pdfinfo`) | PDF thumbnails and previews | yes (Evince depends on it) | PDFs show the generic icon |
+| `ffmpegthumbnailer`, `ffmpeg` | video thumbnails; audio cover art | yes | videos and songs show the generic icon |
+| `gstreamer` + `gst-plugins-good` (`gst-plugins-bad`, `gst-libav` for H.264 / AAC) | playing audio and video in the preview | base and good: yes | the player shows which decoder is missing |
 | `libarchive` (`bsdtar`) | extract / compress | yes (pacman depends on it) | the archive entries do nothing |
 | `util-linux` (`script`) | capturing the master key when a vault is created | yes (base) | the vault is created without showing a master key |
 | `imagemagick` (`magick`) | Image › rotate, convert, resize | yes | the Image menu reports that it is missing |
@@ -216,7 +221,8 @@ widget, drops it from the bar layout and deletes the checkout.
 | `Ctrl+T` `Ctrl+W` `Ctrl+Tab` | New, close, next tab |
 | `Ctrl+Enter` / middle click | Open folder in new tab |
 | `F3` `F6` `F9` | Toggle preview pane, split view, sidebar |
-| `Ctrl+1` `Ctrl+2` `Ctrl+H` | List, grid, hidden files |
+| `Ctrl+1` `Ctrl+2` `Ctrl+H` | List, grid, hidden files (also the eye button in the header) |
+| `Space` on a song | Quick Look plays it; context menu › Play |
 | `Enter` `Ctrl+Shift+O` `F4` | Open, open with…, terminal here |
 | `Space` | Quick Look (toggle); `←` `→` walk the folder inside it |
 | `Ctrl+Shift+N` `Ctrl+Alt+N` | New folder, new file |

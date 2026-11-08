@@ -209,6 +209,18 @@ impl FileItem {
         self.content_type().map(|ct| ct.starts_with("image/")).unwrap_or(false)
     }
 
+    pub fn is_audio(&self) -> bool {
+        self.content_type().map(|ct| ct.starts_with("audio/")).unwrap_or(false)
+    }
+
+    pub fn is_video(&self) -> bool {
+        self.content_type().map(|ct| ct.starts_with("video/")).unwrap_or(false)
+    }
+
+    pub fn is_media(&self) -> bool {
+        self.is_audio() || self.is_video()
+    }
+
     pub fn is_pdf(&self) -> bool {
         self.content_type().as_deref() == Some("application/pdf")
     }
