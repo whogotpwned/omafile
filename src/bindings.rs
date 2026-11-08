@@ -1,0 +1,320 @@
+//! Every binding in one place: a searchable overlay (`Ctrl+?` / `F1`), the
+//! `--print-bindings` command line, and the test that keeps the list complete.
+//! Keys for actions come from `actions::ACCELS`, so the overlay cannot drift
+//! from what the window actually reacts to.
+
+use crate::actions::ACCELS;
+use crate::window::Window;
+use adw::prelude::*;
+use gtk::glib;
+use std::rc::Rc;
+
+/// (group, action name without `win.` or empty, keys when not an action, what it does)
+pub const TABLE: &[(&str, &str, &str, &str)] = &[
+    ("Navigate", "back", "", "Back"),
+    ("Navigate", "forward", "", "Forward"),
+    ("Navigate", "up", "", "Parent folder"),
+    ("Navigate", "", "BackSpace", "Parent folder"),
+    ("Navigate", "home", "", "Home"),
+    ("Navigate", "location", "", "Edit the path; Tab completes, ↑ ↓ pick, Enter opens"),
+    ("Navigate", "reload", "", "Reload"),
+    ("Navigate", "", "Enter", "Open the selection"),
+    ("Navigate", "open-new-tab", "", "Open folder in a new tab (also middle click)"),
+    ("Navigate", "", "Double click", "Open; on a folder in the sidebar: go there"),
+    ("Navigate", "", "Type a name", "Jump to the matching item (type-ahead)"),
+    ("Search", "search", "", "Filter this folder"),
+    ("Search", "deep-search", "", "Search all subfolders (fd, streamed)"),
+    ("Search", "palette", "", "Command palette: actions, folders, project commands; > runs a shell command"),
+    ("Search", "", "Escape", "Close the search, the palette or a dialog"),
+    ("Tabs & panes", "new-tab", "", "New tab"),
+    ("Tabs & panes", "close-tab", "", "Close tab"),
+    ("Tabs & panes", "next-tab", "", "Next tab"),
+    ("Tabs & panes", "prev-tab", "", "Previous tab"),
+    ("Tabs & panes", "split-view", "", "Split view: two sets of tabs side by side"),
+    ("Tabs & panes", "show-preview", "", "Preview pane"),
+    ("Tabs & panes", "show-sidebar", "", "Sidebar"),
+    ("Tabs & panes", "terminal-panel", "", "Terminal panel below the files"),
+    ("Tabs & panes", "", "Ctrl+Shift+C / Ctrl+Shift+V", "Copy / paste inside the terminal panel"),
+    ("Tabs & panes", "", "Drag a tab", "Reorder, or move it to the other side of the split"),
+    ("View", "view::list", "", "List view"),
+    ("View", "view::grid", "", "Grid view"),
+    ("View", "show-hidden", "", "Show or hide hidden files (eye button)"),
+    ("View", "folder-sizes", "", "Measure folder sizes and sort by disk usage"),
+    ("View", "", "Click a column header", "Sort by that column"),
+    ("View", "", "Space", "Quick Look; on music it plays. ← → walk the folder, Space or Esc closes"),
+    ("View", "", "Click the play badge", "Play a song or video"),
+    ("Files", "new-folder", "", "New folder"),
+    ("Files", "new-file", "", "New file"),
+    ("Files", "rename", "", "Rename in place; batch rename with several selected"),
+    ("Files", "rename-dialog", "", "Rename in a dialog"),
+    ("Files", "copy", "", "Copy"),
+    ("Files", "cut", "", "Cut"),
+    ("Files", "paste", "", "Paste (conflicts ask: replace, skip, keep both)"),
+    ("Files", "select-all", "", "Select all"),
+    ("Files", "copy-path", "", "Copy path"),
+    ("Files", "duplicate", "", "Duplicate"),
+    ("Files", "undo", "", "Undo the last file operation"),
+    ("Files", "redo", "", "Redo"),
+    ("Files", "", "Delete", "Move to trash"),
+    ("Files", "delete", "", "Delete permanently"),
+    ("Files", "restore", "", "Restore from the trash"),
+    ("Files", "", "Drag & drop", "Move within the same disk, copy elsewhere; Ctrl forces copy"),
+    ("Files", "", "Right click", "Context menu: Git, Image, Share, Tag, Compress, Change Icon…"),
+    ("Files", "properties", "", "Properties"),
+    ("Files", "open-with", "", "Open with…"),
+    ("Files", "change-icon", "", "Change icon"),
+    ("Files", "bookmark", "", "Bookmark this folder"),
+    ("Tags", "tag::red", "", "Tag red"),
+    ("Tags", "tag::orange", "", "Tag orange"),
+    ("Tags", "tag::yellow", "", "Tag yellow"),
+    ("Tags", "tag::green", "", "Tag green"),
+    ("Tags", "tag::blue", "", "Tag blue"),
+    ("Tags", "tag::purple", "", "Tag purple"),
+    ("Tags", "tag::gray", "", "Tag gray"),
+    ("Tags", "tag::none", "", "Remove tag"),
+    ("Developer", "open-editor", "", "Open selection in the editor"),
+    ("Developer", "open-editor-cwd", "", "Open folder in the editor"),
+    ("Developer", "terminal", "", "Open a terminal window here"),
+    ("Developer", "git-commit", "", "Git: commit"),
+    ("Developer", "git-branch", "", "Git: switch or create a branch (also the branch button)"),
+    ("Developer", "", "Click a git badge", "Stage or unstage that file"),
+    ("Developer", "", "Context menu › Project", "cargo, npm, make, docker compose… in a terminal"),
+    ("Developer", "", "Context menu › Git", "Stage, unstage, discard, commit"),
+    ("Developer", "", "Context menu › New Encrypted Folder", "gocryptfs vault; Unlock, Lock, Change Password on the folder"),
+    ("Remote", "connect", "", "Connect to a server (SFTP, SMB, …)"),
+    ("Remote", "", "Sidebar › Remote", "Hosts from ~/.ssh/config; right click to disconnect"),
+    ("App", "preferences", "", "Preferences"),
+    ("App", "shortcuts", "", "This list"),
+    ("App", "", "Ctrl+Q", "Quit"),
+];
+
+#[derive(Clone, Debug)]
+pub struct Binding {
+    pub group: &'static str,
+    pub keys: String,
+    pub what: &'static str,
+}
+
+/// Human-readable shortcut, e.g. `Ctrl+Shift+N`.
+pub fn pretty(accel: &str) -> String {
+    let mut out = accel
+        .replace("<Control>", "Ctrl+")
+        .replace("<Shift>", "Shift+")
+        .replace("<Alt>", "Alt+")
+        .replace("<Super>", "Super+");
+    let key = out.rsplit('+').next().unwrap_or("").to_string();
+    let nice = match key.as_str() {
+        "comma" => ",".to_string(),
+        "question" => "?".to_string(),
+        "grave" => "`".to_string(),
+        "Return" => "Enter".to_string(),
+        "Page_Down" => "PgDn".to_string(),
+        "Page_Up" => "PgUp".to_string(),
+        "Left" => "←".to_string(),
+        "Right" => "→".to_string(),
+        "Up" => "↑".to_string(),
+        "Down" => "↓".to_string(),
+        k if k.len() == 1 => k.to_uppercase(),
+        k => k.to_string(),
+    };
+    let cut = out.len() - key.len();
+    out.truncate(cut);
+    out.push_str(&nice);
+    out
+}
+
+pub fn accels_for(action: &str) -> Vec<String> {
+    let full = format!("win.{action}");
+    ACCELS.iter().find(|(a, _)| *a == full).map(|(_, keys)| keys.iter().map(|k| pretty(k)).collect()).unwrap_or_default()
+}
+
+pub fn all() -> Vec<Binding> {
+    let mut list: Vec<Binding> = TABLE
+        .iter()
+        .map(|(group, action, keys, what)| {
+            let keys = if action.is_empty() { keys.to_string() } else { accels_for(action).join("  /  ") };
+            Binding { group, keys, what }
+        })
+        .collect();
+    if let Some(launch) = omarchy_launch_binding() {
+        list.insert(0, Binding { group: "Omarchy", keys: launch, what: "Open omafile (from your Hyprland bindings)" });
+    }
+    list
+}
+
+/// The Hyprland binding that launches omafile, read from Omarchy's bindings files.
+pub fn omarchy_launch_binding() -> Option<String> {
+    let hypr = glib::home_dir().join(".config/hypr");
+    for name in ["bindings.lua", "bindings.conf"] {
+        let Ok(text) = std::fs::read_to_string(hypr.join(name)) else { continue };
+        for line in text.lines().filter(|l| l.contains("omafile") && !l.trim_start().starts_with('#') && !l.trim_start().starts_with("--")) {
+            if let Some(keys) = parse_binding_line(line) {
+                return Some(keys);
+            }
+        }
+    }
+    None
+}
+
+/// `o.rebind("SUPER + SHIFT + F", …)` or `bindd = SUPER SHIFT, F, …` → `Super+Shift+F`.
+pub fn parse_binding_line(line: &str) -> Option<String> {
+    let title = |s: &str| {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        let mut c = s.chars();
+        Some(c.next()?.to_uppercase().collect::<String>() + &c.as_str().to_lowercase())
+    };
+    if let Some(start) = line.find("rebind(\"").or_else(|| line.find("bind(\"")) {
+        let rest = &line[start..];
+        let open = rest.find('"')? + 1;
+        let close = rest[open..].find('"')? + open;
+        let combo = &rest[open..close];
+        let parts: Vec<String> = combo.split('+').filter_map(title).collect();
+        return if parts.is_empty() { None } else { Some(parts.join("+")) };
+    }
+    if line.trim_start().starts_with("bind") {
+        let (_, rhs) = line.split_once('=')?;
+        let mut fields = rhs.split(',');
+        let mods: Vec<String> = fields.next()?.split_whitespace().filter_map(title).collect();
+        let key = title(fields.next()?)?;
+        let mut parts = mods;
+        parts.push(key);
+        return Some(parts.join("+"));
+    }
+    None
+}
+
+/// `omafile --print-bindings`: one line per binding, tab separated, for launchers.
+pub fn print() {
+    for b in all() {
+        if !b.keys.is_empty() {
+            println!("{}\t{}\t{}", b.keys, b.what, b.group);
+        }
+    }
+}
+
+impl Window {
+    /// Searchable list of every binding, grouped; typing filters at once.
+    pub fn show_bindings(self: &Rc<Self>) {
+        let list = gtk::ListBox::new();
+        list.add_css_class("omafile-bindings");
+        list.add_css_class("boxed-list");
+        list.set_selection_mode(gtk::SelectionMode::None);
+        for b in all() {
+            let row = gtk::ListBoxRow::new();
+            row.set_activatable(false);
+            let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+            hbox.set_margin_top(7);
+            hbox.set_margin_bottom(7);
+            hbox.set_margin_start(12);
+            hbox.set_margin_end(12);
+            let what = gtk::Label::builder().label(b.what).xalign(0.0).hexpand(true).wrap(true).build();
+            hbox.append(&what);
+            let keys = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            keys.set_valign(gtk::Align::Center);
+            for alt in b.keys.split("  /  ") {
+                if alt.is_empty() {
+                    continue;
+                }
+                let cap = gtk::Label::new(Some(alt));
+                cap.add_css_class("omafile-keycap");
+                keys.append(&cap);
+            }
+            hbox.append(&keys);
+            row.set_child(Some(&hbox));
+            // Searchable text and group live on the row for the filter and header functions.
+            unsafe {
+                row.set_data("group", b.group);
+                row.set_data("haystack", format!("{} {} {}", b.group, b.keys, b.what).to_lowercase());
+            }
+            list.append(&row);
+        }
+        list.set_header_func(|row, before| {
+            let group: &str = unsafe { row.data::<&'static str>("group").map(|p| *p.as_ref()).unwrap_or("") };
+            let prev: Option<&str> = before.map(|b| unsafe { b.data::<&'static str>("group").map(|p| *p.as_ref()).unwrap_or("") });
+            if prev == Some(group) {
+                row.set_header(None::<&gtk::Widget>);
+            } else {
+                let label = gtk::Label::builder().label(group).xalign(0.0).margin_start(12).margin_top(14).margin_bottom(4).build();
+                label.add_css_class("caption-heading");
+                label.add_css_class("omafile-dim");
+                row.set_header(Some(&label));
+            }
+        });
+        let search = gtk::SearchEntry::builder().placeholder_text("Filter bindings…").hexpand(true).build();
+        let list2 = list.clone();
+        search.connect_search_changed(move |e| {
+            let needle = e.text().to_lowercase();
+            let words: Vec<String> = needle.split_whitespace().map(str::to_string).collect();
+            list2.set_filter_func(move |row| {
+                if words.is_empty() {
+                    return true;
+                }
+                let hay: String = unsafe { row.data::<String>("haystack").map(|p| p.as_ref().clone()).unwrap_or_default() };
+                words.iter().all(|w| hay.contains(w))
+            });
+            list2.invalidate_headers();
+        });
+        let scroll = gtk::ScrolledWindow::builder().child(&list).vexpand(true).hscrollbar_policy(gtk::PolicyType::Never).build();
+        scroll.set_margin_start(12);
+        scroll.set_margin_end(12);
+        scroll.set_margin_bottom(12);
+        let header = adw::HeaderBar::new();
+        header.set_title_widget(Some(&search));
+        let hint = gtk::Label::new(Some("Type to filter  ·  Esc closes  ·  omafile --print-bindings prints this list"));
+        hint.add_css_class("omafile-dim");
+        hint.add_css_class("caption");
+        hint.set_margin_bottom(8);
+        let content = adw::ToolbarView::new();
+        content.add_top_bar(&header);
+        content.set_content(Some(&scroll));
+        content.add_bottom_bar(&hint);
+        let dialog = adw::Dialog::builder().title("Keyboard Shortcuts").content_width(680).content_height(720).child(&content).build();
+        dialog.add_css_class("omafile-bindings-dialog");
+        search.set_key_capture_widget(Some(&dialog));
+        self.present_dialog(&dialog);
+        search.grab_focus();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_accelerator_is_listed() {
+        for (action, _) in ACCELS {
+            let short = action.trim_start_matches("win.");
+            assert!(TABLE.iter().any(|(_, a, _, _)| *a == short), "{action} has a shortcut but no entry in the bindings list");
+        }
+    }
+
+    #[test]
+    fn listed_actions_have_shortcuts() {
+        for (_, action, keys, _) in TABLE {
+            if !action.is_empty() {
+                assert!(!accels_for(action).is_empty(), "{action} is listed as an action but has no accelerator");
+            } else {
+                assert!(!keys.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn pretty_accels() {
+        assert_eq!(pretty("<Control><Shift>n"), "Ctrl+Shift+N");
+        assert_eq!(pretty("<Control>grave"), "Ctrl+`");
+        assert_eq!(pretty("<Alt>Left"), "Alt+←");
+        assert_eq!(pretty("F5"), "F5");
+        assert_eq!(pretty("<Control>question"), "Ctrl+?");
+    }
+
+    #[test]
+    fn parses_omarchy_binding_lines() {
+        assert_eq!(parse_binding_line(r#"o.rebind("SUPER + SHIFT + F", "File manager", { launch = "omafile" })"#).as_deref(), Some("Super+Shift+F"));
+        assert_eq!(parse_binding_line("bindd = SUPER SHIFT, F, File manager, exec, uwsm-app -- omafile").as_deref(), Some("Super+Shift+F"));
+        assert_eq!(parse_binding_line("# bindd = SUPER, F, …"), None);
+    }
+}

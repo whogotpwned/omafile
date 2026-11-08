@@ -26,6 +26,7 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, rubber-band and multi-selection, live reload when a folder changes. |
 | ![thumbnails](docs/screenshot-thumbs.png) | **Previews in the icon**, like Finder and Explorer: text and source files show a small page with their first lines, images and SVGs their picture, PDFs their first page, videos a frame (`ffmpegthumbnailer`, else `ffmpeg`), music its cover art, theme folders their `preview.png`. Everything decodes off the main thread and is cached; credential files are never rendered. |
 | ![play badge](docs/screenshot-play-badge.png) | **Play button on the icon**, as in Finder: every song and video carries a round play badge over its thumbnail, centred in the grid and in the corner of the list icon. One click selects the file and starts it in Quick Look, no need to find the right app first. |
+| ![bindings](docs/screenshot-bindings.png) | **All bindings in one place** (`F1`, `Ctrl+?`): a searchable overlay of every shortcut, gesture and menu entry, grouped, with keycaps, starting with the Hyprland key that opens omafile. `omafile --print-bindings` gives the same list to scripts and launchers. |
 | ![hidden](docs/screenshot-hidden.png) | **Hidden files**: the eye button in the header (or `Ctrl+H`) shows or hides dotfiles and backups. While hidden the status line says how many there are (`14 items (+2 hidden)`); while shown they stay clearly apart: dimmed, italic, with a greyed icon. |
 | ![music](docs/screenshot-music.png) | **Play music and video in place**: an audio file shows its cover and transport controls in the preview pane, `Space` (Quick Look) starts playing right away, *Play* in the context menu does the same; `←`/`→` move through the album. Videos play in the preview and in Quick Look with GTK's player. GStreamer does the decoding, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs and the preview pane** (`F3`). Images, PDFs (first page, page count), text files in monospace, folder item counts. |
@@ -214,6 +215,8 @@ widget, drops it from the bar layout and deletes the checkout.
 
 ## Keyboard shortcuts
 
+`F1` or `Ctrl+?` opens the full list inside omafile: every shortcut, mouse gesture and context-menu entry, grouped, with a filter box (type `git`, `tab`, `tag`…). It is generated from the same table the window reacts to, a test keeps it complete, and it starts with the Hyprland binding that launches omafile when one is found in `~/.config/hypr/bindings.lua` or `bindings.conf`. `omafile --print-bindings` prints the same list tab separated for Walker or a cheat-sheet script. The essentials:
+
 | Keys | Action |
 |---|---|
 | `Alt+←` `Alt+→` `Alt+↑` `Backspace` | Back, forward, parent |
@@ -241,7 +244,7 @@ widget, drops it from the bar layout and deletes the checkout.
 | `Ctrl+Shift+D` | Duplicate |
 | `Delete` `Shift+Delete` | Trash, delete permanently |
 | `Ctrl+D` `Ctrl+Shift+K` `Ctrl+I` | Bookmark, connect to server, properties |
-| `Ctrl+,` `Ctrl+?` `Ctrl+Q` | Preferences, shortcuts, quit |
+| `Ctrl+,` `F1` / `Ctrl+?` `Ctrl+Q` | Preferences, all bindings, quit |
 
 Every shortcut is exercised by an automated run (`OMAFILE_TRACE=1` logs each
 action; a script presses every accelerator under Xvfb and checks that the
@@ -254,6 +257,7 @@ focus and on files otherwise.
 ```
 omafile [FOLDER…]        open folders (one window each); without arguments the last session is restored
 omafile --print-recent   recent folders, newest first, one path per line
+omafile --print-bindings every binding: keys, action, group (tab separated)
 omafile --lock-all       unmount every unlocked gocryptfs folder (what the bar button's "Lock all" runs)
 omafile --version
 ```
@@ -432,6 +436,7 @@ cargo clippy
 | `omarchy` | theme folders, `omarchy-theme-set`, `omarchy-theme-bg-set` |
 | `session` / `status` | session file; status file for the bar widget, recent list, `--lock-all` |
 | `motion` | slide and fade animations (libadwaita TimedAnimation, respects reduced motion) |
+| `bindings` | the bindings table, the searchable overlay, `--print-bindings` |
 | `completion` / `quicklook` | path completion, Quick Look |
 | `prefs` | the preferences file |
 | `actions` | window actions, clipboard, dialogs, properties, shortcuts |

@@ -1,4 +1,5 @@
 mod actions;
+mod bindings;
 mod completion;
 mod containers;
 mod crypt;
@@ -39,12 +40,17 @@ const APP_ID: &str = "io.github.whogotpwned.Omafile";
 
 const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --print-recent   list recent folders, newest first (for launchers)
+       omafile --print-bindings list every shortcut (keys, action, group; tab separated)
        omafile --lock-all       unmount every unlocked encrypted folder
        omafile --version";
 
 fn main() -> glib::ExitCode {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
+        Some("--print-bindings") => {
+            bindings::print();
+            return glib::ExitCode::SUCCESS;
+        }
         Some("--print-recent") => {
             status::print_recent();
             return glib::ExitCode::SUCCESS;

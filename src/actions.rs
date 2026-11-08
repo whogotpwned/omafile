@@ -128,7 +128,7 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.tag::purple", &["<Control><Alt>6"]),
     ("win.tag::gray", &["<Control><Alt>7"]),
     ("win.tag::none", &["<Control><Alt>0"]),
-    ("win.shortcuts", &["<Control>question"]),
+    ("win.shortcuts", &["<Control>question", "F1"]),
 ];
 
 impl Window {
@@ -1088,77 +1088,7 @@ impl Window {
     }
 
     fn show_shortcuts(self: &Rc<Self>) {
-        let page = adw::PreferencesPage::new();
-        let sections: &[(&str, &[(&str, &str)])] = &[
-            ("Navigate", &[
-                ("Alt+←  /  Alt+→", "Back / forward"),
-                ("Alt+↑  /  Backspace", "Parent folder"),
-                ("Alt+Home", "Home"),
-                ("Ctrl+L", "Type a location"),
-                ("Ctrl+F", "Filter this folder"),
-                ("Ctrl+Shift+F", "Search subfolders"),
-                ("F5", "Reload"),
-            ]),
-            ("Tabs & panes", &[
-                ("F6", "Split view (two sets of tabs side by side)"),
-                ("Ctrl+T  /  Ctrl+W", "New / close tab"),
-                ("Ctrl+Tab  /  Ctrl+Shift+Tab", "Next / previous tab"),
-                ("Ctrl+Enter  /  middle click", "Open folder in new tab"),
-                ("F3", "Preview pane"),
-                ("F9", "Sidebar"),
-                ("Ctrl+1  /  Ctrl+2", "List / grid view"),
-                ("Ctrl+H  /  eye button", "Show or hide hidden files"),
-            ]),
-            ("Developer", &[
-                ("Ctrl+`  /  F7", "Terminal panel below the files (your shell, follows the folder)"),
-                ("Ctrl+Shift+C  /  Ctrl+Shift+V", "Copy / paste inside the terminal panel"),
-                ("Ctrl+K", "Command palette: actions, folders, project commands, > shell"),
-                ("Ctrl+E  /  Ctrl+Shift+E", "Open selection / folder in the editor"),
-                ("Context menu › Project", "cargo, npm, make, docker compose, git… in a terminal"),
-                ("Context menu › New Encrypted Folder", "gocryptfs vault; Unlock / Lock on the folder"),
-                ("Ctrl+Alt+C  /  Ctrl+Alt+B", "Git: commit / switch branch (also the branch button in the status line)"),
-                ("Click a git badge", "Stage / unstage that file"),
-                ("Context menu › Git", "Stage, unstage, discard changes, commit"),
-                ("Context menu › Image", "Rotate, convert, resize, set as wallpaper"),
-                ("Context menu › Share", "Copy scp command, share on the local network"),
-            ]),
-            ("Files", &[
-                ("Enter", "Open"),
-                ("Space", "Quick Look: large preview, arrows walk the folder; plays music"),
-                ("Ctrl+Shift+O", "Open with…"),
-                ("F4", "Open terminal here"),
-                ("Ctrl+Shift+N  /  Ctrl+Alt+N", "New folder / file"),
-                ("F2  /  Shift+F2", "Rename in place / in a dialog; batch rename with several selected"),
-                ("Ctrl+Shift+U", "Show folder sizes and sort by disk usage"),
-                ("Ctrl+Shift+R", "Restore from trash"),
-                ("Ctrl+C  /  Ctrl+X  /  Ctrl+V", "Copy / cut / paste"),
-                ("Ctrl+Z  /  Ctrl+Shift+Z", "Undo / redo the last file operation"),
-                ("Ctrl+Shift+D", "Duplicate"),
-                ("Ctrl+Shift+C", "Copy path"),
-                ("Ctrl+D", "Bookmark this folder"),
-                ("Delete  /  Shift+Delete", "Trash / delete permanently"),
-                ("Ctrl+I", "Properties"),
-                ("Ctrl+Shift+K", "Connect to server (SFTP)"),
-                ("Ctrl+,", "Preferences"),
-            ]),
-        ];
-        for (title, rows) in sections {
-            let group = adw::PreferencesGroup::builder().title(*title).build();
-            for (keys, desc) in rows.iter() {
-                let r = adw::ActionRow::builder().title(*desc).build();
-                let label = gtk::Label::new(Some(keys));
-                label.add_css_class("omafile-dim");
-                label.add_css_class("numeric");
-                r.add_suffix(&label);
-                group.add(&r);
-            }
-            page.add(&group);
-        }
-        let content = adw::ToolbarView::new();
-        content.add_top_bar(&adw::HeaderBar::new());
-        content.set_content(Some(&page));
-        let dialog = adw::Dialog::builder().title("Keyboard Shortcuts").content_width(480).content_height(640).child(&content).build();
-        self.present_dialog(&dialog);
+        self.show_bindings();
     }
 }
 
