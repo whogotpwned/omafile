@@ -79,6 +79,12 @@ pub struct Palette {
     pub blue: Rgb,
     pub magenta: Rgb,
     pub cyan: Rgb,
+    pub bright_red: Rgb,
+    pub bright_yellow: Rgb,
+    pub bright_green: Rgb,
+    pub bright_blue: Rgb,
+    pub bright_magenta: Rgb,
+    pub bright_cyan: Rgb,
 }
 
 impl Default for Palette {
@@ -104,6 +110,12 @@ impl Default for Palette {
             blue: Rgb(0x7a, 0xa2, 0xf7),
             magenta: Rgb(0xad, 0x8e, 0xe6),
             cyan: Rgb(0x44, 0x9d, 0xab),
+            bright_red: Rgb(0xff, 0x7a, 0x93),
+            bright_yellow: Rgb(0xff, 0x9e, 0x64),
+            bright_green: Rgb(0xb9, 0xf2, 0x7c),
+            bright_blue: Rgb(0x7d, 0xa6, 0xff),
+            bright_magenta: Rgb(0xbb, 0x9a, 0xf7),
+            bright_cyan: Rgb(0x0d, 0xb9, 0xd7),
         }
     }
 }
@@ -194,6 +206,12 @@ pub fn load_from(dir: &Path) -> Palette {
             p.green = pick("green", p.green);
             p.magenta = pick("magenta", p.magenta);
             p.cyan = pick("cyan", p.cyan);
+            p.bright_red = pick("bright_red", p.red);
+            p.bright_yellow = pick("bright_yellow", p.yellow);
+            p.bright_green = pick("bright_green", p.green);
+            p.bright_blue = pick("bright_blue", p.blue);
+            p.bright_magenta = pick("bright_magenta", p.magenta);
+            p.bright_cyan = pick("bright_cyan", p.cyan);
             p.light = match strings.get("mode").or_else(|| strings.get("theme_type")).map(|s| s.as_str()) {
                 Some("light") => true,
                 Some("dark") => false,
@@ -225,6 +243,12 @@ pub fn load_from(dir: &Path) -> Palette {
             p.green = pick("normal.green", p.green);
             p.magenta = pick("normal.magenta", p.magenta);
             p.cyan = pick("normal.cyan", p.cyan);
+            p.bright_red = pick("bright.red", p.red);
+            p.bright_yellow = pick("bright.yellow", p.yellow);
+            p.bright_green = pick("bright.green", p.green);
+            p.bright_blue = pick("bright.blue", p.blue);
+            p.bright_magenta = pick("bright.magenta", p.magenta);
+            p.bright_cyan = pick("bright.cyan", p.cyan);
             p.light = dir.join("light.mode").exists() || p.background.luminance() > 0.6;
             let toward = if p.light { Rgb(0, 0, 0) } else { Rgb(255, 255, 255) };
             p.dark_background = p.background.mix(Rgb(0, 0, 0), if p.light { 0.04 } else { 0.25 });
@@ -461,6 +485,24 @@ toast {{
   font-family: monospace;
   font-size: 1.05em;
 }}
+.omafile-terminal-panel {{
+  background-color: @view_bg_color;
+  border: 1px solid {border};
+  border-radius: 12px;
+  margin: 4px 10px 10px 4px;
+}}
+.omafile-terminal-header {{
+  padding: 4px 6px 2px 10px;
+  border-bottom: 1px solid {border};
+}}
+.omafile-terminal-header button {{
+  min-height: 22px;
+  min-width: 22px;
+  padding: 0 4px;
+}}
+.omafile-terminal {{
+  padding: 6px 8px;
+}}
 .omafile-tag-dot {{
   min-width: 10px;
   min-height: 10px;
@@ -502,6 +544,8 @@ toast {{
     )
 }
 
+type Listener = Box<dyn Fn(&Palette)>;
+
 /// Installs the theme CSS and keeps it in sync with the active Omarchy theme.
 pub struct ThemeManager {
     provider: gtk::CssProvider,
@@ -509,6 +553,7 @@ pub struct ThemeManager {
     monitors: RefCell<Vec<gio::FileMonitor>>,
     icon_override: RefCell<Option<String>>,
     pending: RefCell<Option<glib::SourceId>>,
+    listeners: RefCell<Vec<Listener>>,
 }
 
 impl ThemeManager {
@@ -523,6 +568,7 @@ impl ThemeManager {
             monitors: RefCell::new(Vec::new()),
             icon_override: RefCell::new(icon_override),
             pending: RefCell::new(None),
+            listeners: RefCell::new(Vec::new()),
         });
         manager.apply();
         manager.watch();
@@ -531,6 +577,12 @@ impl ThemeManager {
 
     pub fn palette(&self) -> Palette {
         self.palette.borrow().clone()
+    }
+
+    /// Called with the new palette after every theme change (and once right away).
+    pub fn connect_changed(&self, f: impl Fn(&Palette) + 'static) {
+        f(&self.palette.borrow());
+        self.listeners.borrow_mut().push(Box::new(f));
     }
 
     /// `None` follows the Omarchy theme's `icons.theme`; `Some(name)` forces an icon theme.
@@ -556,6 +608,10 @@ impl ThemeManager {
         self.provider.load_from_string(&css(&palette));
         *self.palette.borrow_mut() = palette;
         self.apply_icon_theme();
+        let palette = self.palette.borrow().clone();
+        for listener in self.listeners.borrow().iter() {
+            listener(&palette);
+        }
     }
 
     fn watch(self: &Rc<Self>) {

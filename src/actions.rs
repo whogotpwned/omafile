@@ -27,7 +27,8 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("search", "Filter This Folder", "edit-find-symbolic"),
     ("deep-search", "Search Subfolders", "folder-saved-search-symbolic"),
     ("location", "Edit Path", "folder-symbolic"),
-    ("terminal", "Open Terminal Here", "utilities-terminal-symbolic"),
+    ("terminal-panel", "Toggle Terminal Panel", "utilities-terminal-symbolic"),
+    ("terminal", "Open Terminal Window Here", "utilities-terminal-symbolic"),
     ("open-editor-cwd", "Open Folder in Editor", "text-editor-symbolic"),
     ("open-with", "Open With…", "document-open-symbolic"),
     ("rename", "Rename", "document-edit-symbolic"),
@@ -87,6 +88,7 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.split-view", &["F6"]),
     ("win.undo", &["<Control>z"]),
     ("win.palette", &["<Control>k", "<Control><Shift>p"]),
+    ("win.terminal-panel", &["<Control>grave", "F7"]),
     ("win.open-editor", &["<Control>e"]),
     ("win.open-editor-cwd", &["<Control><Shift>e"]),
     ("win.redo", &["<Control><Shift>z", "<Control>y"]),
@@ -191,6 +193,7 @@ impl Window {
         simple("preferences", Box::new(|w| w.show_preferences()));
         simple("quick-look", Box::new(|w| w.toggle_quick_look()));
         simple("palette", Box::new(|w| w.open_palette()));
+        simple("terminal-panel", Box::new(move |w| { if let Some(p) = pane(w) { p.toggle_terminal() } }));
         simple("open-editor", Box::new(|w| {
             match w.selected_items().first() {
                 Some(item) => w.open_in_editor(&item.target_file()),
@@ -1062,6 +1065,8 @@ impl Window {
                 ("Ctrl+H", "Hidden files"),
             ]),
             ("Developer", &[
+                ("Ctrl+`  /  F7", "Terminal panel below the files (your shell, follows the folder)"),
+                ("Ctrl+Shift+C  /  Ctrl+Shift+V", "Copy / paste inside the terminal panel"),
                 ("Ctrl+K", "Command palette: actions, folders, project commands, > shell"),
                 ("Ctrl+E  /  Ctrl+Shift+E", "Open selection / folder in the editor"),
                 ("Context menu › Project", "cargo, npm, make, docker compose, git… in a terminal"),

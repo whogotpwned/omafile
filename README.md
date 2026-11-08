@@ -1,4 +1,4 @@
-`omarchy` `omarchy-plugin` `hyprland` `wayland` `linux` `file-manager` `gtk4` `libadwaita` `rust` `sftp` `scp` `quickshell` `tags` `thumbnails` `pdf-preview` `git` `gocryptfs` `encryption` `command-palette` `arch-linux`
+`omarchy` `omarchy-plugin` `hyprland` `wayland` `linux` `file-manager` `gtk4` `libadwaita` `rust` `sftp` `scp` `quickshell` `tags` `thumbnails` `pdf-preview` `git` `gocryptfs` `encryption` `command-palette` `vte` `terminal` `arch-linux`
 
 # omafile
 
@@ -24,6 +24,7 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![split](docs/screenshot-split.png) | **Split view** (`F6`): two sets of tabs side by side, each with its own history. Drag files across, or between a local and a remote tab. The active side carries the accent border. |
 | ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb turns into a text field with the cursor at the end, so you fix one segment instead of retyping (`Ctrl+A` selects it all to start over). Folders complete as you type: `Tab` accepts, `↑`/`↓` pick, `Enter` opens. `~`, relative paths, `sftp://` and `user@host` all work. |
 | ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview of the selected file without opening it. PDFs show their first page and page count, images fill the window, text files show their content, folders their item count. `←`/`→` walk through the folder while it is open, `Space` or `Esc` closes. The preview pane (`F3`) is the persistent sidebar variant of the same thing; both can be toggled on and off at any time. |
+| ![terminal](docs/screenshot-terminal.png) | **Terminal panel** (`` Ctrl+` `` or `F7`): your login shell in a VTE terminal docked under the file list, the way VS Code does it. It opens in the folder you are looking at and follows along as you navigate (a `cd` with a leading space, kept out of history); with fish, zsh or a bash prompt that reports its folder (OSC 7) a `cd` in the terminal moves the file view too. Colours are the same mapping Omarchy applies to Alacritty, so it looks like your other terminals; the font is the system monospace font. Drag the splitter to resize, `Ctrl+Shift+C`/`V` copy and paste, `exit` restarts the shell. One terminal per tab, so split view gives you two. |
 | ![git](docs/screenshot-git.png) | **Git awareness**: inside a repository every row carries its status badge (`M` modified, `?` untracked, `A` added, `D` deleted, `!` conflict), folders inherit the strongest state of their contents, and the status line shows `repo on branch · 1 modified · 2 untracked`. *Git Diff in Terminal* on a file, *Git Status / Diff* on the folder. Read-only, `GIT_OPTIONAL_LOCKS=0`, refreshed with the folder. |
 | ![palette](docs/screenshot-palette.png) | **Command palette** (`Ctrl+K`), the Walker / VS Code pattern: fuzzy search over every action with its shortcut, places, bookmarks, recent folders, SSH hosts and the project commands of the current folder. Type `> cargo test` to run anything in a terminal here. `↑`/`↓` or `Tab` pick, `Enter` runs. |
 | ![project](docs/screenshot-project.png) | **Project actions**: omafile recognises what a folder is (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `PKGBUILD`, `compose.yml`, `Makefile`/`justfile`, an Omarchy plugin, a git checkout) and offers the matching commands in the context menu and the palette: `cargo test`, `npm run dev`, `makepkg -si`, `docker compose up`, `git log` … They run in Alacritty in that folder and wait for Enter, so output stays readable. *Open in Editor* (`Ctrl+E`, `Ctrl+Shift+E` for the folder) uses Omarchy's `omarchy-launch-editor`, so it lands in Neovim. Teams add their own commands with a `.omafile.toml` in the repository. |
@@ -90,7 +91,7 @@ o.rebind("SUPER + ALT + SHIFT + F", "File manager (cwd)", "setsid uwsm-app -- om
 and on older releases it edits `~/.config/hypr/bindings.conf`. Pass `--default`
 or `--bind` for only one of the two, or nothing for just the binary.
 
-Build dependencies on Omarchy: `sudo pacman -S --needed rust gtk4 libadwaita`.
+Build dependencies on Omarchy: `sudo pacman -S --needed rust gtk4 libadwaita vte4`.
 Runtime extras are already part of a stock install: `gvfs` (trash, drives,
 SFTP), `poppler` (PDF previews), `fd` (fast search), `libarchive` (archives),
 `git` (status badges). Encrypted folders need `gocryptfs`
@@ -168,6 +169,7 @@ widget, drops it from the bar layout and deletes the checkout.
 | `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` | Copy, cut, paste, copy path |
 | `Ctrl+Z` `Ctrl+Shift+Z` | Undo, redo |
 | `Ctrl+K` | Command palette |
+| `` Ctrl+` `` `F7` | Terminal panel below the files |
 | `Ctrl+E` `Ctrl+Shift+E` | Open selection / folder in the editor |
 | `Ctrl+Shift+D` | Duplicate |
 | `Delete` `Shift+Delete` | Trash, delete permanently |
@@ -325,6 +327,7 @@ cargo clippy
 | `projects` | project detection, actions, `.omafile.toml`, editor and terminal launch |
 | `palette` | command palette with fuzzy matching |
 | `crypt` / `vaultui` | gocryptfs vaults and their dialogs |
+| `termpanel` | embedded VTE terminal that follows the folder |
 | `undo` | undo/redo journal |
 | `completion` / `quicklook` | path completion, Quick Look |
 | `prefs` | the preferences file |

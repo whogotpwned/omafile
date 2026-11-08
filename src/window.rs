@@ -1238,7 +1238,8 @@ fn main_menu() -> gio::Menu {
     s1.append(Some("New Folder"), Some("win.new-folder"));
     s1.append(Some("New File"), Some("win.new-file"));
     s1.append(Some("New Encrypted Folder…"), Some("win.vault-new"));
-    s1.append(Some("Open Terminal Here"), Some("win.terminal"));
+    s1.append(Some("Terminal Panel"), Some("win.terminal-panel"));
+    s1.append(Some("Open Terminal Window Here"), Some("win.terminal"));
     s1.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
     s1.append(Some("Connect to Server…"), Some("win.connect"));
     menu.append_section(None, &s1);
@@ -1395,7 +1396,8 @@ pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>
     s2.append(Some("Select All"), Some("win.select-all"));
     menu.append_section(None, &s2);
     let s3 = gio::Menu::new();
-    s3.append(Some("Open Terminal Here"), Some("win.terminal"));
+    s3.append(Some("Terminal Panel"), Some("win.terminal-panel"));
+    s3.append(Some("Open Terminal Window Here"), Some("win.terminal"));
     s3.append(Some("Add Bookmark"), Some("win.bookmark"));
     s3.append(Some("Copy Path"), Some("win.copy-cwd-path"));
     s3.append(Some("Properties"), Some("win.cwd-properties"));

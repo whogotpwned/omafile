@@ -14,6 +14,7 @@ mod quicklook;
 mod remote;
 mod search;
 mod tags;
+mod termpanel;
 mod theme;
 mod thumbs;
 mod undo;

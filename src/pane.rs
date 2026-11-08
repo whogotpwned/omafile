@@ -49,6 +49,8 @@ pub struct Pane {
     pub background_menu: gtk::PopoverMenu,
     pub cell_items: RefCell<HashMap<gtk::Widget, gtk::ListItem>>,
     pub git: RefCell<Option<crate::git::RepoStatus>>,
+    pub term_paned: gtk::Paned,
+    pub term: RefCell<Option<Rc<crate::termpanel::TermPanel>>>,
     pub state: RefCell<PaneState>,
     pub window: Weak<Window>,
     pub thumbs: Rc<ThumbCache>,
@@ -112,9 +114,17 @@ impl Pane {
         card.append(&view_stack);
         card.append(&status);
 
+        // The terminal panel docks below the file card inside a vertical paned.
+        let term_paned = gtk::Paned::new(gtk::Orientation::Vertical);
+        term_paned.set_start_child(Some(&card));
+        term_paned.set_shrink_start_child(false);
+        term_paned.set_shrink_end_child(false);
+        term_paned.set_resize_start_child(true);
+        term_paned.set_resize_end_child(false);
+        term_paned.set_vexpand(true);
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.append(&search_bar);
-        root.append(&card);
+        root.append(&term_paned);
 
         let item_menu = gtk::PopoverMenu::from_model(Some(&window::item_menu_model(false, false, false, false, window::VaultState::None, false)));
         item_menu.set_has_arrow(false);
@@ -142,6 +152,8 @@ impl Pane {
             background_menu,
             cell_items: RefCell::new(HashMap::new()),
             git: RefCell::new(None),
+            term_paned,
+            term: RefCell::new(None),
             state: RefCell::new(PaneState {
                 cwd: start.clone(),
                 back: Vec::new(),
@@ -627,6 +639,11 @@ impl Pane {
         self.search_entry.set_text("");
         self.watch_cwd();
         self.reload();
+        if self.terminal_visible() {
+            if let (Some(t), Some(dir)) = (self.term.borrow().clone(), file.path()) {
+                t.follow_to(&dir);
+            }
+        }
         if let Some(w) = self.window.upgrade() {
             w.pane_navigated(self);
         }
@@ -701,6 +718,52 @@ impl Pane {
                 }
             }
         });
+    }
+
+    // ----- embedded terminal --------------------------------------------------------
+
+    pub fn terminal_visible(&self) -> bool {
+        self.term.borrow().as_ref().map(|t| t.root.is_visible()).unwrap_or(false)
+    }
+
+    /// Ctrl+`: show the terminal below the files, or hide it again.
+    pub fn toggle_terminal(self: &Rc<Self>) {
+        let Some(w) = self.window.upgrade() else { return };
+        let existing = self.term.borrow().clone();
+        let (panel, created) = match existing {
+            Some(t) => (t, false),
+            None => {
+                let t = crate::termpanel::TermPanel::new(&w, self);
+                self.term_paned.set_end_child(Some(&t.root));
+                *self.term.borrow_mut() = Some(t.clone());
+                (t, true)
+            }
+        };
+        if !created && panel.root.is_visible() {
+            panel.root.set_visible(false);
+            self.focus_view();
+        } else {
+            panel.root.set_visible(true);
+            let height = self.term_paned.height();
+            if height > 0 {
+                self.term_paned.set_position((height - 280).max(height / 3));
+            }
+            if let Some(dir) = self.cwd().path() {
+                panel.follow_to(&dir);
+            }
+            panel.focus();
+            if std::env::var_os("OMAFILE_TRACE").is_some() {
+                let paned = self.term_paned.clone();
+                let root = panel.root.clone();
+                let term = panel.terminal.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(500), move || {
+                    eprintln!(
+                        "terminal panel: paned {}x{} pos {} end-child visible={} mapped={} alloc {}x{} term mapped={} has_focus={}",
+                        paned.width(), paned.height(), paned.position(), root.is_visible(), root.is_mapped(), root.width(), root.height(), term.is_mapped(), term.has_focus()
+                    );
+                });
+            }
+        }
     }
 
     pub fn git_status_of(&self, item: &FileItem) -> Option<crate::git::Status> {

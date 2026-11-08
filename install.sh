@@ -34,8 +34,8 @@ if ! command -v cargo >/dev/null 2>&1; then
     echo "cargo not found. On Omarchy: sudo pacman -S --needed rust" >&2
     exit 1
 fi
-if ! pkg-config --exists gtk4 libadwaita-1 2>/dev/null; then
-    echo "GTK 4 / libadwaita headers missing. On Omarchy: sudo pacman -S --needed gtk4 libadwaita" >&2
+if ! pkg-config --exists gtk4 libadwaita-1 vte-2.91-gtk4 2>/dev/null; then
+    echo "GTK 4 / libadwaita / VTE headers missing. On Omarchy: sudo pacman -S --needed gtk4 libadwaita vte4" >&2
     exit 1
 fi
 
@@ -54,7 +54,7 @@ case ":$PATH:" in
     *) echo "   note: $bin_dir is not on your PATH" ;;
 esac
 
-for tool in pdftoppm fd bsdtar; do
+for tool in pdftoppm fd bsdtar git gocryptfs; do
     command -v "$tool" >/dev/null 2>&1 || echo "   optional: $tool not found (PDF previews / fast search / archives)"
 done
 

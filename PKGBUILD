@@ -6,9 +6,11 @@ pkgdesc="Native GTK4/libadwaita file manager that follows the Omarchy theme"
 arch=('x86_64' 'aarch64')
 url="https://github.com/whogotpwned/omafile"
 license=('MIT')
-depends=('gtk4' 'libadwaita' 'glib2' 'hicolor-icon-theme')
+depends=('gtk4' 'libadwaita' 'vte4' 'glib2' 'hicolor-icon-theme')
 optdepends=(
   'gvfs: trash, removable drives and SFTP servers'
+  'gocryptfs: encrypted folders'
+  'git: status badges in repositories'
   'poppler: PDF thumbnails and previews'
   'fd: fast recursive search'
   'libarchive: extract and create archives'
