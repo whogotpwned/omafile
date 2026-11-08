@@ -117,16 +117,52 @@ pub fn parse_custom(text: &str) -> Vec<ProjectAction> {
     actions
 }
 
-/// A terminal command that runs `command` in `dir` and waits before closing.
-pub fn terminal_argv(dir: &Path, command: &str) -> Vec<String> {
-    let term = std::env::var("TERMINAL").unwrap_or_else(|_| "alacritty".into());
-    let script = format!("{command}; status=$?; echo; echo \"[omafile] exit $status, press Enter to close\"; read -r _");
+/// Which terminal to open: `$TERMINAL`, else the desktop default through
+/// `xdg-terminal-exec` (what Omarchy's own bar uses), else foot, else alacritty.
+pub fn terminal_program() -> String {
+    if let Ok(t) = std::env::var("TERMINAL") {
+        if !t.is_empty() {
+            return t;
+        }
+    }
+    for candidate in ["xdg-terminal-exec", "foot", "alacritty", "kitty", "ghostty"] {
+        if gtk::glib::find_program_in_path(candidate).is_some() {
+            return candidate.into();
+        }
+    }
+    "xdg-terminal-exec".into()
+}
+
+/// argv that opens the terminal with `command` (empty: an interactive shell).
+/// The caller spawns it with `dir` as working directory, which every terminal
+/// inherits; alacritty and foot additionally get it passed explicitly.
+pub fn terminal_with(dir: &Path, command: &[String]) -> Vec<String> {
+    let term = terminal_program();
     let mut argv: Vec<String> = Vec::new();
     if gtk::glib::find_program_in_path("uwsm").is_some() {
         argv.extend(["uwsm".into(), "app".into(), "--".into()]);
     }
-    argv.extend([term, "--working-directory".into(), dir.to_string_lossy().to_string(), "-e".into(), "bash".into(), "-lc".into(), script]);
+    argv.push(term.clone());
+    let base = std::path::Path::new(&term).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    match base.as_str() {
+        "alacritty" | "kitty" => argv.extend(["--working-directory".into(), dir.to_string_lossy().to_string()]),
+        "foot" => argv.push(format!("--working-directory={}", dir.to_string_lossy())),
+        "ghostty" => argv.push(format!("--working-directory={}", dir.to_string_lossy())),
+        _ => {}
+    }
+    if !command.is_empty() {
+        if matches!(base.as_str(), "alacritty" | "kitty" | "foot" | "ghostty") {
+            argv.push("-e".into());
+        }
+        argv.extend(command.iter().cloned());
+    }
     argv
+}
+
+/// A terminal that runs `command` in `dir` and waits before closing.
+pub fn terminal_argv(dir: &Path, command: &str) -> Vec<String> {
+    let script = format!("{command}; status=$?; echo; echo \"[omafile] exit $status, press Enter to close\"; read -r _");
+    terminal_with(dir, &["bash".into(), "-lc".into(), script])
 }
 
 /// Editor launch for a folder or file: Omarchy's launcher when present, else $EDITOR in a terminal.
@@ -135,13 +171,8 @@ pub fn editor_argv(target: &Path) -> Vec<String> {
         return vec!["omarchy-launch-editor".into(), target.to_string_lossy().to_string()];
     }
     let editor = std::env::var("VISUAL").or_else(|_| std::env::var("EDITOR")).unwrap_or_else(|_| "nvim".into());
-    let term = std::env::var("TERMINAL").unwrap_or_else(|_| "alacritty".into());
-    let mut argv: Vec<String> = Vec::new();
-    if gtk::glib::find_program_in_path("uwsm").is_some() {
-        argv.extend(["uwsm".into(), "app".into(), "--".into()]);
-    }
-    argv.extend([term, "-e".into(), editor, target.to_string_lossy().to_string()]);
-    argv
+    let dir = if target.is_dir() { target.to_path_buf() } else { target.parent().map(Path::to_path_buf).unwrap_or_else(|| target.to_path_buf()) };
+    terminal_with(&dir, &[editor, target.to_string_lossy().to_string()])
 }
 
 #[cfg(test)]

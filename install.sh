@@ -54,8 +54,10 @@ case ":$PATH:" in
     *) echo "   note: $bin_dir is not on your PATH" ;;
 esac
 
-for tool in pdftoppm fd bsdtar git gocryptfs; do
-    command -v "$tool" >/dev/null 2>&1 || echo "   optional: $tool not found (PDF previews / fast search / archives)"
+echo ":: optional tools"
+for pair in "pdftoppm:PDF previews (poppler)" "fd:fast recursive search" "bsdtar:archives (libarchive)" "git:git status badges" "gocryptfs:encrypted folders (sudo pacman -S gocryptfs)" "script:master key display for new vaults (util-linux)"; do
+    tool="${pair%%:*}"; what="${pair#*:}"
+    if command -v "$tool" >/dev/null 2>&1; then echo "   ok       $tool  ($what)"; else echo "   missing  $tool  ($what)"; fi
 done
 
 if $want_default; then

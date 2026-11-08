@@ -1029,7 +1029,7 @@ impl Window {
         };
         let argv = projects::terminal_argv(&dir, command);
         let args: Vec<&std::path::Path> = argv.iter().map(std::path::Path::new).collect();
-        match glib::spawn_async(None::<&std::path::Path>, &args, &[], glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::STDOUT_TO_DEV_NULL | glib::SpawnFlags::STDERR_TO_DEV_NULL, None) {
+        match glib::spawn_async(Some(dir.as_path()), &args, &[], glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::STDOUT_TO_DEV_NULL | glib::SpawnFlags::STDERR_TO_DEV_NULL, None) {
             Ok(_) => self.toast(&format!("Running: {command}")),
             Err(e) => self.toast_error(&format!("Cannot open terminal: {}", e.message())),
         }
@@ -1042,7 +1042,8 @@ impl Window {
         };
         let argv = projects::editor_argv(&path);
         let args: Vec<&std::path::Path> = argv.iter().map(std::path::Path::new).collect();
-        if let Err(e) = glib::spawn_async(None::<&std::path::Path>, &args, &[], glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::STDOUT_TO_DEV_NULL | glib::SpawnFlags::STDERR_TO_DEV_NULL, None) {
+        let cwd = if path.is_dir() { path.clone() } else { path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| path.clone()) };
+        if let Err(e) = glib::spawn_async(Some(cwd.as_path()), &args, &[], glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::STDOUT_TO_DEV_NULL | glib::SpawnFlags::STDERR_TO_DEV_NULL, None) {
             self.toast_error(&format!("Cannot open editor: {}", e.message()));
         }
     }

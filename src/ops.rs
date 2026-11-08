@@ -141,22 +141,14 @@ pub async fn create_file(file: gio::File) -> OpResult {
     file.create_future(gio::FileCreateFlags::NONE, PRIO).await.map(|_| ())
 }
 
-/// Open a terminal in `dir`. Omarchy launches apps through uwsm and ships Alacritty.
+/// Open a terminal window in `dir` ($TERMINAL, xdg-terminal-exec, foot, alacritty).
 pub fn open_terminal(dir: &gio::File) -> Result<(), glib::Error> {
-    let term = std::env::var("TERMINAL").unwrap_or_else(|_| "alacritty".into());
     let path = dir.path().unwrap_or_else(glib::home_dir);
-    let path = path.to_string_lossy().to_string();
-    let mut argv: Vec<String> = Vec::new();
-    if glib::find_program_in_path("uwsm").is_some() {
-        argv.extend(["uwsm".into(), "app".into(), "--".into()]);
-    }
-    argv.push(term.clone());
-    argv.push("--working-directory".into());
-    argv.push(path);
-    let argv: Vec<&std::path::Path> = argv.iter().map(std::path::Path::new).collect();
+    let argv = crate::projects::terminal_with(&path, &[]);
+    let args: Vec<&std::path::Path> = argv.iter().map(std::path::Path::new).collect();
     glib::spawn_async(
-        None::<&std::path::Path>,
-        &argv,
+        Some(path.as_path()),
+        &args,
         &[],
         glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::STDOUT_TO_DEV_NULL | glib::SpawnFlags::STDERR_TO_DEV_NULL,
         None,

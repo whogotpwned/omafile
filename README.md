@@ -72,6 +72,45 @@ A tag opened from the sidebar lists every tagged item with its location
 
 ## Install
 
+### Requirements: what Omarchy brings, what you add
+
+omafile is built for a stock Omarchy install and uses what is already there.
+Only three things are not part of Omarchy: the Rust toolchain to build it,
+the VTE library for the terminal panel, and gocryptfs for encrypted folders.
+
+```sh
+sudo pacman -S --needed rust vte4          # build + terminal panel (required)
+sudo pacman -S --needed gocryptfs          # encrypted folders (optional)
+```
+
+Everything in detail. "Stock Omarchy" means the package is in Omarchy's own
+package list or pulled in by one that is (Nautilus, Evince, pacman):
+
+| Component | Used for | Stock Omarchy | If it is missing |
+|---|---|---|---|
+| `rust` (cargo) | building omafile, `makepkg` | no | `sudo pacman -S --needed rust`; only needed to build, not to run |
+| `gtk4`, `libadwaita` | the whole UI | yes (Nautilus depends on them) | `sudo pacman -S --needed gtk4 libadwaita` |
+| `vte4` | terminal panel (`` Ctrl+` ``) | **no** | `sudo pacman -S --needed vte4`; required, the binary links against it |
+| `gvfs` (+ `gvfs-smb`, `gvfs-nfs`, `gvfs-mtp`) | trash, drives, SFTP and other servers | yes | `sudo pacman -S --needed gvfs` |
+| `gocryptfs` (+ `fuse3`) | encrypted folders | **no** | `sudo pacman -S --needed gocryptfs`; without it the vault entries report what to install |
+| `git` | status badges, branch line, git actions | yes | badges simply stay off |
+| `fd` | fast recursive search | yes | omafile falls back to a slower GIO walk |
+| `poppler` (`pdftoppm`, `pdfinfo`) | PDF thumbnails and previews | yes (Evince depends on it) | PDFs show the generic icon |
+| `libarchive` (`bsdtar`) | extract / compress | yes (pacman depends on it) | the archive entries do nothing |
+| `util-linux` (`script`) | capturing the master key when a vault is created | yes (base) | the vault is created without showing a master key |
+| `jq` | `plugin/validate.sh`, `omarchy plugin` commands | yes | only needed for plugin development |
+| `xdg-desktop-portal-hyprland`, `xdg-desktop-portal-gtk` | Open With…, file dialogs | yes | GTK falls back to its own dialogs |
+| a terminal: `$TERMINAL`, else `xdg-terminal-exec` (Omarchy's default, foot), else foot, alacritty, kitty, ghostty | Open Terminal Window Here, project commands | yes | set `TERMINAL` |
+| `omarchy-launch-editor` | Open in Editor | yes | `$VISUAL`/`$EDITOR` in a terminal |
+| `uwsm` | launching windows as session apps | yes | commands run directly |
+| Yaru icon themes | file icons matching the theme | yes | the Adwaita icons are used |
+| Omarchy shell (`omarchy-shell`, Omarchy 4 and later) | the bar button plugin | yes on current Omarchy | older Waybar-based releases cannot load shell plugins; the file manager itself still works there |
+
+`install.sh` checks the build requirements before compiling and lists any
+optional tool it cannot find.
+
+### Build and install
+
 ```sh
 git clone https://github.com/whogotpwned/omafile
 cd omafile
@@ -91,13 +130,8 @@ o.rebind("SUPER + ALT + SHIFT + F", "File manager (cwd)", "setsid uwsm-app -- om
 and on older releases it edits `~/.config/hypr/bindings.conf`. Pass `--default`
 or `--bind` for only one of the two, or nothing for just the binary.
 
-Build dependencies on Omarchy: `sudo pacman -S --needed rust gtk4 libadwaita vte4`.
-Runtime extras are already part of a stock install: `gvfs` (trash, drives,
-SFTP), `poppler` (PDF previews), `fd` (fast search), `libarchive` (archives),
-`git` (status badges). Encrypted folders need `gocryptfs`
-(`sudo pacman -S gocryptfs`); everything else works without it.
-
-Arch package: `makepkg -si`, remove with `sudo pacman -Rns omafile`.
+Arch package: `makepkg -si` (the PKGBUILD declares the same dependencies, so
+pacman installs `vte4` for you), remove with `sudo pacman -Rns omafile`.
 
 ### Uninstall
 
