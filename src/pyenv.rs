@@ -140,7 +140,7 @@ pub fn requirements_txt(text: &str) -> Vec<String> {
     text.lines()
         .map(|l| l.split('#').next().unwrap_or("").trim())
         .filter(|l| !l.is_empty() && !l.starts_with('-') && !l.starts_with("http") && !l.starts_with("git+") && !l.starts_with('.'))
-        .filter_map(|l| requirement_name(l))
+        .filter_map(requirement_name)
         .collect()
 }
 
