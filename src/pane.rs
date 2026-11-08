@@ -664,6 +664,7 @@ impl Pane {
             }
         }
         self.watch_cwd();
+        self.fade_view();
         self.reload();
         if self.terminal_visible() {
             if let (Some(t), Some(dir)) = (self.term.borrow().clone(), file.path()) {
@@ -752,6 +753,13 @@ impl Pane {
         self.term.borrow().as_ref().map(|t| t.root.is_visible()).unwrap_or(false)
     }
 
+    /// New folder: fade the file view in (the Hyprland window-fade feel).
+    fn fade_view(&self) {
+        if crate::motion::animations_enabled(&self.view_stack) {
+            crate::motion::fade_in(&self.view_stack, 0.35, crate::motion::FAST + 60);
+        }
+    }
+
     /// Ctrl+`: show the terminal below the files, or hide it again.
     pub fn toggle_terminal(self: &Rc<Self>) {
         let Some(w) = self.window.upgrade() else { return };
@@ -766,13 +774,18 @@ impl Pane {
             }
         };
         if !created && panel.root.is_visible() {
-            panel.root.set_visible(false);
+            // Slide the divider down to the bottom, then drop the panel.
+            let height = self.term_paned.height();
+            let root = panel.root.clone();
+            crate::motion::slide_paned(&self.term_paned, height.max(0), crate::motion::PANEL, Some(Box::new(move || root.set_visible(false))));
             self.focus_view();
         } else {
             panel.root.set_visible(true);
             let height = self.term_paned.height();
             if height > 0 {
-                self.term_paned.set_position((height - 280).max(height / 3));
+                let target = (height - 280).max(height / 3);
+                self.term_paned.set_position(height);
+                crate::motion::slide_paned(&self.term_paned, target, crate::motion::PANEL, None);
             }
             if let Some(dir) = self.cwd().path() {
                 panel.follow_to(&dir);
@@ -1388,6 +1401,8 @@ fn make_thumb(size: i32, pane: Weak<Pane>) -> gtk::Overlay {
 
 fn make_thumb_stack(size: i32) -> gtk::Stack {
     let stack = gtk::Stack::new();
+    stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+    stack.set_transition_duration(crate::motion::FAST);
     stack.set_hhomogeneous(true);
     stack.set_vhomogeneous(true);
     let image = gtk::Image::new();

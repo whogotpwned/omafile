@@ -439,6 +439,13 @@ pub fn css(p: &Palette) -> String {
 .omafile-hidden picture {{
   filter: grayscale(0.9);
 }}
+/* Motion: hover and selection colours ease instead of snapping. */
+.omafile-files row, .omafile-files child, .omafile-sidebar row, button, .omafile-tag-dot, .omafile-git-badge, .omafile-thumb {{
+  transition: background-color 150ms ease-out, color 150ms ease-out, opacity 150ms ease-out, box-shadow 150ms ease-out;
+}}
+.omafile-files row:hover, .omafile-files child:hover {{
+  background-color: {hover};
+}}
 .omafile-play-badge {{
   background-color: rgba(0, 0, 0, 0.55);
   color: white;

@@ -7,6 +7,7 @@ mod git;
 mod gitui;
 mod imagetools;
 mod item;
+mod motion;
 mod omarchy;
 mod ops;
 mod palette;

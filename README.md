@@ -273,6 +273,10 @@ Bind it next to the file manager binding in `~/.config/hypr/bindings.lua`:
 o.rebind("SUPER + SHIFT + R", "Recent folders", { launch = "omafile-recent" })
 ```
 
+## Motion
+
+Panels move the way the rest of Omarchy moves instead of snapping: the terminal panel slides up from the bottom edge and back down (`` Ctrl+` ``), the split view slides its divider in from the right (`F6`), a new folder fades in like a Hyprland window, thumbnails cross-fade over their icon as they arrive, and hover and selection colours ease. All of it uses libadwaita's animations with an ease-out-quint curve over about 260 ms, so turning off `gtk-enable-animations` (or the system's reduce-motion setting) switches every effect off at once.
+
 ## How it follows Omarchy
 
 - **Palette.** omafile reads `~/.local/state/omarchy/current/theme/colors.toml`
@@ -427,6 +431,7 @@ cargo clippy
 | `containers` | docker / podman volume discovery |
 | `omarchy` | theme folders, `omarchy-theme-set`, `omarchy-theme-bg-set` |
 | `session` / `status` | session file; status file for the bar widget, recent list, `--lock-all` |
+| `motion` | slide and fade animations (libadwaita TimedAnimation, respects reduced motion) |
 | `completion` / `quicklook` | path completion, Quick Look |
 | `prefs` | the preferences file |
 | `actions` | window actions, clipboard, dialogs, properties, shortcuts |

@@ -504,7 +504,8 @@ impl Window {
             self.split_boxes[1].set_visible(true);
             let width = self.split_paned.width();
             if width > 0 {
-                self.split_paned.set_position(width / 2);
+                self.split_paned.set_position(width);
+                crate::motion::slide_paned(&self.split_paned, width / 2, crate::motion::PANEL, None);
             }
             self.active_side.set(1);
             self.split_boxes[1].add_css_class("omafile-split-active");
@@ -515,6 +516,22 @@ impl Window {
 
     /// Fold the right side into the left: its tabs move over, then it hides.
     fn end_split(self: &Rc<Self>) {
+        if self.ending_split.get() {
+            return;
+        }
+        // Slide the divider to the right edge first, then fold the tabs over.
+        self.ending_split.set(true);
+        let width = self.split_paned.width();
+        let this = Rc::downgrade(self);
+        crate::motion::slide_paned(&self.split_paned, width.max(0), crate::motion::PANEL, Some(Box::new(move || {
+            if let Some(w) = this.upgrade() {
+                w.ending_split.set(false);
+                w.finish_end_split();
+            }
+        })));
+    }
+
+    fn finish_end_split(self: &Rc<Self>) {
         self.ending_split.set(true);
         let (from, to) = (&self.tab_views[1], &self.tab_views[0]);
         while from.n_pages() > 0 {
