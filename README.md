@@ -1,468 +1,428 @@
-`omarchy` `omarchy-plugin` `hyprland` `wayland` `linux` `file-manager` `gtk4` `libadwaita` `rust` `sftp` `scp` `quickshell` `tags` `thumbnails` `pdf-preview` `git` `gocryptfs` `encryption` `command-palette` `vte` `terminal` `arch-linux`
+`omarchy` `omarchy-plugin` `hyprland` `wayland` `linux` `file-manager` `gtk4` `libadwaita` `rust` `sftp` `scp` `quickshell` `tags` `thumbnails` `pdf-preview` `git` `gocryptfs` `encryption` `command-palette` `vte` `terminal` `python` `venv` `arch-linux`
 
-<p align="center">
-  <img src="data/icons/io.github.whogotpwned.Omafile.svg" width="128" height="128" alt="omafile icon">
-</p>
+<div align="center">
+
+<img src="data/icons/io.github.whogotpwned.Omafile.svg" width="128" height="128" alt="omafile icon">
 
 # omafile
 
-[![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button-omarchy-shell-plugin)
+**The file manager that feels like part of Omarchy.**
+
+GTK 4 · libadwaita · Rust · theme-aware · terminal inside · git inside · Python inside
+
+[![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
+[![Tests](https://img.shields.io/badge/tests-39%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
-A native GTK 4 / libadwaita file manager for [Omarchy](https://omarchy.org),
-plus an Omarchy shell plugin that puts it on the bar. It looks like it shipped
-with the system: colours, accent, light/dark mode and the icon theme come from
-the active Omarchy theme and follow along live when you switch themes.
+<img src="docs/screenshot-pdf.png" alt="omafile in Tokyo Night: grid view with image and PDF thumbnails and the preview pane" width="900">
 
-![omafile, Tokyo Night, grid view with image and PDF thumbnails and the preview pane](docs/screenshot-pdf.png)
+</div>
+
+omafile is a native file manager for [Omarchy](https://omarchy.org) and an
+Omarchy shell plugin that puts it on the bar. Colours, accent, light or dark
+mode and the icon theme come from the active Omarchy theme and follow along
+live when you switch. Below the files sits your shell, next to them your git
+status, and every panel moves the way Hyprland moves.
+
+```sh
+git clone https://github.com/whogotpwned/omafile && cd omafile
+sudo pacman -S --needed rust vte4            # the two things stock Omarchy lacks
+./install.sh --all                           # binary, launcher, default app, Super+Shift+F
+omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar button (optional)
+```
+
+<div align="center">
+
+[Highlights](#highlights) · [Features](#features) · [Shortcuts](#keyboard-shortcuts) · [Command line](#command-line-and-launchers) · [Install](#install) · [Bar button](#bar-button) · [Omarchy](#how-it-follows-omarchy) · [Publishing](#publishing-as-an-omarchy-plugin) · [Development](#development)
+
+</div>
+
+---
+
+## Highlights
+
+<table>
+<tr>
+<td width="33%"><img src="docs/screenshot-terminal.png" alt="terminal panel"><br><b>Terminal panel</b><br><sub>Your shell under the files, follows every folder, activates Python venvs. <code>Ctrl+`</code></sub></td>
+<td width="33%"><img src="docs/screenshot-git-commit.png" alt="git commit"><br><b>Git without a terminal</b><br><sub>Badges, click to stage, commit dialog, branch switcher, coloured diffs.</sub></td>
+<td width="33%"><img src="docs/screenshot-palette.png" alt="command palette"><br><b>Command palette</b><br><sub>Every action, folder, project command and bulk rename behind <code>Ctrl+K</code>.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshot-thumbs.png" alt="thumbnails"><br><b>Previews in the icon</b><br><sub>Text pages, PDF pages, video frames, cover art. Space opens Quick Look and plays music.</sub></td>
+<td><img src="docs/screenshot-permissions.png" alt="permissions"><br><b>Permissions in plain words</b><br><sub>“Owner can read and write…”, check boxes, octal, owner and group. Undoable.</sub></td>
+<td><img src="docs/screenshot-vault.png" alt="encrypted folder"><br><b>Encrypted folders</b><br><sub>gocryptfs vaults you can sync anywhere and unlock with a password.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshot-venv-reqs.png" alt="python requirements"><br><b>Python aware</b><br><sub>venv badge, requirements ✓/✗ against the venv, create / install / freeze from the menu.</sub></td>
+<td><img src="docs/screenshot-bindings.png" alt="bindings overlay"><br><b>Every binding, searchable</b><br><sub><code>F1</code> lists all shortcuts, gestures and menu entries, generated from the real table.</sub></td>
+<td><img src="docs/screenshot-light.png" alt="light theme"><br><b>Follows the theme live</b><br><sub><code>omarchy theme set</code> re-skins open windows, icons included, no restart.</sub></td>
+</tr>
+</table>
+
+---
 
 ## Features
 
+### Browse and preview
+
 | | |
 |---|---|
-| ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, rubber-band and multi-selection, live reload when a folder changes. |
-| ![thumbnails](docs/screenshot-thumbs.png) | **Previews in the icon**, like Finder and Explorer: text and source files show a small page with their first lines, images and SVGs their picture, PDFs their first page, videos a frame (`ffmpegthumbnailer`, else `ffmpeg`), music its cover art, theme folders their `preview.png`. Everything decodes off the main thread and is cached; credential files are never rendered. |
-| ![play badge](docs/screenshot-play-badge.png) | **Play button on the icon**, as in Finder: every song and video carries a round play badge over its thumbnail, centred in the grid and in the corner of the list icon. One click selects the file and starts it in Quick Look, no need to find the right app first. |
-| ![bindings](docs/screenshot-bindings.png) | **All bindings in one place** (`F1`, `Ctrl+?`): a searchable overlay of every shortcut, gesture and menu entry, grouped, with keycaps, starting with the Hyprland key that opens omafile. `omafile --print-bindings` gives the same list to scripts and launchers. |
-| ![permissions](docs/screenshot-permissions.png) | **Permissions and ownership in plain words**: Properties (`Ctrl+I`) says "Owner can read and write, group and others can read", shows `rw-r--r--` and `644`, and lets you change it with check boxes per owner / group / others, an octal field, switches for set-UID, set-GID and sticky, a group picker (the groups you belong to; owner too when you are root) and a "You can …" line. Folders get *Apply to Enclosed Files*. Every change applies at once and is undoable. |
-| ![smart](docs/screenshot-smart.png) | **Smart folders**: save a search (`Ctrl+Alt+S`, or from the menu) with a name, a root, optional glob (`*.pdf`) and "modified within N days". It lives under *Smart Folders* in the sidebar and lists its matches whenever you open it, newest first. |
-| ![dual pane](docs/screenshot-dual-pane.png) | **Dual-pane commands**: in split view `Shift+F5` copies and `Shift+F6` moves the selection to the other side, Midnight Commander style, through the same queue with progress, conflicts and undo. |
-| ![compare](docs/screenshot-compare-dirs.png) | **Compare** (`Ctrl+Alt+D`): two files give a coloured unified diff, two folders a report of what is only left, only right or different. One item on each side of the split works too. |
-| ![bulk](docs/screenshot-bulk.png) | **Bulk commands in the palette**: type `rename *.jpeg *.jpg`, `rename IMG_* holiday-*`, `chmod +x`, `touch a.txt b.txt` or `mkdir docs` into `Ctrl+K`. The row previews what would happen (how many, first examples); `Enter` runs it with undo. `*` captures and reinserts. |
-| ![checksum](docs/screenshot-checksum.png) | **Checksums**: Properties shows the SHA-256 with a copy button. *Verify Checksum* compares against a `.sha256` / `SHA256SUMS` file beside the download, else against a hash on the clipboard, and says ✓ or ✗. |
-| ![notes](docs/screenshot-notes.png) | **Notes on files** (`Ctrl+Alt+M`): a comment stored as GIO metadata (the same field Nautilus uses), shown as a speech-bubble badge with tooltip, and searchable in the palette, which jumps to the file. |
-| ![templates](docs/screenshot-templates.png) | **New from Template**: everything in `~/Templates` (files and whole folders) plus built-in scaffolds for a Rust crate, a Python project, an Omarchy shell plugin, a Hyprland config snippet and a static web page. Name it, done, undo trashes it. |
-| ![archive](docs/screenshot-archive.png) | **Browse archives in place**: `Enter` on a `.zip` / `.tar.*` opens it like a folder through GVFS; copy single files out, *Extract Here* stays in the menu. Off in Preferences if you prefer the default app. |
-| ![batch rename](docs/screenshot-batch-meta.png) | **Batch rename with metadata and regex**: `[exif]` photo date, `[artist]` `[title]` `[album]` `[track]` from audio tags (ffprobe), `[N:3]` zero-padded counters, and a regular-expression find with `$1` groups in the replacement. |
-| ![theme export](docs/screenshot-theme-export.png) | **Omarchy theme sharing**: *Export Omarchy Theme…* packs a theme folder (with its `preview.png`) into `~/Downloads/<name>.tar.gz`; *Install as Omarchy Theme* on such an archive unpacks it into `~/.config/omarchy/themes`, ready for `omarchy-theme-set`. Publishing to others still goes through a git repository and `omarchy-theme-install <url>`. |
-| ![venv](docs/screenshot-venv-terminal.png) | **Python virtual environments**: a `.venv` (or `venv`, `env`) is recognised by its `pyvenv.cfg` and shows a flask badge with Python version, package count and the tool that made it (uv, virtualenv, venv); the status line says `.venv · Python 3.13 · 42 packages (uv)` while you are in the project. The terminal panel activates the venv when you enter the project and deactivates it when you leave (switchable in Preferences); the panel title shows `(.venv)`. |
-| ![requirements](docs/screenshot-venv-reqs.png) | **Requirements at a glance**: selecting `requirements.txt` or `pyproject.toml` lists every requirement with ✓ installed (and version) or ✗ missing against the project's venv; selecting the venv folder lists its packages. Context menu › *Python*: Create venv (`uv venv`, else `python -m venv`), Activate in Terminal Panel (`Ctrl+Alt+V`), Install Requirements (`uv pip install -r` / `uv sync` / pip), Freeze, REPL in the venv, Add venv to .gitignore, Recreate venv. A `.py` file gets *Run in venv*. Moving a venv warns you that it must be recreated. |
-| ![hidden](docs/screenshot-hidden.png) | **Hidden files**: the eye button in the header (or `Ctrl+H`) shows or hides dotfiles and backups. While hidden the status line says how many there are (`14 items (+2 hidden)`); while shown they stay clearly apart: dimmed, italic, with a greyed icon. |
-| ![music](docs/screenshot-music.png) | **Play music and video in place**: an audio file shows its cover and transport controls in the preview pane, `Space` (Quick Look) starts playing right away, *Play* in the context menu does the same; `←`/`→` move through the album. Videos play in the preview and in Quick Look with GTK's player. GStreamer does the decoding, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
-| ![tabs](docs/screenshot-tabs.png) | **Tabs and the preview pane** (`F3`). Images, PDFs (first page, page count), text files in monospace, folder item counts. |
-| ![split](docs/screenshot-split.png) | **Split view** (`F6`): two sets of tabs side by side, each with its own history. Drag files across, or between a local and a remote tab. The active side carries the accent border. |
-| ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb turns into a text field with the cursor at the end, so you fix one segment instead of retyping (`Ctrl+A` selects it all to start over). Folders complete as you type: `Tab` accepts, `↑`/`↓` pick, `Enter` opens. `~`, relative paths, `sftp://` and `user@host` all work. |
-| ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview of the selected file without opening it. PDFs show their first page and page count, images fill the window, text files show their content, folders their item count. `←`/`→` walk through the folder while it is open, `Space` or `Esc` closes. The preview pane (`F3`) is the persistent sidebar variant of the same thing; both can be toggled on and off at any time. |
-| ![terminal](docs/screenshot-terminal.png) | **Terminal panel** (`` Ctrl+` `` or `F7`): your login shell in a VTE terminal docked under the file list, the way VS Code does it. It opens in the folder you are looking at and follows along as you navigate (a `cd` with a leading space, kept out of history); with fish, zsh or a bash prompt that reports its folder (OSC 7) a `cd` in the terminal moves the file view too. Colours are the same mapping Omarchy applies to Alacritty, so it looks like your other terminals; the font is the system monospace font. Drag the splitter to resize, `Ctrl+Shift+C`/`V` copy and paste, `exit` restarts the shell. One terminal per tab, so split view gives you two. |
-| ![git](docs/screenshot-git.png) | **Git awareness**: inside a repository every row carries its status badge (`M` modified, `?` untracked, `A` added, `D` deleted, `!` conflict), folders inherit the strongest state of their contents, and the status line shows `repo on branch · 1 modified · 2 untracked` plus a branch button. `GIT_OPTIONAL_LOCKS=0`, refreshed with the folder. |
-| ![git commit](docs/screenshot-git-commit.png) | **Git without a terminal**: click a badge to stage or unstage that file (a staged badge is outlined), *Git › Stage / Unstage / Discard Changes…* on a selection, *Commit…* (`Ctrl+Alt+C`) with summary, body and "stage all first", and the branch button or `Ctrl+Alt+B` to switch or create a branch. Errors arrive as one-line toasts (a missing identity tells you which `git config` to run). |
-| ![diff](docs/screenshot-diff.png) | **Diff preview**: a file with local changes shows its coloured `git diff` in the preview pane and in Quick Look instead of the plain text, with the index diff appended and the `+`/`−` count underneath. Untracked files diff against nothing, so you see what a new file would add. |
-| ![conflict](docs/screenshot-conflict.png) | **Conflicts and progress**: paste, drop, Copy To and Move To go through one queue. An existing target asks *Replace*, *Skip*, *Keep Both* (`name (1)`) or *Cancel*, with both sizes and dates and *apply to all*. A banner at the bottom shows what is being copied with a real progress bar; *Cancel* stops it and removes the half-written file. Folders are copied file by file so cancelling and progress work for them too. |
-| ![trash](docs/screenshot-trash.png) | **Trash with memory**: in the trash two extra columns show when an item was deleted and where it came from; `Ctrl+Shift+R` or *Restore* puts it back there. |
-| ![rename](docs/screenshot-rename.png) | **Rename in place** (`F2`): the name turns into a text field on the row, the stem is preselected, `Enter` renames, `Esc` cancels. `Shift+F2` opens the dialog instead, several selected files open batch rename. |
-| ![sizes](docs/screenshot-sizes.png) | **Folder sizes** (`Ctrl+Shift+U`): measures every folder in view in the background, fills the Size column and sorts by it, so the biggest directories come first, the way a disk usage tool would. *Properties* on a folder calculates its size too. |
-| ![secrets](docs/screenshot-secrets.png) | **Secrets protection**: files that usually hold credentials (`.env`, `id_rsa`, `*.pem`, `*.key`, `*.p12`, `*.kdbx`, `credentials.json`, `.netrc`, `.npmrc`, `.git-credentials`, `kubeconfig`, …) get a key badge, their preview and Quick Look are masked, and copying one asks first so a secret does not end up on the clipboard or in a chat by accident. `.env.example` and `*.pub` are exempt. |
-| ![themes](docs/screenshot-themes.png) | **Omarchy themes**: the sidebar has an *Omarchy Themes* place; theme folders show their `preview.png` as thumbnail (any folder with a `preview.png`, `cover.jpg` or a `backgrounds/` directory does), and *Apply Omarchy Theme* on one runs `omarchy-theme-set`. On an image, *Image › Set as Wallpaper* runs `omarchy-theme-bg-set`. |
-| ![image tools](docs/screenshot-image-resize.png) | **Image tools** (context menu › Image, or the palette): rotate left/right in place, convert to PNG / JPEG / WebP, resize by width, height or percent. Conversions and resizes are written next to the original as new files and can be undone (they go to the trash) and redone. Needs ImageMagick. |
-| ![share](docs/screenshot-share.png) | **Share**: *Copy scp Command* puts `scp user@host:/path .` on the clipboard for the selection; *Share on Local Network…* serves it over HTTP from a scratch folder of links (only what you picked, never the siblings) and shows the link and a QR code (`qrencode`) until you close the dialog. |
-| ![trash](docs/screenshot-trash.png) | **Trash automation**: the sidebar entry shows how many items and bytes are waiting, Preferences can delete trashed items older than N days at start, and the first folder on a drive with less than 5 % or 2 GB free gets a low-space warning. |
-| ![containers](docs/screenshot-containers.png) | **Container volumes**: Docker and podman volumes whose mount point you can read appear under *Containers* in the sidebar. Rootless podman volumes always qualify; Docker's live under `/var/lib/docker`, which is root-only, so they show up only when that is readable (the screenshot uses a stub daemon). |
-| ![session](docs/screenshot-session.png) | **Sessions**: tabs, the split view, which terminal panels were open and the window size come back on the next start (`omafile` without a folder argument). Off in Preferences if you prefer a clean window. |
-| ![palette](docs/screenshot-palette.png) | **Command palette** (`Ctrl+K`), the Walker / VS Code pattern: fuzzy search over every action with its shortcut, places, bookmarks, recent folders, SSH hosts and the project commands of the current folder. Type `> cargo test` to run anything in a terminal here. `↑`/`↓` or `Tab` pick, `Enter` runs. |
-| ![project](docs/screenshot-project.png) | **Project actions**: omafile recognises what a folder is (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `PKGBUILD`, `compose.yml`, `Makefile`/`justfile`, an Omarchy plugin, a git checkout) and offers the matching commands in the context menu and the palette: `cargo test`, `npm run dev`, `makepkg -si`, `docker compose up`, `git log` … They run in Alacritty in that folder and wait for Enter, so output stays readable. *Open in Editor* (`Ctrl+E`, `Ctrl+Shift+E` for the folder) uses Omarchy's `omarchy-launch-editor`, so it lands in Neovim. Teams add their own commands with a `.omafile.toml` in the repository. |
-| ![vault](docs/screenshot-vault.png) | **Encrypted folders** with gocryptfs: *New Encrypted Folder…* asks for a name and password and creates `Name.gocryptfs` (the ciphertext) next to `Name` (where files appear while unlocked). Unlock, lock and change the password from the context menu; the password only ever travels through a pipe. The master key for emergencies is shown once. Because gocryptfs encrypts file by file, the `.gocryptfs` folder is the thing to back up, sync or move to another machine: copy it anywhere, unlock it there with the same password. |
-| ![undo](docs/screenshot-undo.png) | **Undo and redo** (`Ctrl+Z`, `Ctrl+Shift+Z`), borrowed from Nautilus and Finder: move, copy, paste, rename, batch rename, duplicate, new folder/file, trash and tag changes can all be taken back, every toast carries an Undo button, and trashed items are restored from the trash by their original path. |
-| ![search](docs/screenshot-search.png) | **Recursive search** (`Ctrl+Shift+F`) through the current folder and everything below. `fd` streams matches while it walks, results appear in batches as they arrive, the previous search is killed the moment you type on, and the final list is ranked (name starts with the query, name contains it, path contains it). On a 5,300-file tree a short query returns in about 40 ms, a query with 200+ hits in under 300 ms including the file information for every hit. A GIO walk takes over where `fd` cannot go, such as SFTP servers. |
-| ![batch rename](docs/screenshot-batch.png) | **Batch rename**: select several files and press `F2`. Pattern with `[name]`, `[ext]`, `[N]`, `[date]`, then find/replace, with a live preview and conflict detection. |
-| ![sftp](docs/screenshot-sftp.png) | **SFTP / SCP**: hosts from `~/.ssh/config` in the sidebar, *Connect to Server…* for `user@host[:port]/path`, native credential prompts, mounted servers under *Devices*. Copy, paste, drag and drop, rename and preview work on remote files like on local ones. |
-| ![icon chooser](docs/screenshot-icon.png) | **Custom icons** per folder or file (`Ctrl+Alt+I`): pick one from the icon theme or use your own image. Stored as GIO metadata, so Nautilus shows the same icon. |
-| ![preferences](docs/screenshot-prefs.png) | **Preferences** (`Ctrl+,`): override the icon theme (by default omafile follows the Yaru variant Omarchy's theme asks for), thumbnails, default view, hidden files. |
-| ![tags](docs/screenshot-tags.png) | **Tags**, Finder style: give folders and files one of seven colours (`Ctrl+Alt+1…7`, `Ctrl+Alt+0` removes). The dot shows in list and grid, every colour in use appears under *Tags* in the sidebar and lists all tagged items wherever they are. Tags are stored as GIO metadata on the file and in an index, and follow renames and moves done in omafile. |
-| ![light](docs/screenshot-light.png) | **Theme following**: here the same build after `omarchy theme set "Catppuccin Latte"`, which turned the window light and the folders blue, without a restart. |
+| ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, rubber-band and multi-selection, live reload when a folder changes. **Hidden files** toggle with the eye button or `Ctrl+H`; hidden items are dimmed, italic and greyed, the status line counts them while hidden. |
+| ![thumbnails](docs/screenshot-thumbs.png) | **Previews in the icon**, like Finder and Explorer: text and source files show a page with their first lines, images and SVGs their picture, PDFs their first page, videos a frame (`ffmpegthumbnailer`, else `ffmpeg`), music its cover art, theme folders their `preview.png`. Everything decodes off the main thread and is cached; credential files are never rendered. |
+| ![play badge](docs/screenshot-play-badge.png) | **Play in place**: songs and videos carry a round play badge over their icon; one click starts them. Audio shows cover and transport controls in the preview pane, `Space` (Quick Look) plays right away, `←`/`→` walk the album. GStreamer decodes, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
+| ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview without opening the file. PDFs with page count, images, text, folders with item count, git diffs for changed files. `←`/`→` move through the folder, `Space` or `Esc` closes. The **preview pane** (`F3`) is the persistent sidebar version of the same thing. |
+| ![tabs](docs/screenshot-tabs.png) | **Tabs** (`Ctrl+T`), **split view** (`F6`) with two sets of tabs and their own histories, drag files across sides or between a local and a remote tab. **Sessions** bring tabs, split, open terminal panels and window size back on the next start. |
+| ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb becomes a text field with the cursor at the end, folders complete as you type (`Tab` accepts, `↑`/`↓` pick, `Enter` opens). `~`, relative paths, `sftp://` and `user@host` all work. |
+| ![search](docs/screenshot-search.png) | **Recursive search** (`Ctrl+Shift+F`): `fd` streams matches while it walks, results arrive in batches, the previous search is killed as you type on, and the final list is ranked. About 40 ms for a short query on a 5,300-file tree. **Smart folders** (`Ctrl+Alt+S`) save a search with glob and age as a sidebar entry. |
+| ![bindings](docs/screenshot-bindings.png) | **All bindings in one place** (`F1`, `Ctrl+?`): a searchable overlay of every shortcut, gesture and menu entry with keycaps, starting with the Hyprland key that opens omafile. Generated from the accelerator table, kept complete by a test, printable with `omafile --print-bindings`. |
 
-Also: *Copy To…* and *Move To…* with a folder picker and *Duplicate*
-(`Ctrl+Shift+D`) from the context menu, bookmarks shared with the GTK file chooser (`Ctrl+D`), *Recent* and
-*Trash* with restore and empty, drag and drop onto sidebar places, extract and
-create archives via `bsdtar`, cut/copy/paste shared with other apps, properties,
-open with…, copy path, open terminal here (`uwsm app -- alacritty`), context
-menus and a shortcut for everything (`Ctrl+?`).
+### Files and operations
+
+| | |
+|---|---|
+| ![conflict](docs/screenshot-conflict.png) | **One queue for everything**: paste, drop, Copy To, Move To and dual-pane commands share a queue with a progress banner and *Cancel*. An existing target asks *Replace*, *Skip*, *Keep Both* or *Cancel*, with sizes and dates and *apply to all*. Folders copy file by file so cancelling and progress work for them too. |
+| ![undo](docs/screenshot-undo.png) | **Undo and redo** (`Ctrl+Z`, `Ctrl+Shift+Z`) for move, copy, paste, rename, batch rename, duplicate, new items, trash, tags, permissions, ownership, image conversions and templates. Every toast carries an Undo button. |
+| ![rename](docs/screenshot-rename.png) | **Rename in place** (`F2`) with the stem preselected, `Shift+F2` for the dialog. **Batch rename** on a multi-selection: `[name]`, `[ext]`, `[N]` / `[N:3]`, `[date]`, `[exif]`, `[artist]` `[title]` `[album]` `[track]`, plain or regex find/replace with `$1`, live preview and conflict detection. |
+| ![bulk](docs/screenshot-bulk.png) | **Bulk commands in the palette**: `rename *.jpeg *.jpg`, `rename IMG_* holiday-*`, `chmod +x`, `touch a b`, `mkdir docs` typed into `Ctrl+K`. The row previews the effect, `Enter` runs it, `*` captures and reinserts, all undoable. |
+| ![dual pane](docs/screenshot-dual-pane.png) | **Dual-pane commands**: in split view `Shift+F5` copies and `Shift+F6` moves the selection to the other side, Midnight Commander style. |
+| ![compare](docs/screenshot-compare-dirs.png) | **Compare** (`Ctrl+Alt+D`): two files give a coloured unified diff, two folders a report of only-left, only-right and different. One item on each side of the split works too. |
+| ![trash](docs/screenshot-trash.png) | **Trash with memory**: columns for deletion date and original location, `Ctrl+Shift+R` restores. The sidebar entry shows count and size, Preferences can delete items older than N days, and a drive below 5 % or 2 GB free gets a warning. |
+| ![sizes](docs/screenshot-sizes.png) | **Folder sizes** (`Ctrl+Shift+U`) measured in the background and sorted by disk usage; Properties calculates a folder's size too. |
+| ![archive](docs/screenshot-archive.png) | **Archives in place**: `Enter` on a `.zip` / `.tar.*` browses inside it through GVFS, *Extract Here* and *Compress…* stay in the menu. |
+| ![image tools](docs/screenshot-image-resize.png) | **Image tools**: rotate, convert to PNG / JPEG / WebP, resize by width, height or percent, set as Omarchy wallpaper. New files are written next to the original and can be undone. |
+| ![checksum](docs/screenshot-checksum.png) | **Checksums**: SHA-256 in Properties with a copy button; *Verify Checksum* compares against a `.sha256` / `SHA256SUMS` sidecar or a hash on the clipboard and says ✓ or ✗. |
+| ![permissions](docs/screenshot-permissions.png) | **Permissions and ownership in plain words**: Properties explains who may read, write and run, shows `rw-r--r--` and `644`, and lets you change it with check boxes, an octal field, special-bit switches, a group picker and (as root) an owner picker. Folders get *Apply to Enclosed Files*. |
+| ![templates](docs/screenshot-templates.png) | **New from Template**: `~/Templates` entries plus built-in scaffolds for a Rust crate, a Python project, an Omarchy shell plugin, a Hyprland snippet and a static web page. |
+
+### Developer
+
+| | |
+|---|---|
+| ![terminal](docs/screenshot-terminal.png) | **Terminal panel** (`` Ctrl+` `` or `F7`): your login shell in a VTE terminal docked under the files. It opens in the folder you look at and follows along; with fish, zsh or an OSC 7 bash prompt a `cd` in the terminal moves the file view too. Same colour mapping Omarchy applies to Alacritty, `Ctrl+Shift+C`/`V`, one terminal per tab. |
+| ![git](docs/screenshot-git.png) | **Git awareness**: status badges per row (`M` `?` `A` `D` `!`), folders inherit the strongest state, status line with `repo on branch · 1 modified · 2 untracked` and a branch button. |
+| ![git commit](docs/screenshot-git-commit.png) | **Git without a terminal**: click a badge to stage or unstage, *Git › Stage / Unstage / Discard Changes…*, *Commit…* (`Ctrl+Alt+C`) with summary and body, branch switcher (`Ctrl+Alt+B`) that creates branches too. Errors arrive as one-line toasts. |
+| ![diff](docs/screenshot-diff.png) | **Diff preview**: changed files show their coloured `git diff` in the preview pane and Quick Look, index diff appended, `+`/`−` count underneath. |
+| ![palette](docs/screenshot-palette.png) | **Command palette** (`Ctrl+K`): fuzzy search over actions with their shortcuts, places, bookmarks, recent folders, SSH hosts, notes, templates and the project commands of the current folder. `> cargo test` runs anything in a terminal. |
+| ![project](docs/screenshot-project.png) | **Project actions** for Cargo, npm, Python, Go, PKGBUILD, compose, Make / just, Omarchy plugins and git checkouts, plus your own from `.omafile.toml`. *Open in Editor* (`Ctrl+E`) uses `omarchy-launch-editor`. |
+| ![venv](docs/screenshot-venv-terminal.png) | **Python virtual environments**: `.venv` / `venv` / `env` are recognised by `pyvenv.cfg` and show a flask badge with Python version, package count and tool (uv, virtualenv, venv); the status line summarises them. The terminal panel activates the venv when you enter the project and deactivates when you leave (`Ctrl+Alt+V` by hand, switchable in Preferences). |
+| ![requirements](docs/screenshot-venv-reqs.png) | **Requirements at a glance**: `requirements.txt` and `pyproject.toml` list every requirement with ✓ version or ✗ missing against the venv. *Python* menu: Create venv (`uv venv`, else `python -m venv`), Install Requirements, Freeze, REPL, Add to .gitignore, Recreate; *Run in venv* on `.py` files. Moving a venv warns that it must be recreated. |
+| ![containers](docs/screenshot-containers.png) | **Container volumes**: Docker and podman volumes whose mount point you can read appear under *Containers* (rootless podman always; Docker's live under `/var/lib/docker`, root-only). |
+
+### Security and privacy
+
+| | |
+|---|---|
+| ![vault](docs/screenshot-vault.png) | **Encrypted folders** with gocryptfs: *New Encrypted Folder…* creates `Name.gocryptfs` (ciphertext) next to `Name` (plaintext while unlocked). Unlock, lock, change password from the context menu; the password only travels through a pipe; the master key is shown once. The `.gocryptfs` folder is the thing to back up or sync. Details [below](#encrypted-folders-in-detail). |
+| ![secrets](docs/screenshot-secrets.png) | **Secrets protection**: `.env`, `id_rsa`, `*.pem`, `*.key`, `*.p12`, `*.kdbx`, `credentials.json`, `.netrc`, `.npmrc`, `kubeconfig`, … get a key badge, a masked preview and a confirmation before they are copied. `.env.example` and `*.pub` are exempt. |
+| ![share](docs/screenshot-share.png) | **Share** on your terms: *Copy scp Command*, or *Share on Local Network…* serves exactly the selection over HTTP from a scratch folder of links with a QR code, until you close the dialog. |
+
+### Organise
+
+| | |
+|---|---|
+| ![tags](docs/screenshot-tags.png) | **Tags**, Finder style: seven colours (`Ctrl+Alt+1…7`, `Ctrl+Alt+0` removes), dots in list and grid, each colour in use becomes a sidebar listing. Stored as GIO metadata plus an index, follow renames and moves. |
+| ![notes](docs/screenshot-notes.png) | **Notes on files** (`Ctrl+Alt+M`): the same metadata field Nautilus uses, a speech-bubble badge with tooltip, searchable in the palette, which jumps to the file. |
+| ![icon chooser](docs/screenshot-icon.png) | **Custom icons** per folder or file (`Ctrl+Alt+I`) from the icon theme or your own image; Nautilus shows the same icon. |
+| ![smart](docs/screenshot-smart.png) | **Smart folders**: saved searches with name, root, glob and age under *Smart Folders* in the sidebar, newest matches first. |
+| ![session](docs/screenshot-session.png) | **Sessions**: tabs, split, terminal panels and window size return on the next start (`omafile` without arguments). Off in Preferences if you prefer a clean window. |
+
+### Omarchy and remote
+
+| | |
+|---|---|
+| ![themes](docs/screenshot-themes.png) | **Omarchy themes**: an *Omarchy Themes* place, theme folders with their `preview.png` as thumbnail, *Apply Omarchy Theme* (`omarchy-theme-set`), *Set as Wallpaper* (`omarchy-theme-bg-set`), *Export Omarchy Theme…* to `~/Downloads/<name>.tar.gz` and *Install as Omarchy Theme* from such an archive. |
+| ![light](docs/screenshot-light.png) | **Theme following**: the same build after `omarchy theme set "Catppuccin Latte"`, light window and blue folders without a restart. |
+| ![sftp](docs/screenshot-sftp.png) | **SFTP / SCP**: hosts from `~/.ssh/config` in the sidebar, *Connect to Server…* for `user@host[:port]/path`, native credential prompts, mounted servers under *Devices*. Copy, paste, drag and drop, rename and preview work on remote files like on local ones. |
+| ![preferences](docs/screenshot-prefs.png) | **Preferences** (`Ctrl+,`): icon theme override, thumbnails, default view, hidden files, session restore, archives in place, venv activation, trash auto-empty. |
+
+Also: *Copy To…* / *Move To…* with a folder picker, *Duplicate* (`Ctrl+Shift+D`), bookmarks shared with the GTK file chooser (`Ctrl+D`), *Recent*, drag and drop onto sidebar places, cut/copy/paste shared with other apps, *Open With…*, copy path, open a terminal window here, and `omafile --toggle` for a Hyprland drop-down window.
 
 <details>
 <summary>More screenshots</summary>
 
-Context menu
+Context menu · Connect to Server · custom folder icon · vault menu · a tag listing · Quick Look playing music · compare two files · Python menu
 
 ![context menu](docs/screenshot-menu.png)
-
-Connect to Server
-
 ![connect dialog](docs/screenshot-connect.png)
-
-Custom folder icon applied
-
 ![custom icon](docs/screenshot-icon-applied.png)
-
-Lock, unlock and change the password of an encrypted folder from its context menu
-
 ![vault menu](docs/screenshot-vault-menu.png)
-
-A tag opened from the sidebar lists every tagged item with its location
-
 ![tag listing](docs/screenshot-tagview.png)
+![music quick look](docs/screenshot-music-quicklook.png)
+![compare files](docs/screenshot-compare-files.png)
+![venv preview](docs/screenshot-venv-preview.png)
 
 </details>
 
-## Install
+### Motion
 
-### Requirements: what Omarchy brings, what you add
+Panels move the way the rest of Omarchy moves instead of snapping: the terminal panel slides up and down, the split view slides its divider in from the right, a new folder fades in like a Hyprland window, thumbnails cross-fade over their icon, hover and selection colours ease. libadwaita animations with an ease-out-quint curve over about 260 ms; `gtk-enable-animations` (reduce motion) switches every effect off at once.
 
-omafile is built for a stock Omarchy install and uses what is already there.
-Only three things are not part of Omarchy: the Rust toolchain to build it,
-the VTE library for the terminal panel, and gocryptfs for encrypted folders.
-
-```sh
-sudo pacman -S --needed rust vte4          # build + terminal panel (required)
-sudo pacman -S --needed gocryptfs          # encrypted folders (optional)
-```
-
-Everything in detail. "Stock Omarchy" means the package is in Omarchy's own
-package list or pulled in by one that is (Nautilus, Evince, pacman):
-
-| Component | Used for | Stock Omarchy | If it is missing |
-|---|---|---|---|
-| `rust` (cargo) | building omafile, `makepkg` | no | `sudo pacman -S --needed rust`; only needed to build, not to run |
-| `gtk4`, `libadwaita` | the whole UI | yes (Nautilus depends on them) | `sudo pacman -S --needed gtk4 libadwaita` |
-| `vte4` | terminal panel (`` Ctrl+` ``) | **no** | `sudo pacman -S --needed vte4`; required, the binary links against it |
-| `gvfs` (+ `gvfs-smb`, `gvfs-nfs`, `gvfs-mtp`) | trash, drives, SFTP and other servers | yes | `sudo pacman -S --needed gvfs` |
-| `gocryptfs` (+ `fuse3`) | encrypted folders | **no** | `sudo pacman -S --needed gocryptfs`; without it the vault entries report what to install |
-| `git` | status badges, branch line, git actions | yes | badges simply stay off |
-| `fd` | fast recursive search | yes | omafile falls back to a slower GIO walk |
-| `poppler` (`pdftoppm`, `pdfinfo`) | PDF thumbnails and previews | yes (Evince depends on it) | PDFs show the generic icon |
-| `ffmpegthumbnailer`, `ffmpeg` | video thumbnails; audio cover art | yes | videos and songs show the generic icon |
-| `gstreamer` + `gst-plugins-good` (`gst-plugins-bad`, `gst-libav` for H.264 / AAC) | playing audio and video in the preview | base and good: yes | the player shows which decoder is missing |
-| `libarchive` (`bsdtar`) | extract / compress | yes (pacman depends on it) | the archive entries do nothing |
-| `util-linux` (`script`) | capturing the master key when a vault is created | yes (base) | the vault is created without showing a master key |
-| `imagemagick` (`magick`) | Image › rotate, convert, resize | yes | the Image menu reports that it is missing |
-| `qrencode` | QR code in *Share on Local Network* | yes | the dialog shows the link only |
-| `python` | *Share on Local Network* (`http.server`) | yes | sharing is unavailable |
-| `uv` (else `python -m venv` / `pip`) | Python › Create venv, Install, Freeze | no (`sudo pacman -S uv`) | the stock venv and pip commands are used |
-| `docker` or `podman` | container volumes in the sidebar | docker: yes | the *Containers* section stays hidden |
-| `jq` | `plugin/validate.sh`, `omarchy plugin` commands | yes | only needed for plugin development |
-| `xdg-desktop-portal-hyprland`, `xdg-desktop-portal-gtk` | Open With…, file dialogs | yes | GTK falls back to its own dialogs |
-| a terminal: `$TERMINAL`, else `xdg-terminal-exec` (Omarchy's default, foot), else foot, alacritty, kitty, ghostty | Open Terminal Window Here, project commands | yes | set `TERMINAL` |
-| `omarchy-launch-editor` | Open in Editor | yes | `$VISUAL`/`$EDITOR` in a terminal |
-| `uwsm` | launching windows as session apps | yes | commands run directly |
-| Yaru icon themes | file icons matching the theme | yes | the Adwaita icons are used |
-| hicolor icon theme | omafile's own app icon (dock, launcher, About) | yes | `install.sh` and the PKGBUILD put the SVG into `hicolor/scalable/apps` |
-| Omarchy shell (`omarchy-shell`, Omarchy 4 and later) | the bar button plugin | yes on current Omarchy | older Waybar-based releases cannot load shell plugins; the file manager itself still works there |
-
-`install.sh` checks the build requirements before compiling and lists any
-optional tool it cannot find.
-
-### Build and install
-
-```sh
-git clone https://github.com/whogotpwned/omafile
-cd omafile
-./install.sh --all
-```
-
-That builds a release binary into `~/.local/bin`, installs the desktop entry
-(launcher and "Open With" target), makes omafile the default application for
-folders, and rebinds the file manager shortcut: on current Omarchy (Lua
-configuration) it appends to `~/.config/hypr/bindings.lua`
-
-```lua
-o.rebind("SUPER + SHIFT + F", "File manager", { launch = "omafile" })
-o.rebind("SUPER + ALT + SHIFT + F", "File manager (cwd)", "setsid uwsm-app -- omafile \"$(omarchy-cmd-terminal-cwd)\"")
-```
-
-and on older releases it edits `~/.config/hypr/bindings.conf`. Pass `--default`
-or `--bind` for only one of the two, or nothing for just the binary.
-
-Arch package: `makepkg -si` (the PKGBUILD declares the same dependencies, so
-pacman installs `vte4` for you), remove with `sudo pacman -Rns omafile`.
-
-### Uninstall
-
-```sh
-./uninstall.sh            # binary, desktop entry, shortcuts, default-app setting
-./uninstall.sh --purge    # also ~/.config/omafile (preferences, tags)
-omarchy plugin remove whogotpwned.omafile   # the bar button, if you added it
-```
-
-`uninstall.sh` reverses `install.sh` step by step: it hands folders back to
-Nautilus if omafile was the default, removes only the binding lines
-`install.sh` appended, and leaves everything else in your config untouched.
-
-### Bar button (Omarchy shell plugin)
-
-The repository doubles as an Omarchy shell plugin: `manifest.json` at the root
-and the widget in `plugin/BarWidget.qml`.
-
-```sh
-omarchy plugin add https://github.com/whogotpwned/omafile.git --enable
-```
-
-The widget lands in the `left` section next to the Omarchy menu. Put it where
-you like, the same way as every other widget:
-
-```sh
-omarchy bar move whogotpwned.omafile --section right        # left | centerBegin | center | centerEnd | right | tray
-omarchy bar move whogotpwned.omafile --section centerEnd --index 0
-omarchy bar set  whogotpwned.omafile path ~/Projects        # folder opened on click
-```
-
-Drag and drop in the bar and *Appearance › Menu Bar* in the Omarchy menu work
-too. `omarchy plugin add` asks for the section interactively as well.
-
-What the button does:
-
-| Click | Action |
-|---|---|
-| Left | Raises the omafile window that is already open (`omarchy-launch-or-focus`), otherwise opens the configured folder |
-| Right | Places menu: Home, Downloads, Documents, Pictures, Projects, Trash, the folder of the active terminal, new window, and *Lock all encrypted folders* while any is unlocked |
-| Middle | Opens the folder of the active terminal (like Omarchy's own "File manager (cwd)" binding) |
-
-The button also shows a small marker: `⇅` while a copy or move is running and a lock glyph while encrypted folders are unlocked. omafile writes `~/.local/state/omafile/status` (`busy=0|1`, `vaults=N`) and the widget watches that file with Quickshell's `FileView`.
-
-The icon is a Nerd Font folder glyph drawn with the bar's font, exactly like
-the first-party widgets, so it matches the bar in every theme. `omarchy bar
-set whogotpwned.omafile icon "󰉋"` swaps it for any other glyph. The popup uses
-the shell's own `PopupCard` and `PopupMenuRow` components and therefore takes
-the theme's popup colours and corner radius.
-
-Removal is `omarchy plugin remove whogotpwned.omafile`, which disables the
-widget, drops it from the bar layout and deletes the checkout.
+---
 
 ## Keyboard shortcuts
 
-`F1` or `Ctrl+?` opens the full list inside omafile: every shortcut, mouse gesture and context-menu entry, grouped, with a filter box (type `git`, `tab`, `tag`…). It is generated from the same table the window reacts to, a test keeps it complete, and it starts with the Hyprland binding that launches omafile when one is found in `~/.config/hypr/bindings.lua` or `bindings.conf`. `omafile --print-bindings` prints the same list tab separated for Walker or a cheat-sheet script. The essentials:
+`F1` or `Ctrl+?` opens the full, searchable list inside omafile. `omafile --print-bindings` prints it for scripts. The essentials:
 
 | Keys | Action |
 |---|---|
 | `Alt+←` `Alt+→` `Alt+↑` `Backspace` | Back, forward, parent |
-| `Ctrl+L` | Edit the path in place; `Tab` completes folders (`~`, `/path`, `sftp://host/`, `user@host`) |
+| `Ctrl+L` | Edit the path; `Tab` completes folders |
 | `Ctrl+F` / `Ctrl+Shift+F` | Filter this folder / search subfolders |
-| `Ctrl+T` `Ctrl+W` `Ctrl+Tab` | New, close, next tab |
-| `Ctrl+Enter` / middle click | Open folder in new tab |
-| `F3` `F6` `F9` | Toggle preview pane, split view, sidebar |
-| `Ctrl+1` `Ctrl+2` `Ctrl+H` | List, grid, hidden files (also the eye button in the header) |
-| `Space` on a song | Quick Look plays it; context menu › Play |
-| `Enter` `Ctrl+Shift+O` `F4` | Open, open with…, terminal here |
-| `Space` | Quick Look (toggle); `←` `→` walk the folder inside it |
+| `Ctrl+K` | Command palette (actions, folders, `> command`, bulk `rename` / `chmod` / `touch` / `mkdir`) |
+| `Ctrl+T` `Ctrl+W` `Ctrl+Tab` `Ctrl+Enter` | New, close, next tab, open folder in new tab |
+| `F3` `F6` `F9` | Preview pane, split view, sidebar |
+| `` Ctrl+` `` / `F7` | Terminal panel |
+| `Ctrl+1` `Ctrl+2` `Ctrl+H` | List, grid, hidden files |
+| `Space` | Quick Look (plays music); `←` `→` walk the folder |
+| `Enter` `Ctrl+Shift+O` `F4` `Ctrl+E` | Open, open with…, terminal here, open in editor |
 | `Ctrl+Shift+N` `Ctrl+Alt+N` | New folder, new file |
-| `F2` / `Shift+F2` | Rename in place / in a dialog; batch rename with several files selected |
-| `Ctrl+Shift+U` | Folder sizes, sorted by disk usage |
-| `Ctrl+Shift+R` | Restore from trash |
-| `Ctrl+Alt+C` / `Ctrl+Alt+B` | Git commit / switch branch (click a badge to stage or unstage) |
+| `F2` / `Shift+F2` | Rename in place / dialog; batch rename with several selected |
+| `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` `Ctrl+Shift+D` | Copy, cut, paste, copy path, duplicate |
 | `Shift+F5` / `Shift+F6` | Copy / move to the other pane of the split |
-| `Ctrl+Alt+D` `Ctrl+Alt+M` `Ctrl+Alt+S` | Compare, edit note, save search as smart folder |
-| `Ctrl+Alt+V` | Activate the project's Python venv in the terminal panel |
-| `Ctrl+Alt+I` | Change icon |
-| `Ctrl+Alt+1…7` / `Ctrl+Alt+0` | Tag red, orange, yellow, green, blue, purple, gray / remove tag |
-| `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` | Copy, cut, paste, copy path |
+| `Delete` `Shift+Delete` `Ctrl+Shift+R` | Trash, delete permanently, restore |
 | `Ctrl+Z` `Ctrl+Shift+Z` | Undo, redo |
-| `Ctrl+K` | Command palette |
-| `` Ctrl+` `` `F7` | Terminal panel below the files |
-| `Ctrl+E` `Ctrl+Shift+E` | Open selection / folder in the editor |
-| `Ctrl+Shift+D` | Duplicate |
-| `Delete` `Shift+Delete` | Trash, delete permanently |
+| `Ctrl+Shift+U` | Folder sizes |
+| `Ctrl+Alt+C` / `Ctrl+Alt+B` | Git commit / switch branch (click a badge to stage) |
+| `Ctrl+Alt+D` `Ctrl+Alt+M` `Ctrl+Alt+S` `Ctrl+Alt+V` | Compare, note, save smart folder, activate venv |
+| `Ctrl+Alt+1…7` / `Ctrl+Alt+0` `Ctrl+Alt+I` | Tags, remove tag, change icon |
 | `Ctrl+D` `Ctrl+Shift+K` `Ctrl+I` | Bookmark, connect to server, properties |
-| `Ctrl+,` `F1` / `Ctrl+?` `Ctrl+Q` | Preferences, all bindings, quit |
+| `Ctrl+,` `F1` `Ctrl+Q` | Preferences, all bindings, quit |
 
-Every shortcut is exercised by an automated run (`OMAFILE_TRACE=1` logs each
-action; a script presses every accelerator under Xvfb and checks that the
-matching action fired). Shortcuts that also mean something in a text field
-(`Ctrl+A/C/X/V`, `Backspace`, `Delete`) act on the text while a field has
-focus and on files otherwise.
+Every shortcut is exercised by an automated run under Xvfb (`OMAFILE_TRACE=1` logs each action). Shortcuts that also mean something in a text field act on the text while a field has focus and on files otherwise.
 
 ## Command line and launchers
 
 ```
 omafile [FOLDER…]        open folders (one window each); without arguments the last session is restored
+omafile --toggle         Hyprland: show or hide a drop-down omafile on the special workspace "files"
 omafile --print-recent   recent folders, newest first, one path per line
 omafile --print-bindings every binding: keys, action, group (tab separated)
 omafile --lock-all       unmount every unlocked gocryptfs folder (what the bar button's "Lock all" runs)
 omafile --version
 ```
 
-Recent folders are kept in `~/.local/state/omafile/recent`, so a launcher can offer them. A Walker / dmenu style picker:
+The drop-down works like a scratchpad terminal: bind `omafile --toggle` and the same window slides in and out on every workspace. A folder's context menu also offers *Open in New Workspace* under Hyprland.
+
+```lua
+-- ~/.config/hypr/bindings.lua
+o.rebind("SUPER + SHIFT + F", "File manager", { launch = "omafile --toggle" })
+o.rebind("SUPER + SHIFT + R", "Recent folders", { launch = "omafile-recent" })
+```
 
 ```bash
 #!/bin/bash
-# omafile-recent: pick a recent folder and open it
+# omafile-recent: pick a recent folder with Walker and open it
 dir=$(omafile --print-recent | sed "s|^$HOME|~|" | walker --dmenu -p "Recent folders") || exit 0
 exec uwsm-app -- omafile "${dir/#\~/$HOME}"
 ```
 
-Bind it next to the file manager binding in `~/.config/hypr/bindings.lua`:
+---
 
-```lua
-o.rebind("SUPER + SHIFT + R", "Recent folders", { launch = "omafile-recent" })
+## Install
+
+### Quick start
+
+```sh
+sudo pacman -S --needed rust vte4          # build + terminal panel (required)
+sudo pacman -S --needed gocryptfs uv       # encrypted folders, fast Python venvs (optional)
+git clone https://github.com/whogotpwned/omafile && cd omafile
+./install.sh --all
 ```
 
-## Motion
+`install.sh --all` builds a release binary into `~/.local/bin`, installs the desktop entry (launcher and *Open With* target), makes omafile the default application for folders and binds the file manager shortcut. On current Omarchy it appends to `~/.config/hypr/bindings.lua`:
 
-Panels move the way the rest of Omarchy moves instead of snapping: the terminal panel slides up from the bottom edge and back down (`` Ctrl+` ``), the split view slides its divider in from the right (`F6`), a new folder fades in like a Hyprland window, thumbnails cross-fade over their icon as they arrive, and hover and selection colours ease. All of it uses libadwaita's animations with an ease-out-quint curve over about 260 ms, so turning off `gtk-enable-animations` (or the system's reduce-motion setting) switches every effect off at once.
+```lua
+o.rebind("SUPER + SHIFT + F", "File manager", { launch = "omafile" })
+o.rebind("SUPER + ALT + SHIFT + F", "File manager (cwd)", "setsid uwsm-app -- omafile \"$(omarchy-cmd-terminal-cwd)\"")
+```
+
+Older releases get the same lines in `bindings.conf`. `--default` or `--bind` for only one of the two, nothing for just the binary. Arch package: `makepkg -si` (pacman then installs `vte4` for you), remove with `sudo pacman -Rns omafile`.
+
+### Uninstall
+
+```sh
+./uninstall.sh            # binary, desktop entry, shortcuts, default-app setting
+./uninstall.sh --purge    # also ~/.config/omafile (preferences, tags, notes, smart folders)
+omarchy plugin remove whogotpwned.omafile   # the bar button, if you added it
+```
+
+`uninstall.sh` reverses `install.sh` step by step: folders go back to Nautilus if omafile was the default, only the binding lines `install.sh` appended are removed.
+
+### Requirements: what Omarchy brings, what you add
+
+omafile is built for a stock Omarchy install and uses what is already there. Only the Rust toolchain (to build), the VTE library (terminal panel) and gocryptfs (encrypted folders) are not part of it; `uv` makes the Python features faster.
+
+<details>
+<summary>Every component in detail</summary>
+
+"Stock Omarchy" means the package is in Omarchy's own package list or pulled in by one that is (Nautilus, Evince, pacman):
+
+| Component | Used for | Stock Omarchy | If it is missing |
+|---|---|---|---|
+| `rust` (cargo) | building omafile, `makepkg` | no | `sudo pacman -S --needed rust`; only needed to build |
+| `gtk4`, `libadwaita` | the whole UI | yes (Nautilus) | `sudo pacman -S --needed gtk4 libadwaita` |
+| `vte4` | terminal panel | **no** | `sudo pacman -S --needed vte4`; required, the binary links against it |
+| `gvfs` (+ `gvfs-smb`, `gvfs-nfs`, `gvfs-mtp`) | trash, drives, SFTP, archives in place | yes | `sudo pacman -S --needed gvfs` |
+| `gocryptfs` (+ `fuse3`) | encrypted folders | **no** | `sudo pacman -S --needed gocryptfs`; the vault entries say so |
+| `git` | status badges, branch line, git actions | yes | badges stay off |
+| `fd` | fast recursive search | yes | slower GIO walk |
+| `poppler` (`pdftoppm`, `pdfinfo`) | PDF thumbnails and previews | yes (Evince) | generic PDF icon |
+| `ffmpegthumbnailer`, `ffmpeg` | video thumbnails, audio cover art, audio tags in batch rename | yes | generic icons |
+| `gstreamer` + `gst-plugins-good` (`gst-plugins-bad`, `gst-libav`) | audio and video playback in the preview | base and good: yes | the player names the missing decoder |
+| `libarchive` (`bsdtar`) | extract, compress, theme export | yes (pacman) | the archive entries do nothing |
+| `diffutils` | Compare | yes (base) | Compare reports it |
+| `util-linux` (`script`) | master key display for new vaults | yes (base) | vault created without the key shown |
+| `imagemagick` | Image › rotate, convert, resize; EXIF dates | yes | the Image menu says so |
+| `qrencode` | QR code in *Share on Local Network* | yes | link only |
+| `python` | *Share on Local Network*, `python -m venv` fallback | yes | sharing unavailable |
+| `uv` | Python › Create venv, Install, Freeze | no (`sudo pacman -S uv`) | stock venv and pip commands |
+| `docker` or `podman` | container volumes in the sidebar | docker: yes | *Containers* stays hidden |
+| `sha256sum` (coreutils) | checksums | yes | SHA-256 rows stay empty |
+| `hyprctl` | `--toggle`, Open in New Workspace | yes | those entries are hidden |
+| `jq` | `plugin/validate.sh`, `omarchy plugin` | yes | plugin development only |
+| `xdg-desktop-portal-hyprland`, `xdg-desktop-portal-gtk` | Open With…, file dialogs | yes | GTK's own dialogs |
+| a terminal: `$TERMINAL`, else `xdg-terminal-exec`, foot, alacritty, kitty, ghostty | terminal windows, project commands | yes | set `TERMINAL` |
+| `omarchy-launch-editor` | Open in Editor | yes | `$VISUAL` / `$EDITOR` in a terminal |
+| `uwsm` | launching windows as session apps | yes | commands run directly |
+| Yaru icon themes, hicolor | file icons matching the theme, omafile's own icon | yes | Adwaita icons |
+| Omarchy shell (`omarchy-shell`, Omarchy 4+) | the bar button plugin | yes on current Omarchy | older Waybar releases cannot load shell plugins; the file manager itself still works |
+
+`install.sh` checks the build requirements before compiling and lists any optional tool it cannot find.
+
+</details>
+
+---
+
+## Bar button
+
+The repository doubles as an Omarchy shell plugin: `manifest.json` at the root, the widget in `plugin/BarWidget.qml`.
+
+```sh
+omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # asks for the section
+omarchy bar move whogotpwned.omafile --section right        # left | centerBegin | center | centerEnd | right | tray
+omarchy bar set  whogotpwned.omafile path ~/Projects        # folder opened on click
+omarchy bar set  whogotpwned.omafile icon "󰉋"               # any Nerd Font glyph
+```
+
+| Click | Action |
+|---|---|
+| Left | Raises the open omafile window (`omarchy-launch-or-focus`), otherwise opens the configured folder |
+| Right | Places menu: Home, Downloads, Documents, Pictures, Projects, Trash, the folder of the active terminal, new window, *Lock all encrypted folders* while any is unlocked |
+| Middle | Opens the folder of the active terminal (like Omarchy's own "File manager (cwd)" binding) |
+
+The button shows `⇅` while a copy or move runs and a lock glyph while encrypted folders are unlocked: omafile writes `~/.local/state/omafile/status` and the widget watches it with Quickshell's `FileView`. The glyph is drawn with the bar's font like the first-party widgets, the popup uses the shell's `PopupCard` and `PopupMenuRow`, so colours and radius follow the theme. Drag and drop in the bar and *Appearance › Menu Bar* work too. `omarchy plugin remove whogotpwned.omafile` disables the widget, drops it from the layout and deletes the checkout.
+
+---
 
 ## How it follows Omarchy
 
-- **Palette.** omafile reads `~/.local/state/omarchy/current/theme/colors.toml`
-  (the semantic keys `background`, `foreground`, `accent`, `selection`,
-  `muted`, `dark_background`, `lighter_background`, …) and maps them onto
-  libadwaita's named colours plus its own widget styles. Older installs with
-  `~/.config/omarchy/current/theme/alacritty.toml` are read as well.
-- **Mode.** `mode = "light"` in `colors.toml` (or the legacy `light.mode`
-  marker, or background luminance for custom themes) picks light or dark.
-- **Icons.** The theme's `icons.theme` names the icon set (Omarchy ships Yaru
-  variants); omafile applies it so the folders match even before GNOME
-  settings catch up. Preferences can override it with any installed theme.
-- **Live.** A `GFileMonitor` on the `current` directory catches the symlink
-  swap `omarchy-theme-set` performs and re-skins open windows.
-- **Launching.** Windows are opened through `uwsm-app`, the terminal through
-  `uwsm app -- $TERMINAL`, files through the desktop portal.
-- **Shell plugin.** The bar widget follows the first-party `omarchy.menu`
-  widget: a `BarIconButton` inside a `BarWidget`, colours and font from the
-  bar, commands run through `bar.run`. The manifest keeps the
-  `whogotpwned.*` namespace (`omarchy.*` is reserved), declares
-  `schemaVersion: 1`, the `bar-widget` kind with its `entryPoints.barWidget`,
-  and a `defaultSection`. `omarchy plugin validate .` passes.
+- **Palette.** `~/.local/state/omarchy/current/theme/colors.toml` (`background`, `foreground`, `accent`, `selection`, `muted`, `dark_background`, `lighter_background`, …) is mapped onto libadwaita's named colours and omafile's own styles. Legacy `~/.config/omarchy/current/theme/alacritty.toml` is read as well.
+- **Mode.** `mode = "light"` in `colors.toml`, the legacy `light.mode` marker, or background luminance for custom themes.
+- **Icons.** The theme's `icons.theme` names the icon set (Yaru variants); omafile applies it itself, Preferences can override it.
+- **Live.** A `GFileMonitor` on the `current` directory catches the symlink swap `omarchy-theme-set` performs and re-skins open windows.
+- **Launching.** Windows through `uwsm-app`, terminals through `uwsm app -- $TERMINAL`, files through the desktop portal, the editor through `omarchy-launch-editor`.
+- **Shell plugin.** Built like the first-party `omarchy.menu` widget: `BarIconButton` in a `BarWidget`, `bar.run` for commands, `whogotpwned.*` namespace, `schemaVersion: 1`, `bar-widget` kind, `defaultSection`. `omarchy plugin validate .` passes.
 
 ### Publishing as an Omarchy plugin
 
-Omarchy plugins are distributed as git repositories; there is no package to
-build. Anyone installs, updates and removes the bar button with the normal
-plugin commands, interactively or with `--yes` for scripts:
+Omarchy plugins are git repositories; there is no package to build. Users install, update and remove the bar button with the normal commands:
 
 ```sh
-omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # asks for the bar section
-omarchy plugin list
-omarchy plugin update whogotpwned.omafile
-omarchy plugin disable whogotpwned.omafile
-omarchy plugin enable whogotpwned.omafile --section right
-omarchy plugin remove whogotpwned.omafile
+omarchy plugin add https://github.com/whogotpwned/omafile.git --enable
+omarchy plugin list | update whogotpwned.omafile | disable … | enable … --section right | remove …
 ```
 
-`add` clones this repository into `~/.config/omarchy/plugins/whogotpwned.omafile`,
-runs the same validation as the shell, refuses duplicate ids, never executes
-anything from the repository and never asks for sudo. `remove` disables the
-widget, drops it from the bar layout and deletes the checkout. The file
-manager binary is separate (`install.sh`, PKGBUILD or a future AUR package),
-so removing the plugin never touches it and vice versa.
+`add` clones into `~/.config/omarchy/plugins/whogotpwned.omafile`, validates like the shell does, refuses duplicate ids, executes nothing from the repository and never asks for sudo. The file manager binary is separate (`install.sh`, PKGBUILD), so removing one never touches the other.
 
-Release checklist for the maintainer:
+<details>
+<summary>Release checklist and the rules the shell enforces</summary>
 
 1. Bump `version` in `Cargo.toml`, `PKGBUILD` and `manifest.json` together.
-2. Run `cargo test`, `cargo clippy` and `omarchy plugin validate .` (the same
-   checks are mirrored in `plugin/validate.sh` for machines without Omarchy).
-3. Commit, tag `vX.Y.Z`, push. `omarchy plugin update` fast-forwards users to
-   the new commit on the default branch, so keep that branch releasable.
-4. Submit the repository URL at [plugins.omarchy.org](https://plugins.omarchy.org),
-   the marketplace the Omarchy manual points to. Suggested GitHub topics so it
-   is found: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`.
-
-What the shell enforces at load time and what this repository does:
+2. `cargo test`, `cargo clippy`, `omarchy plugin validate .` (mirrored in `plugin/validate.sh` for machines without Omarchy).
+3. Commit, tag `vX.Y.Z`, push. `omarchy plugin update` fast-forwards users to the default branch, so keep it releasable.
+4. Submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org). GitHub topics: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`.
 
 | Rule | Here |
 |---|---|
 | Git repo with `manifest.json` at the root | yes |
 | `schemaVersion` exactly `1`; `id`, `name`, `version`, `kinds`, `entryPoints` present | yes |
-| `id` is `[A-Za-z0-9][A-Za-z0-9._-]*`, not in the reserved `omarchy.*` namespace, never changes | `whogotpwned.omafile` |
-| Every kind has its entry point (`bar-widget` → `entryPoints.barWidget`), relative path, no `..`, file exists | `plugin/BarWidget.qml` |
+| `id` is `[A-Za-z0-9][A-Za-z0-9._-]*`, not `omarchy.*`, never changes | `whogotpwned.omafile` |
+| Every kind has its entry point, relative path, no `..`, file exists | `plugin/BarWidget.qml` |
 | `barWidget.defaultSection` ∈ left, centerBegin, center, centerEnd, tray, right | `left` |
-| No symlinks anywhere in the folder | none |
-| Theme colours only via `qs.Commons`, UI via `qs.Ui` components | `BarIconButton`, `PopupCard`, `PopupMenuRow` |
-| Plugins run unsandboxed inside `omarchy-shell`, no install hooks, no sudo | the widget only runs `omafile` and `omarchy-launch-or-focus` on click |
+| No symlinks anywhere | none |
+| Theme colours via `qs.Commons`, UI via `qs.Ui` | `BarIconButton`, `PopupCard`, `PopupMenuRow` |
+| No install hooks, no sudo | the widget runs `omafile` and `omarchy-launch-or-focus` only |
+
+</details>
+
+---
 
 ## Encrypted folders in detail
 
-- **Format.** gocryptfs: AES-256-GCM per file, file names encrypted (EME),
-  keys derived from the password with scrypt. The `.gocryptfs` directory
-  holds only ciphertext plus `gocryptfs.conf` (the wrapped master key).
-- **Migration and backup.** Copy or sync `Name.gocryptfs` with any tool
-  (rsync, a USB stick, a cloud folder, `scp`). On the other machine, put it
-  next to an empty `Name` folder and use *Unlock Encrypted Folder…*, or
-  `gocryptfs Name.gocryptfs Name` on the command line. Changing the password
-  rewraps the master key inside `gocryptfs.conf`, so a copy made before the
-  change still opens with the old password; copy again afterwards. The master
-  key shown once at creation opens the folder without any password, keep it
-  in a password manager as the last resort.
-- **Handling.** Unlocking mounts the folder for your user only (FUSE, no
-  root). Lock it with the context menu, or it stays unlocked until logout.
-  The password is piped to gocryptfs and never written to disk or passed on
-  a command line. Deleting the ciphertext folder deletes the data.
-- **Scope.** Local file systems only; a vault cannot live on an SFTP share.
+- **Format.** gocryptfs: AES-256-GCM per file, encrypted file names (EME), scrypt-derived keys. `Name.gocryptfs` holds only ciphertext plus `gocryptfs.conf` (the wrapped master key).
+- **Migration and backup.** Copy or sync `Name.gocryptfs` with any tool (rsync, USB, cloud folder, `scp`). Elsewhere, put it next to an empty `Name` folder and use *Unlock Encrypted Folder…*, or `gocryptfs Name.gocryptfs Name`. Changing the password rewraps the master key, so copies made before still open with the old one. The master key shown once at creation opens the folder without a password; keep it in a password manager.
+- **Handling.** Unlocking mounts for your user only (FUSE, no root). Lock from the menu or the bar button, or it stays unlocked until logout. The password is piped to gocryptfs, never written to disk or a command line.
+- **Scope.** Local file systems only.
 
-## Project actions file
+## Configuration files
 
-`.omafile.toml` in a project root adds commands to the *Project* submenu and
-the command palette for everyone who opens the folder with omafile:
+| File | Content |
+|---|---|
+| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `trash-auto-days`) |
+| `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
+| `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
+| `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
+| `~/.local/state/omafile/session` | Last window layout |
+| `~/.local/state/omafile/recent` | Recent folders for `--print-recent` |
+| `~/.local/state/omafile/status` | `busy` / `vaults` for the bar widget |
+| `.omafile.toml` in a project | Team actions for the *Project* menu and the palette |
 
 ```toml
+# .omafile.toml
 [[action]]
 name = "Deploy to staging"
 command = "./deploy.sh staging"
-
-[[action]]
-name = "Run migrations"
-command = "docker compose exec app rails db:migrate"
 ```
 
-Commands run through `bash -lc` in the project folder inside a terminal
-window and wait for Enter before closing.
+Commands run through `bash -lc` in the project folder inside a terminal window and wait for Enter before closing. Delete `~/.config/omafile` to go back to defaults for everything.
 
-## Preferences file
-
-`~/.config/omafile/omafile.conf`, written by the Preferences dialog:
-
-```
-icon-theme = Yaru-purple
-thumbnails = true
-view = grid
-show-hidden = false
-```
-
-Tags live next to it in `~/.config/omafile/tags` (`uri<TAB>colour` per line).
-Delete the directory to go back to following the theme for everything.
+---
 
 ## Development
 
 ```sh
 cargo run -- ~/Projects
-cargo test
+cargo test          # 39 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 
+<details>
+<summary>Module map</summary>
+
 | Module | Role |
 |---|---|
-| `theme` | colors.toml / alacritty.toml parsing, CSS, icon theme, live reload |
-| `item` | `FileItem` GObject (file + info, custom icons) for the list models |
-| `ops` | async GIO operations: list, copy, move, trash, delete, rename, archives |
-| `pane` | one tab: views, filter, recursive search, selection, drag and drop |
-| `window` | shell: sidebar, header, path bar, tabs, split view, preview, mounting |
-| `preview` | preview pane |
-| `thumbs` | thumbnail cache; images via gdk-pixbuf, PDFs via pdftoppm |
-| `search` | recursive search with fd or a GIO walk |
-| `remote` | ssh config hosts, server URIs, GTK bookmarks |
-| `extras` | preferences, icon chooser, batch rename |
-| `tags` | colour tags: metadata, index file, virtual listings |
-| `git` | repository status for badges and the status line |
-| `projects` | project detection, actions, `.omafile.toml`, editor and terminal launch |
-| `palette` | command palette with fuzzy matching |
-| `crypt` / `vaultui` | gocryptfs vaults and their dialogs |
-| `termpanel` | embedded VTE terminal that follows the folder |
-| `undo` | undo/redo journal |
-| `transfer` | copy/move queue: conflict dialog, progress banner, cancel |
-| `gitui` | stage, unstage, discard, commit and branch dialogs |
-| `imagetools` | ImageMagick rotate / convert / resize, wallpaper and theme hooks |
-| `share` | scp command, local network share with QR code |
-| `containers` | docker / podman volume discovery |
-| `omarchy` | theme folders, `omarchy-theme-set`, `omarchy-theme-bg-set` |
-| `session` / `status` | session file; status file for the bar widget, recent list, `--lock-all` |
-| `motion` | slide and fade animations (libadwaita TimedAnimation, respects reduced motion) |
+| `window` | shell: sidebar, header, path bar, tabs, split view, preview, mounting, menus |
+| `pane` | one tab: views, filter, recursive search, selection, drag and drop, terminal panel |
+| `actions` | window actions, accelerators, clipboard, dialogs, properties |
 | `bindings` | the bindings table, the searchable overlay, `--print-bindings` |
-| `features` | smart folders, dual pane, compare, bulk commands, checksums, notes, templates, theme export, archives |
-| `perms` | permissions and ownership editor |
-| `pyenv` / `pyui` | Python venv detection, requirements check, venv actions, terminal auto-activation |
-| `smart` / `compare` / `bulk` / `checksum` / `templates` / `notes` / `hypr` / `trashauto` | the logic behind those features, each with tests |
-| `completion` / `quicklook` | path completion, Quick Look |
-| `prefs` | the preferences file |
-| `actions` | window actions, clipboard, dialogs, properties, shortcuts |
+| `theme` / `motion` | Omarchy palette → CSS, icon theme, live reload; slide and fade animations |
+| `item` / `ops` / `transfer` / `undo` | file model, async GIO operations, copy/move queue with conflicts and progress, undo journal |
+| `preview` / `quicklook` / `thumbs` | preview pane, Quick Look, thumbnail cache (images, PDFs, text pages, video, cover art) |
+| `search` / `smart` / `completion` / `palette` | fd / GIO search, smart folders, path completion, command palette |
+| `git` / `gitui` | status for badges and the status line; stage, commit, branch dialogs |
+| `projects` / `templates` / `pyenv` / `pyui` | project detection and actions, templates, Python venvs |
+| `termpanel` | embedded VTE terminal that follows the folder and activates venvs |
+| `crypt` / `vaultui` | gocryptfs vaults and their dialogs |
+| `perms` / `checksum` / `notes` / `tags` | permissions editor, SHA-256, notes, colour tags |
+| `features` / `bulk` / `compare` / `imagetools` / `share` | dual pane, bulk commands, compare, image tools, scp and LAN share |
+| `remote` / `containers` / `omarchy` / `hypr` | ssh hosts and bookmarks, container volumes, theme folders and Omarchy commands, Hyprland toggle |
+| `session` / `status` / `trashauto` / `prefs` / `extras` | session file, bar status, trash automation, preferences, icon chooser, batch rename |
 | `plugin/` | the Omarchy shell bar widget |
+
+</details>
 
 ## License
 
