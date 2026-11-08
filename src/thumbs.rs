@@ -16,10 +16,12 @@ pub struct ThumbCache {
     waiting: RefCell<HashMap<String, Vec<(gtk::Picture, String)>>>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Source {
     Image,
     Pdf,
+    /// A folder shown through one of its images (Omarchy theme preview, cover).
+    Folder(std::path::PathBuf),
 }
 
 impl ThumbCache {
@@ -32,6 +34,11 @@ impl ThumbCache {
     }
 
     fn source_for(item: &FileItem) -> Option<Source> {
+        if item.is_dir() {
+            // Omarchy theme folders (preview.png) and folders with a cover image.
+            let path = item.target_file().path()?;
+            return crate::omarchy::folder_preview(&path).map(Source::Folder);
+        }
         if item.size() == 0 || item.target_file().path().is_none() {
             return None;
         }
@@ -56,7 +63,10 @@ impl ThumbCache {
             picture.set_paintable(None::<&gdk::Paintable>);
             return;
         };
-        let key = format!("{}@{}@{}", item.target_file().uri(), item.modified_unix(), size);
+        let key = match &source {
+            Source::Folder(p) => format!("{}@{}", p.display(), size),
+            _ => format!("{}@{}@{}", item.target_file().uri(), item.modified_unix(), size),
+        };
         picture.set_widget_name(&key);
         if let Some(cached) = self.textures.borrow().get(&key) {
             picture.set_paintable(cached.as_ref());
@@ -67,15 +77,16 @@ impl ThumbCache {
         if !self.in_flight.borrow_mut().insert(key.clone()) {
             return;
         }
-        let path = match source {
+        let path = match &source {
             Source::Image => item.thumbnail_path().or_else(|| item.target_file().path()),
             Source::Pdf => item.target_file().path(),
+            Source::Folder(p) => Some(p.clone()),
         };
         let Some(path) = path else { return };
         let this = Rc::downgrade(self);
         glib::spawn_future_local(async move {
             let decoded = gio::spawn_blocking(move || match source {
-                Source::Image => decode_image(&path, size),
+                Source::Image | Source::Folder(_) => decode_image(&path, size),
                 Source::Pdf => decode_pdf(&path, size),
             })
             .await

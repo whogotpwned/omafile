@@ -59,7 +59,7 @@ case ":$PATH:" in
 esac
 
 echo ":: optional tools"
-for pair in "pdftoppm:PDF previews (poppler)" "fd:fast recursive search" "bsdtar:archives (libarchive)" "git:git status badges" "gocryptfs:encrypted folders (sudo pacman -S gocryptfs)" "script:master key display for new vaults (util-linux)"; do
+for pair in "pdftoppm:PDF previews (poppler)" "fd:fast recursive search" "bsdtar:archives (libarchive)" "git:git status badges" "gocryptfs:encrypted folders (sudo pacman -S gocryptfs)" "script:master key display for new vaults (util-linux)" "magick:image tools: rotate, convert, resize (imagemagick)" "qrencode:QR code for local network sharing" "python3:local network sharing (http.server)"; do
     tool="${pair%%:*}"; what="${pair#*:}"
     if command -v "$tool" >/dev/null 2>&1; then echo "   ok       $tool  ($what)"; else echo "   missing  $tool  ($what)"; fi
 done

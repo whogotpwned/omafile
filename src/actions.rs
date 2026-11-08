@@ -51,6 +51,24 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("home", "Go Home", "user-home-symbolic"),
     ("up", "Parent Folder", "go-up-symbolic"),
     ("reload", "Reload", "view-refresh-symbolic"),
+    ("folder-sizes", "Show Folder Sizes (disk usage)", "drive-harddisk-symbolic"),
+    ("restore", "Restore from Trash", "edit-undo-symbolic"),
+    ("git-commit", "Git: Commit…", "vcs-commit-symbolic"),
+    ("git-branch", "Git: Switch Branch…", "vcs-branch-symbolic"),
+    ("git-stage", "Git: Stage Selection", "list-add-symbolic"),
+    ("git-unstage", "Git: Unstage Selection", "list-remove-symbolic"),
+    ("git-discard", "Git: Discard Changes…", "edit-clear-symbolic"),
+    ("share-scp", "Share: Copy scp Command", "network-transmit-symbolic"),
+    ("share-lan", "Share on Local Network…", "network-wireless-symbolic"),
+    ("set-wallpaper", "Set as Wallpaper", "preferences-desktop-wallpaper-symbolic"),
+    ("apply-theme", "Apply Omarchy Theme", "applications-graphics-symbolic"),
+    ("image-resize", "Image: Resize…", "image-x-generic-symbolic"),
+    ("image-rotate-left", "Image: Rotate Left", "object-rotate-left-symbolic"),
+    ("image-rotate-right", "Image: Rotate Right", "object-rotate-right-symbolic"),
+    ("image-to-png", "Image: Convert to PNG", "image-x-generic-symbolic"),
+    ("image-to-jpg", "Image: Convert to JPEG", "image-x-generic-symbolic"),
+    ("image-to-webp", "Image: Convert to WebP", "image-x-generic-symbolic"),
+    ("vault-lock-all", "Lock All Encrypted Folders", "changes-prevent-symbolic"),
 ];
 
 pub const ACCELS: &[(&str, &[&str])] = &[
@@ -73,6 +91,11 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.new-folder", &["<Control><Shift>n"]),
     ("win.new-file", &["<Control><Alt>n"]),
     ("win.rename", &["F2"]),
+    ("win.rename-dialog", &["<Shift>F2"]),
+    ("win.restore", &["<Control><Shift>r"]),
+    ("win.folder-sizes", &["<Control><Shift>u"]),
+    ("win.git-commit", &["<Control><Alt>c"]),
+    ("win.git-branch", &["<Control><Alt>b"]),
     ("win.delete", &["<Shift>Delete"]),
     ("win.copy", &["<Control>c"]),
     ("win.cut", &["<Control>x"]),
@@ -181,10 +204,63 @@ impl Window {
             let items = p.selected_items();
             if items.len() > 1 {
                 w.show_batch_rename(p, items);
-            } else {
-                w.prompt_rename();
+            } else if let Some(item) = items.first() {
+                if !p.inline_rename(item) {
+                    w.prompt_rename();
+                }
             }
         }));
+        simple("rename-dialog", Box::new(|w| w.prompt_rename()));
+        simple("folder-sizes", Box::new(move |w| { if let Some(p) = pane(w) { p.compute_folder_sizes() } }));
+        simple("git-stage", Box::new(|w| w.git_stage_selected(false)));
+        simple("git-unstage", Box::new(|w| w.git_stage_selected(true)));
+        simple("git-discard", Box::new(|w| w.git_discard_selected()));
+        simple("git-commit", Box::new(|w| w.git_commit_dialog()));
+        simple("git-branch", Box::new(|w| w.git_branch_dialog()));
+        simple("image-resize", Box::new(|w| w.image_resize_dialog()));
+        simple("image-rotate-left", Box::new(|w| w.image_rotate(-90)));
+        simple("image-rotate-right", Box::new(|w| w.image_rotate(90)));
+        simple("image-to-png", Box::new(|w| w.image_convert("png")));
+        simple("image-to-jpg", Box::new(|w| w.image_convert("jpg")));
+        simple("image-to-webp", Box::new(|w| w.image_convert("webp")));
+        simple("set-wallpaper", Box::new(|w| w.set_wallpaper()));
+        simple("apply-theme", Box::new(|w| w.apply_omarchy_theme()));
+        simple("share-scp", Box::new(|w| w.share_copy_scp()));
+        simple("share-lan", Box::new(|w| w.share_lan_dialog()));
+        simple("vault-lock-all", Box::new(|w| {
+            let n = crate::status::lock_all();
+            crate::status::write(w);
+            if let Some(p) = w.active_pane() {
+                p.reload();
+            }
+            if n == 0 { w.toast("All encrypted folders locked") } else { w.toast_error("Some encrypted folders are still in use") }
+        }));
+        {
+            let rotate = gio::SimpleAction::new("image-rotate", Some(glib::VariantTy::STRING));
+            let this = Rc::downgrade(self);
+            rotate.connect_activate(move |_, v| {
+                let deg: i32 = v.and_then(|v| v.str()).and_then(|s| s.parse().ok()).unwrap_or(90);
+                if let Some(w) = this.upgrade() {
+                    if trace {
+                        eprintln!("action: image-rotate");
+                    }
+                    w.image_rotate(deg);
+                }
+            });
+            self.window.add_action(&rotate);
+            let convert = gio::SimpleAction::new("image-convert", Some(glib::VariantTy::STRING));
+            let this = Rc::downgrade(self);
+            convert.connect_activate(move |_, v| {
+                let fmt = v.and_then(|v| v.str()).unwrap_or("png").to_string();
+                if let Some(w) = this.upgrade() {
+                    if trace {
+                        eprintln!("action: image-convert");
+                    }
+                    w.image_convert(&fmt);
+                }
+            });
+            self.window.add_action(&convert);
+        }
         simple("change-icon", Box::new(|w| {
             if let Some(item) = w.selected_items().first() {
                 w.show_icon_chooser(item);
@@ -484,8 +560,30 @@ impl Window {
 
     // ----- clipboard -----------------------------------------------------------
 
-    fn clip_selected(&self, cut: bool) {
-        let files: Vec<gio::File> = self.selected_items().iter().map(|i| i.target_file()).collect();
+    fn clip_selected(self: &Rc<Self>, cut: bool) {
+        let items = self.selected_items();
+        let secrets: Vec<String> = items.iter().filter(|i| i.is_secret()).map(|i| i.display_name()).collect();
+        if !secrets.is_empty() && !cut {
+            let body = format!("{} looks like a credential file. Copying it puts the secret on the clipboard and wherever you paste it.", secrets.join(", "));
+            let dialog = adw::AlertDialog::new(Some("Copy secrets?"), Some(&body));
+            dialog.add_responses(&[("cancel", "Cancel"), ("copy", "Copy Anyway")]);
+            dialog.set_response_appearance("copy", adw::ResponseAppearance::Destructive);
+            dialog.set_default_response(Some("cancel"));
+            dialog.set_close_response("cancel");
+            let this = Rc::downgrade(self);
+            dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
+                let Some(w) = this.upgrade() else { return };
+                w.refocus();
+                if response == "copy" {
+                    w.clip_files(items.iter().map(|i| i.target_file()).collect(), false);
+                }
+            });
+            return;
+        }
+        self.clip_files(items.iter().map(|i| i.target_file()).collect(), cut);
+    }
+
+    fn clip_files(&self, files: Vec<gio::File>, cut: bool) {
         if files.is_empty() {
             return;
         }
@@ -522,48 +620,11 @@ impl Window {
                 w.toast("Nothing to paste");
                 return;
             }
-            let dest_dir = pane.cwd();
-            let mut done = 0;
-            let mut last = None;
-            let mut error = None;
-            let mut pairs = Vec::new();
-            for src in &files {
-                let Some(name) = src.basename() else { continue };
-                let name = name.to_string_lossy().to_string();
-                if cut && src.parent().map(|p| p.equal(&dest_dir)).unwrap_or(false) {
-                    continue;
-                }
-                let dst = ops::unique_child(&dest_dir, &name);
-                let result = if cut { ops::move_file(src.clone(), dst.clone()).await } else { ops::copy_recursive(src.clone(), dst.clone()).await };
-                match result {
-                    Ok(()) => {
-                        if cut {
-                            w.tags.moved(src, &dst);
-                        }
-                        pairs.push((src.clone(), dst.clone()));
-                        done += 1;
-                        last = Some(dst);
-                    }
-                    Err(e) => {
-                        error = Some(format!("{name}: {}", e.message()));
-                        break;
-                    }
-                }
-            }
             if cut {
                 w.state.borrow_mut().clipboard = None;
             }
-            pane.reload();
-            if let Some(dst) = last {
-                pane.select_file_later(dst);
-            }
-            let message = format!("{} {done} {}", if cut { "Moved" } else { "Copied" }, if done == 1 { "item" } else { "items" });
-            match error {
-                Some(e) => w.toast_error(&e),
-                None if done == 0 => w.toast(&message),
-                None if cut => w.record(Op::Move(pairs), &message),
-                None => w.record(Op::Copy(pairs), &message),
-            }
+            let dest = pane.cwd();
+            w.transfer(files, dest, if cut { crate::transfer::Mode::Move } else { crate::transfer::Mode::Copy }, pane, false);
         });
     }
 
@@ -580,46 +641,7 @@ impl Window {
         dialog.select_folder(Some(&self.window), gio::Cancellable::NONE, move |result| {
             let (Ok(dest), Some(w)) = (result, this.upgrade()) else { return };
             let files: Vec<gio::File> = items.iter().map(|i| i.target_file()).collect();
-            w.transfer_files(files, dest, move_files, pane);
-        });
-    }
-
-    /// Shared by Copy To / Move To and Duplicate: copy or move `files` into `dest`.
-    pub fn transfer_files(self: &Rc<Self>, files: Vec<gio::File>, dest: gio::File, move_files: bool, pane: Rc<crate::pane::Pane>) {
-        let this = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            let Some(w) = this.upgrade() else { return };
-            let mut pairs = Vec::new();
-            let mut error = None;
-            for src in &files {
-                let Some(name) = src.basename() else { continue };
-                if move_files && src.parent().map(|p| p.equal(&dest)).unwrap_or(false) {
-                    continue;
-                }
-                let dst = ops::unique_child(&dest, &name.to_string_lossy());
-                let result = if move_files { ops::move_file(src.clone(), dst.clone()).await } else { ops::copy_recursive(src.clone(), dst.clone()).await };
-                match result {
-                    Ok(()) => {
-                        if move_files {
-                            w.tags.moved(src, &dst);
-                        }
-                        pairs.push((src.clone(), dst));
-                    }
-                    Err(e) => {
-                        error = Some(format!("{}: {}", name.to_string_lossy(), e.message()));
-                        break;
-                    }
-                }
-            }
-            pane.reload();
-            let n = pairs.len();
-            let message = format!("{} {n} {} to {}", if move_files { "Moved" } else { "Copied" }, if n == 1 { "item" } else { "items" }, crate::window::display_name(&dest));
-            match error {
-                Some(e) => w.toast_error(&e),
-                None if n == 0 => {}
-                None if move_files => w.record(Op::Move(pairs), &message),
-                None => w.record(Op::Copy(pairs), &message),
-            }
+            w.transfer(files, dest, if move_files { crate::transfer::Mode::Move } else { crate::transfer::Mode::Copy }, pane, false);
         });
     }
 
@@ -627,11 +649,8 @@ impl Window {
     fn duplicate_selected(self: &Rc<Self>) {
         let Some(pane) = self.active_pane() else { return };
         let files: Vec<gio::File> = pane.selected_items().iter().map(|i| i.target_file()).collect();
-        if files.is_empty() {
-            return;
-        }
         let dest = pane.cwd();
-        self.transfer_files(files, dest, false, pane);
+        self.transfer(files, dest, crate::transfer::Mode::Copy, pane, true);
     }
 
     // ----- trash / delete / restore -------------------------------------------------
@@ -944,6 +963,28 @@ impl Window {
         entry.select_region(0, end.map(|i| i as i32).unwrap_or(-1));
     }
 
+    /// Rename `item` to `name` (used by the inline editor and the dialog).
+    pub fn do_rename(self: &Rc<Self>, pane: Rc<Pane>, item: FileItem, name: String) {
+        let old = item.display_name();
+        if name.is_empty() || name.contains('/') || name == old {
+            return;
+        }
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let result = ops::rename(item.file(), &name).await;
+            let Some(w) = this.upgrade() else { return };
+            match result {
+                Ok(new_file) => {
+                    w.tags.moved(&item.file(), &new_file);
+                    pane.reload();
+                    pane.select_file_later(new_file.clone());
+                    w.record(Op::Move(vec![(item.file(), new_file)]), &format!("Renamed to {name}"));
+                }
+                Err(e) => w.toast_error(&format!("Cannot rename: {}", e.message())),
+            }
+        });
+    }
+
     fn prompt_rename(self: &Rc<Self>) {
         let Some(pane) = self.active_pane() else { return };
         let Some(item) = pane.selected_items().first().cloned() else { return };
@@ -969,24 +1010,7 @@ impl Window {
             if response != "rename" {
                 return;
             }
-            let name = entry2.text().trim().to_string();
-            if name.is_empty() || name.contains('/') || name == old {
-                return;
-            }
-            let this = Rc::downgrade(&w);
-            glib::spawn_future_local(async move {
-                let result = ops::rename(item.file(), &name).await;
-                let Some(w) = this.upgrade() else { return };
-                match result {
-                    Ok(new_file) => {
-                        w.tags.moved(&item.file(), &new_file);
-                        pane.reload();
-                        pane.select_file_later(new_file.clone());
-                        w.record(Op::Move(vec![(item.file(), new_file)]), &format!("Renamed to {name}"));
-                    }
-                    Err(e) => w.toast_error(&format!("Cannot rename: {}", e.message())),
-                }
-            });
+            w.do_rename(pane, item, entry2.text().trim().to_string());
         });
         entry.grab_focus();
         entry.select_region(0, stem_end.map(|i| i as i32).unwrap_or(-1));
@@ -1003,8 +1027,21 @@ impl Window {
         };
         group.add(&row("Name", &item.display_name()));
         group.add(&row("Type", &item.type_description()));
-        if !item.is_dir() {
-            group.add(&row("Size", &ops::human_size(item.size())));
+        if item.is_dir() {
+            let size_row = row("Size", "Calculating…");
+            group.add(&size_row);
+            let file = item.target_file();
+            let item2 = item.clone();
+            glib::spawn_future_local(async move {
+                let bytes = ops::dir_size(&file).await;
+                item2.set_dir_size(Some(bytes));
+                size_row.set_subtitle(&format!("{} ({bytes} bytes)", ops::human_size(bytes)));
+            });
+        } else {
+            group.add(&row("Size", &format!("{} ({} bytes)", ops::human_size(item.size()), item.size())));
+        }
+        if item.is_secret() {
+            group.add(&row("Security", "Looks like a credential file: preview masked, copying asks first"));
         }
         match item.target_file().parent() {
             Some(parent) => group.add(&row("Location", &crate::window::location_text(&parent))),
@@ -1071,6 +1108,11 @@ impl Window {
                 ("Ctrl+E  /  Ctrl+Shift+E", "Open selection / folder in the editor"),
                 ("Context menu › Project", "cargo, npm, make, docker compose, git… in a terminal"),
                 ("Context menu › New Encrypted Folder", "gocryptfs vault; Unlock / Lock on the folder"),
+                ("Ctrl+Alt+C  /  Ctrl+Alt+B", "Git: commit / switch branch (also the branch button in the status line)"),
+                ("Click a git badge", "Stage / unstage that file"),
+                ("Context menu › Git", "Stage, unstage, discard changes, commit"),
+                ("Context menu › Image", "Rotate, convert, resize, set as wallpaper"),
+                ("Context menu › Share", "Copy scp command, share on the local network"),
             ]),
             ("Files", &[
                 ("Enter", "Open"),
@@ -1078,7 +1120,9 @@ impl Window {
                 ("Ctrl+Shift+O", "Open with…"),
                 ("F4", "Open terminal here"),
                 ("Ctrl+Shift+N  /  Ctrl+Alt+N", "New folder / file"),
-                ("F2", "Rename, batch rename with several selected"),
+                ("F2  /  Shift+F2", "Rename in place / in a dialog; batch rename with several selected"),
+                ("Ctrl+Shift+U", "Show folder sizes and sort by disk usage"),
+                ("Ctrl+Shift+R", "Restore from trash"),
                 ("Ctrl+C  /  Ctrl+X  /  Ctrl+V", "Copy / cut / paste"),
                 ("Ctrl+Z  /  Ctrl+Shift+Z", "Undo / redo the last file operation"),
                 ("Ctrl+Shift+D", "Duplicate"),

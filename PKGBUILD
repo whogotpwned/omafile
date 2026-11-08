@@ -1,6 +1,6 @@
 # Maintainer: whogotpwned
 pkgname=omafile
-pkgver=0.5.0
+pkgver=0.6.0
 pkgrel=1
 pkgdesc="Native GTK4/libadwaita file manager that follows the Omarchy theme"
 arch=('x86_64' 'aarch64')
@@ -14,6 +14,10 @@ optdepends=(
   'poppler: PDF thumbnails and previews'
   'fd: fast recursive search'
   'libarchive: extract and create archives'
+  'imagemagick: rotate, convert and resize images from the context menu'
+  'qrencode: QR code for "Share on Local Network"'
+  'python: serves "Share on Local Network" (http.server)'
+  'docker: container volumes in the sidebar (or podman)'
   'xdg-desktop-portal-hyprland: "Open With" chooser'
   'alacritty: terminal for "Open Terminal Here"'
   'uwsm: launch the terminal as a proper session app'

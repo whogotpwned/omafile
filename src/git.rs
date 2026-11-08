@@ -59,6 +59,17 @@ pub struct RepoStatus {
     pub modified: usize,
     pub untracked: usize,
     pub staged: usize,
+    /// Files with something in the index (for the badge click: unstage).
+    pub staged_paths: std::collections::HashSet<PathBuf>,
+}
+
+async fn run_any_exit(root: &Path, args: &[&str]) -> Option<String> {
+    let mut argv: Vec<&std::ffi::OsStr> = vec![std::ffi::OsStr::new("git"), std::ffi::OsStr::new("-C"), root.as_os_str()];
+    argv.extend(args.iter().map(std::ffi::OsStr::new));
+    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::STDOUT_PIPE | gio::SubprocessFlags::STDERR_SILENCE);
+    let process = launcher.spawn(&argv).ok()?;
+    let (stdout, _) = process.communicate_future(None).await.ok()?;
+    stdout.map(|b| String::from_utf8_lossy(&b).to_string())
 }
 
 async fn run(root: &Path, args: &[&str]) -> Option<String> {
@@ -73,6 +84,113 @@ async fn run(root: &Path, args: &[&str]) -> Option<String> {
         return None;
     }
     stdout.map(|b| String::from_utf8_lossy(&b).to_string())
+}
+
+/// Run git and return stdout, or the trimmed stderr as the error message.
+pub async fn run_checked(root: &Path, args: &[&str]) -> Result<String, String> {
+    let mut argv: Vec<&std::ffi::OsStr> = vec![std::ffi::OsStr::new("git"), std::ffi::OsStr::new("-C"), root.as_os_str()];
+    argv.extend(args.iter().map(std::ffi::OsStr::new));
+    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::STDOUT_PIPE | gio::SubprocessFlags::STDERR_PIPE);
+    launcher.setenv("GIT_OPTIONAL_LOCKS", "0", true);
+    launcher.setenv("GIT_TERMINAL_PROMPT", "0", true);
+    let process = launcher.spawn(&argv).map_err(|e| e.message().to_string())?;
+    let (stdout, stderr) = process.communicate_future(None).await.map_err(|e| e.message().to_string())?;
+    let text = |b: Option<glib::Bytes>| b.map(|b| String::from_utf8_lossy(&b).to_string()).unwrap_or_default();
+    if process.is_successful() {
+        Ok(text(stdout))
+    } else {
+        let err = text(stderr);
+        Err(summarize_error(&err, args.first().unwrap_or(&"")))
+    }
+}
+
+/// Git errors are multi-line essays; keep what a toast can show.
+pub fn summarize_error(stderr: &str, verb: &str) -> String {
+    let text = stderr.trim();
+    if text.contains("Author identity unknown") || text.contains("Please tell me who you are") {
+        return "set your identity first: git config --global user.name / user.email".into();
+    }
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('*') && !l.starts_with("hint:"));
+    match line {
+        Some(l) => l.trim_start_matches("error: ").trim_start_matches("fatal: ").to_string(),
+        None => format!("git {verb} failed"),
+    }
+}
+
+fn with_paths<'a>(base: &[&'a str], paths: &'a [PathBuf]) -> Vec<&'a str> {
+    let mut v: Vec<&str> = base.to_vec();
+    v.push("--");
+    v.extend(paths.iter().filter_map(|p| p.to_str()));
+    v
+}
+
+pub async fn stage(root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+    run_checked(root, &with_paths(&["add", "-A"], paths)).await.map(|_| ())
+}
+
+pub async fn unstage(root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+    run_checked(root, &with_paths(&["reset", "-q", "HEAD"], paths)).await.map(|_| ())
+}
+
+/// Throw away local changes: tracked files go back to HEAD, untracked ones are removed.
+pub async fn discard(root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+    // `checkout` fails for paths unknown to the index; try both and only report
+    // when neither could do anything.
+    let a = run_checked(root, &with_paths(&["checkout", "-q", "HEAD"], paths)).await;
+    let b = run_checked(root, &with_paths(&["clean", "-fdq"], paths)).await;
+    match (a, b) {
+        (Err(ea), Err(_)) => Err(ea),
+        _ => Ok(()),
+    }
+}
+
+pub async fn commit(root: &Path, message: &str, stage_all: bool) -> Result<String, String> {
+    if stage_all {
+        run_checked(root, &["add", "-A"]).await?;
+    }
+    run_checked(root, &["commit", "-q", "-m", message]).await?;
+    run_checked(root, &["log", "-1", "--format=%h %s"]).await.map(|s| s.trim().to_string())
+}
+
+/// Local branches, current one first; (name, is_current).
+pub async fn branches(root: &Path) -> Vec<(String, bool)> {
+    let out = run_checked(root, &["branch", "--format=%(HEAD) %(refname:short)", "--sort=-committerdate"]).await.unwrap_or_default();
+    out.lines()
+        .filter_map(|l| {
+            let (head, name) = l.split_at(1);
+            let name = name.trim();
+            if name.is_empty() { None } else { Some((name.to_string(), head == "*")) }
+        })
+        .collect()
+}
+
+pub async fn switch(root: &Path, branch: &str, create: bool) -> Result<(), String> {
+    let args: Vec<&str> = if create { vec!["switch", "-q", "-c", branch] } else { vec!["switch", "-q", branch] };
+    run_checked(root, &args).await.map(|_| ())
+}
+
+/// Unified diff for one path: work tree vs. index, plus the index vs. HEAD, and
+/// untracked files against nothing.
+pub async fn diff(root: &Path, path: &Path, status: &Status) -> String {
+    let Some(p) = path.to_str() else { return String::new() };
+    let rel = path.strip_prefix(root).ok().and_then(|r| r.to_str()).unwrap_or(p);
+    if matches!(status, Status::Untracked | Status::Added) {
+        let tracked = run_checked(root, &["ls-files", "--error-unmatch", "--", rel]).await.is_ok();
+        if !tracked {
+            // Exit status 1 means "differences", so do not use run_checked here.
+            return run_any_exit(root, &["diff", "--no-index", "--", "/dev/null", p]).await.unwrap_or_default();
+        }
+    }
+    let mut out = run(root, &["diff", "--", rel]).await.unwrap_or_default();
+    let staged = run(root, &["diff", "--cached", "--", rel]).await.unwrap_or_default();
+    if !staged.is_empty() {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str("# staged\n");
+        out.push_str(&staged);
+    }
+    out
 }
 
 pub fn available() -> bool {
@@ -128,6 +246,9 @@ pub async fn status(dir: &Path) -> Option<RepoStatus> {
             }
         }
         let abs = root.join(path.trim_end_matches('/'));
+        if x != ' ' && x != '?' && x != '!' {
+            repo.staged_paths.insert(abs.clone());
+        }
         // Propagate to parent folders so a folder shows the state of its contents.
         if status != Status::Ignored {
             let mut parent = abs.parent();
@@ -175,6 +296,13 @@ impl RepoStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn error_summary_is_one_line() {
+        assert!(summarize_error("\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email", "commit").contains("identity"));
+        assert_eq!(summarize_error("error: pathspec 'x' did not match any file(s) known to git\nhint: foo", "switch"), "pathspec 'x' did not match any file(s) known to git");
+        assert_eq!(summarize_error("", "add"), "git add failed");
+    }
 
     #[test]
     fn parses_status_of_a_real_repo() {

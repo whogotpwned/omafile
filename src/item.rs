@@ -11,7 +11,25 @@ pub const ATTRIBUTES: &str = "standard::name,standard::display-name,standard::ty
 standard::icon,standard::is-hidden,standard::is-backup,standard::is-symlink,standard::symlink-target,\
 standard::content-type,standard::fast-content-type,time::modified,unix::mode,access::can-write,\
 access::can-execute,owner::user,owner::group,standard::target-uri,thumbnail::path,thumbnail::is-valid,\
-metadata::custom-icon,metadata::custom-icon-name";
+metadata::custom-icon,metadata::custom-icon-name,trash::deletion-date,trash::orig-path";
+
+/// File names that usually hold credentials. They get a warning badge, a masked
+/// preview and a confirmation before they are copied.
+pub fn looks_secret(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let exact = [".env", ".netrc", ".npmrc", ".pypirc", ".htpasswd", ".git-credentials", ".pgpass", ".my.cnf", "credentials", "credentials.json", "secrets.yaml", "secrets.yml", "secrets.json", "secrets.toml", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "shadow", "wp-config.php", ".docker/config.json", "token", ".token", "master.key", "service-account.json", "kubeconfig"];
+    if exact.contains(&lower.as_str()) {
+        return true;
+    }
+    if lower.starts_with(".env.") && !lower.ends_with(".example") && !lower.ends_with(".sample") && !lower.ends_with(".template") {
+        return true;
+    }
+    if lower.starts_with("id_") && lower.ends_with(".pub") {
+        return false;
+    }
+    let suffixes = [".pem", ".key", ".p12", ".pfx", ".kdbx", ".keystore", ".jks", ".asc", ".gpg", ".secret", ".ppk", ".ovpn", ".crt.key", ".token"];
+    suffixes.iter().any(|s| lower.ends_with(s)) || lower.starts_with("secret") && !lower.ends_with(".example")
+}
 
 mod imp {
     use super::*;
@@ -21,6 +39,8 @@ mod imp {
         pub file: RefCell<Option<gio::File>>,
         pub info: RefCell<Option<gio::FileInfo>>,
         pub label: RefCell<Option<String>>,
+        /// Computed recursive size for folders (Properties, "Show Folder Sizes").
+        pub dir_size: std::cell::Cell<Option<u64>>,
     }
 
     #[glib::object_subclass]
@@ -101,7 +121,33 @@ impl FileItem {
     }
 
     pub fn size(&self) -> u64 {
+        if let Some(d) = self.imp().dir_size.get() {
+            return d;
+        }
         self.info().size().max(0) as u64
+    }
+
+    pub fn dir_size(&self) -> Option<u64> {
+        self.imp().dir_size.get()
+    }
+
+    pub fn set_dir_size(&self, size: Option<u64>) {
+        self.imp().dir_size.set(size);
+    }
+
+    pub fn is_secret(&self) -> bool {
+        !self.is_dir() && looks_secret(&self.name())
+    }
+
+    /// `trash:///` entries: when the item was deleted.
+    pub fn trash_deleted(&self) -> Option<glib::DateTime> {
+        let s = self.info().attribute_string("trash::deletion-date")?;
+        glib::DateTime::from_iso8601(&s, Some(&glib::TimeZone::local())).ok()
+    }
+
+    /// `trash:///` entries: where the item used to live.
+    pub fn trash_origin(&self) -> Option<String> {
+        self.info().attribute_byte_string("trash::orig-path").map(|p| p.to_string())
     }
 
     pub fn modified(&self) -> Option<glib::DateTime> {

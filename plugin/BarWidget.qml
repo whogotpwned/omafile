@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -22,6 +23,34 @@ BarWidget {
   readonly property string folder: setting("path", "~")
   readonly property string windowClass: "io.github.whogotpwned.Omafile"
 
+  // omafile writes ~/.local/state/omafile/status ("busy=0|1", "vaults=N") while
+  // it runs; the bar shows a small marker for a running copy and for unlocked
+  // encrypted folders.
+  property bool busy: false
+  property int vaults: 0
+  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/omafile"
+
+  function readStatus(text) {
+    var b = false, v = 0
+    text.split("\n").forEach(function(line) {
+      var kv = line.split("=")
+      if (kv[0] === "busy") b = kv[1] === "1"
+      if (kv[0] === "vaults") v = parseInt(kv[1]) || 0
+    })
+    busy = b
+    vaults = v
+  }
+
+  FileView {
+    id: statusFile
+    path: root.stateDir + "/status"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.readStatus(text())
+    onFileChanged: reload()
+    onLoadFailed: { root.busy = false; root.vaults = 0 }
+  }
+
   // Required by PopupCard (owner.close) and by the shell's popout routing.
   function close() { menuOpen = false }
   function open() { menuOpen = true }
@@ -36,6 +65,11 @@ BarWidget {
   function focusOrLaunch() {
     if (!root.bar) return
     root.bar.run("omarchy-launch-or-focus " + windowClass + " 'uwsm-app -- omafile " + folder + "'")
+  }
+
+  function lockAll() {
+    if (!root.bar) return
+    root.bar.run("omafile --lock-all")
   }
 
   readonly property var places: [
@@ -101,6 +135,26 @@ BarWidget {
             root.launch(modelData.target)
           }
         }
+      }
+
+      PopupMenuRow {
+        visible: root.vaults > 0
+        text: "Lock all encrypted folders (" + root.vaults + ")"
+        onTriggered: {
+          root.menuOpen = false
+          root.lockAll()
+        }
+      }
+
+      Text {
+        visible: root.busy
+        text: "Copying…"
+        textFormat: Text.PlainText
+        color: Commons.Color.popups.text
+        opacity: 0.7
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        topPadding: Style.space(4)
       }
     }
   }

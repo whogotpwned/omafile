@@ -44,6 +44,7 @@ pub struct Pane {
     pub search_entry: gtk::SearchEntry,
     pub deep_toggle: gtk::ToggleButton,
     pub status: gtk::Label,
+    pub branch_btn: gtk::Button,
     pub side: Cell<usize>,
     pub item_menu: gtk::PopoverMenu,
     pub background_menu: gtk::PopoverMenu,
@@ -109,10 +110,16 @@ impl Pane {
             .css_classes(["caption", "omafile-dim"])
             .build();
 
+        let branch_btn = gtk::Button::builder().valign(gtk::Align::Center).margin_end(8).tooltip_text("Switch branch (Ctrl+Alt+B)").visible(false).build();
+        branch_btn.add_css_class("flat");
+        branch_btn.add_css_class("omafile-branch");
+        let status_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        status_row.append(&status);
+        status_row.append(&branch_btn);
         let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
         card.add_css_class("omafile-card");
         card.append(&view_stack);
-        card.append(&status);
+        card.append(&status_row);
 
         // The terminal panel docks below the file card inside a vertical paned.
         let term_paned = gtk::Paned::new(gtk::Orientation::Vertical);
@@ -126,6 +133,7 @@ impl Pane {
         root.append(&search_bar);
         root.append(&term_paned);
 
+        branch_btn.set_action_name(Some("win.git-branch"));
         let item_menu = gtk::PopoverMenu::from_model(Some(&window::item_menu_model(false, false, false, false, window::VaultState::None, false)));
         item_menu.set_has_arrow(false);
         item_menu.set_parent(&view_stack);
@@ -147,6 +155,7 @@ impl Pane {
             search_entry,
             deep_toggle,
             status,
+            branch_btn,
             side: Cell::new(side),
             item_menu,
             background_menu,
@@ -234,6 +243,20 @@ impl Pane {
             if let Some(p) = this.upgrade() {
                 p.cell_items.borrow_mut().insert(hbox.clone().upcast(), list_item.clone());
                 p.add_drag_source(&hbox);
+                // Click on the git badge toggles staging for that file.
+                let click = gtk::GestureClick::new();
+                click.set_button(1);
+                click.set_propagation_phase(gtk::PropagationPhase::Capture);
+                let weak = this.clone();
+                let li = list_item.clone();
+                click.connect_pressed(move |g, _, _, _| {
+                    let (Some(p), Some(item)) = (weak.upgrade(), li.item().and_downcast::<FileItem>()) else { return };
+                    g.set_state(gtk::EventSequenceState::Claimed);
+                    if let Some(w) = p.window.upgrade() {
+                        w.git_toggle_stage(&p, &item);
+                    }
+                });
+                badge.add_controller(click);
             }
         });
         let this = Rc::downgrade(&self);
@@ -249,13 +272,22 @@ impl Pane {
             if let Some(p) = this.upgrade() {
                 bind_thumb(&p.thumbs, &thumb, &item, ICON_LIST, p.thumbnails_enabled());
                 bind_tag_dot(&dot, p.tag_of(&item));
-                bind_git_badge(&badge, p.git_status_of(&item));
+                let staged = item.file().path().map(|path| p.git.borrow().as_ref().map(|r| r.staged_paths.contains(&path)).unwrap_or(false)).unwrap_or(false);
+                bind_git_badge(&badge, p.git_status_of(&item), staged);
                 let path = item.file().path();
                 let is_vault = item.is_dir() && path.as_ref().map(|d| crate::crypt::is_vault(d)).unwrap_or(false);
                 let is_open_mount = item.is_dir() && !is_vault && path.as_ref().map(|d| crate::crypt::vault_for(d).is_some() && crate::crypt::is_mounted(d)).unwrap_or(false);
-                lock.set_visible(is_vault || is_open_mount);
-                lock.set_icon_name(Some(if is_open_mount { "changes-allow-symbolic" } else { "changes-prevent-symbolic" }));
-                lock.set_tooltip_text(Some(if is_open_mount { "Encrypted folder, unlocked" } else { "Encrypted folder (gocryptfs), locked" }));
+                let secret = item.is_secret();
+                lock.set_visible(is_vault || is_open_mount || secret);
+                if secret {
+                    lock.set_icon_name(Some("dialog-password-symbolic"));
+                    lock.add_css_class("omafile-secret");
+                    lock.set_tooltip_text(Some("Looks like a secret: preview is masked, copying asks first"));
+                } else {
+                    lock.remove_css_class("omafile-secret");
+                    lock.set_icon_name(Some(if is_open_mount { "changes-allow-symbolic" } else { "changes-prevent-symbolic" }));
+                    lock.set_tooltip_text(Some(if is_open_mount { "Encrypted folder, unlocked" } else { "Encrypted folder (gocryptfs), locked" }));
+                }
             }
             label.set_text(&item.display_label());
             apply_item_classes(&hbox, &item);
@@ -270,7 +302,10 @@ impl Pane {
         })));
         columns.push(("name", name_col));
 
-        let size_col = self.text_column("Size", 1.0, |item| if item.is_dir() { String::new() } else { ops::human_size(item.size()) });
+        let size_col = self.text_column("Size", 1.0, |item| match (item.is_dir(), item.dir_size()) {
+            (true, None) => String::new(),
+            (_, _) => ops::human_size(item.size()),
+        });
         size_col.set_sorter(Some(&gtk::CustomSorter::new(|a, b| {
             let a = a.downcast_ref::<FileItem>().unwrap();
             let b = b.downcast_ref::<FileItem>().unwrap();
@@ -293,6 +328,24 @@ impl Pane {
             (!a.is_dir(), b.modified_unix()).cmp(&(!b.is_dir(), a.modified_unix())).into()
         })));
         columns.push(("modified", modified_col));
+
+        // Trash only: when it was deleted and where it came from.
+        let deleted_col = self.text_column("Deleted", 0.0, |item| item.trash_deleted().map(|d| ops::format_time(&d)).unwrap_or_default());
+        deleted_col.set_sorter(Some(&gtk::CustomSorter::new(|a, b| {
+            let a = a.downcast_ref::<FileItem>().unwrap().trash_deleted().map(|d| d.to_unix()).unwrap_or(0);
+            let b = b.downcast_ref::<FileItem>().unwrap().trash_deleted().map(|d| d.to_unix()).unwrap_or(0);
+            b.cmp(&a).into()
+        })));
+        deleted_col.set_visible(false);
+        columns.push(("deleted", deleted_col));
+        let origin_col = self.text_column("Original Location", 0.0, |item| {
+            item.trash_origin().map(|p| {
+                let path = std::path::Path::new(&p);
+                window::abbreviate_home(path.parent().unwrap_or(path))
+            }).unwrap_or_default()
+        });
+        origin_col.set_visible(false);
+        columns.push(("origin", origin_col));
 
         for (_, col) in &columns {
             self.column_view.append_column(col);
@@ -567,48 +620,15 @@ impl Pane {
     /// Files dropped onto this pane: move within the local file system, copy otherwise.
     pub fn receive_files(self: &Rc<Self>, files: Vec<gio::File>, dest_dir: gio::File) {
         let Some(w) = self.window.upgrade() else { return };
-        let this = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            let mut moved = 0;
-            let mut copied = 0;
-            let mut error = None;
-            let mut move_pairs = Vec::new();
-            let mut copy_pairs = Vec::new();
-            for src in files {
-                if src.parent().map(|p| p.equal(&dest_dir)).unwrap_or(false) || src.equal(&dest_dir) || dest_dir.has_prefix(&src) {
-                    continue;
-                }
-                let Some(name) = src.basename() else { continue };
-                let dst = ops::unique_child(&dest_dir, &name.to_string_lossy());
-                let same_fs = src.is_native() && dest_dir.is_native();
-                let result = if same_fs { ops::move_file(src.clone(), dst.clone()).await } else { ops::copy_recursive(src.clone(), dst.clone()).await };
-                match result {
-                    Ok(()) if same_fs => {
-                        w.tags.moved(&src, &dst);
-                        move_pairs.push((src.clone(), dst));
-                        moved += 1;
-                    }
-                    Ok(()) => {
-                        copy_pairs.push((src.clone(), dst));
-                        copied += 1;
-                    }
-                    Err(e) => {
-                        error = Some(format!("{}: {}", name.to_string_lossy(), e.message()));
-                        break;
-                    }
-                }
-            }
-            if let Some(p) = this.upgrade() {
-                p.reload();
-            }
-            let message = format!("{} {} {}", if moved > 0 { "Moved" } else { "Copied" }, moved + copied, if moved + copied == 1 { "item" } else { "items" });
-            match error {
-                Some(e) => w.toast_error(&e),
-                None if moved + copied == 0 => {}
-                None if !move_pairs.is_empty() => w.record(crate::undo::Op::Move(move_pairs), &message),
-                None => w.record(crate::undo::Op::Copy(copy_pairs), &message),
-            }
-        });
+        let files: Vec<gio::File> = files
+            .into_iter()
+            .filter(|src| !(src.parent().map(|p| p.equal(&dest_dir)).unwrap_or(false) || src.equal(&dest_dir) || dest_dir.has_prefix(src)))
+            .collect();
+        if files.is_empty() {
+            return;
+        }
+        let same_fs = files.iter().all(|f| f.is_native()) && dest_dir.is_native();
+        w.transfer(files, dest_dir, if same_fs { crate::transfer::Mode::Move } else { crate::transfer::Mode::Copy }, self.clone(), false);
     }
 
     // ----- navigation -------------------------------------------------------------
@@ -637,6 +657,12 @@ impl Pane {
         self.deep_toggle.set_active(false);
         self.search_bar.set_search_mode(false);
         self.search_entry.set_text("");
+        let in_trash = file.uri_scheme().as_deref() == Some("trash");
+        for (id, col) in self.columns.borrow().iter() {
+            if *id == "deleted" || *id == "origin" {
+                col.set_visible(in_trash);
+            }
+        }
         self.watch_cwd();
         self.reload();
         if self.terminal_visible() {
@@ -764,6 +790,16 @@ impl Pane {
                 });
             }
         }
+    }
+
+    /// Repository root and status for `item`, when it has local changes.
+    pub fn git_info_for(&self, item: &FileItem) -> Option<(std::path::PathBuf, crate::git::Status)> {
+        let status = self.git_status_of(item)?;
+        if status == crate::git::Status::Ignored {
+            return None;
+        }
+        let root = self.git.borrow().as_ref()?.root.clone();
+        Some((root, status))
     }
 
     pub fn git_status_of(&self, item: &FileItem) -> Option<crate::git::Status> {
@@ -1045,6 +1081,111 @@ impl Pane {
         self.selection.item(position).and_downcast::<FileItem>()
     }
 
+    /// The bound cell widget currently showing `item`, if it is on screen.
+    pub fn widget_for(&self, item: &FileItem) -> Option<gtk::Widget> {
+        let map = self.cell_items.borrow();
+        let grid = self.view_stack.visible_child_name().as_deref() == Some("grid");
+        map.iter()
+            .filter(|(w, li)| {
+                let right_view = if grid { w.is::<gtk::Box>() && w.downcast_ref::<gtk::Box>().map(|b| b.orientation() == gtk::Orientation::Vertical).unwrap_or(false) } else { w.is::<gtk::Box>() && w.downcast_ref::<gtk::Box>().map(|b| b.orientation() == gtk::Orientation::Horizontal).unwrap_or(false) };
+                right_view && w.is_mapped() && li.item().and_downcast::<FileItem>().map(|i| i.file().equal(&item.file())).unwrap_or(false)
+            })
+            .map(|(w, _)| w.clone())
+            .next()
+    }
+
+    /// Rename in place: a small entry anchored to the row (F2). Falls back to a
+    /// dialog when the row is not on screen.
+    pub fn inline_rename(self: &Rc<Self>, item: &FileItem) -> bool {
+        let Some(anchor) = self.widget_for(item) else { return false };
+        let old = item.display_name();
+        let entry = gtk::Entry::builder().text(&old).width_chars((old.chars().count() as i32 + 4).clamp(16, 60)).build();
+        entry.add_css_class("omafile-inline-rename");
+        let popover = gtk::Popover::builder().child(&entry).has_arrow(false).position(gtk::PositionType::Bottom).autohide(true).build();
+        popover.add_css_class("omafile-rename-popover");
+        popover.set_parent(&anchor);
+        let w = anchor.width();
+        popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(0, 0, w.max(1), anchor.height().max(1))));
+        popover.set_offset(0, -anchor.height());
+        let this = Rc::downgrade(self);
+        let item2 = item.clone();
+        let pop2 = popover.clone();
+        entry.connect_activate(move |e| {
+            let name = e.text().trim().to_string();
+            pop2.popdown();
+            let Some(p) = this.upgrade() else { return };
+            if let Some(win) = p.window.upgrade() {
+                win.do_rename(p.clone(), item2.clone(), name);
+            }
+        });
+        let esc = gtk::EventControllerKey::new();
+        let pop3 = popover.clone();
+        esc.connect_key_pressed(move |_, key, _, _| {
+            if key == gtk::gdk::Key::Escape {
+                pop3.popdown();
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        });
+        entry.add_controller(esc);
+        let this = Rc::downgrade(self);
+        popover.connect_closed(move |pop| {
+            let pop = pop.clone();
+            let this = this.clone();
+            glib::idle_add_local_once(move || {
+                pop.unparent();
+                if let Some(p) = this.upgrade() {
+                    if let Some(w) = p.window.upgrade() {
+                        w.refocus();
+                    }
+                }
+            });
+        });
+        popover.popup();
+        let stem_end = if item.is_dir() { None } else { old.rfind('.').filter(|&i| i > 0) };
+        entry.grab_focus();
+        entry.select_region(0, stem_end.map(|i| i as i32).unwrap_or(-1));
+        true
+    }
+
+    /// Compute recursive sizes for the folders in view, then sort by size (disk usage).
+    pub fn compute_folder_sizes(self: &Rc<Self>) {
+        let generation = self.state.borrow().generation;
+        let dirs: Vec<FileItem> = (0..self.store.n_items()).filter_map(|i| self.store.item(i).and_downcast::<FileItem>()).filter(|i| i.is_dir() && i.dir_size().is_none()).collect();
+        if dirs.is_empty() {
+            self.sort_by_size();
+            return;
+        }
+        self.status.set_text(&format!("Measuring {} folders…", dirs.len()));
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            for (n, item) in dirs.iter().enumerate() {
+                let file = item.target_file();
+                let size = ops::dir_size(&file).await;
+                let Some(p) = this.upgrade() else { return };
+                if p.state.borrow().generation != generation {
+                    return;
+                }
+                item.set_dir_size(Some(size));
+                if let Some(pos) = (0..p.store.n_items()).find(|i| p.store.item(*i).and_downcast::<FileItem>().map(|x| x == *item).unwrap_or(false)) {
+                    p.store.items_changed(pos, 1, 1);
+                }
+                p.status.set_text(&format!("Measuring folders… {} of {}", n + 1, dirs.len()));
+            }
+            if let Some(p) = this.upgrade() {
+                p.sort_by_size();
+                p.selection_changed();
+            }
+        });
+    }
+
+    fn sort_by_size(&self) {
+        if let Some((_, col)) = self.columns.borrow().iter().find(|(id, _)| *id == "size") {
+            self.column_view.sort_by_column(Some(col), gtk::SortType::Descending);
+        }
+    }
+
     pub fn selected_items(&self) -> Vec<FileItem> {
         let n = self.selection.n_items();
         (0..n).filter(|i| self.selection.is_selected(*i)).filter_map(|i| self.item_at(i)).collect()
@@ -1114,6 +1255,13 @@ impl Pane {
             text.push_str(&format!("  ·  {}", self.state.borrow().cwd.uri()));
         }
         self.status.set_text(&text);
+        match self.git.borrow().as_ref() {
+            Some(repo) if !deep && !virtual_view => {
+                self.branch_btn.set_label(&format!("\u{2387} {}", repo.branch));
+                self.branch_btn.set_visible(true);
+            }
+            _ => self.branch_btn.set_visible(false),
+        }
         if let Some(w) = self.window.upgrade() {
             w.pane_selection_changed(self);
         }
@@ -1154,7 +1302,18 @@ impl Pane {
             let archive = items.len() == 1 && items[0].is_archive() && items[0].target_file().is_native();
             let vault = window::VaultState::of(items.first().filter(|_| single_dir).and_then(|i| i.file().path()));
             let in_repo = self.git.borrow().is_some();
-            self.item_menu.set_menu_model(Some(&window::item_menu_model(single_dir, archive, in_trash, items.len() > 1, vault, in_repo)));
+            let theme = single_dir && items[0].target_file().path().map(|p| crate::omarchy::is_theme_dir(&p)).unwrap_or(false);
+            let flags = window::MenuFlags {
+                single_dir,
+                archive,
+                in_trash,
+                multiple: items.len() > 1,
+                in_repo,
+                images: Window::image_menu_applies(&items),
+                theme,
+                local: items.iter().all(|i| i.target_file().is_native()),
+            };
+            self.item_menu.set_menu_model(Some(&window::item_menu_model_ext(flags, vault)));
             self.item_menu.set_pointing_to(Some(&rect));
             self.item_menu.popup();
         } else {
@@ -1239,15 +1398,18 @@ fn bind_tag_dot(dot: &gtk::Box, color: Option<String>) {
     }
 }
 
-fn bind_git_badge(badge: &gtk::Label, status: Option<crate::git::Status>) {
-    for cls in ["omafile-git-modified", "omafile-git-added", "omafile-git-deleted", "omafile-git-ignored"] {
+fn bind_git_badge(badge: &gtk::Label, status: Option<crate::git::Status>, staged: bool) {
+    for cls in ["omafile-git-modified", "omafile-git-added", "omafile-git-deleted", "omafile-git-ignored", "omafile-git-staged"] {
         badge.remove_css_class(cls);
     }
     match status {
         Some(s) => {
             badge.set_text(s.badge());
             badge.add_css_class(s.css());
-            badge.set_tooltip_text(Some(&format!("git: {}", s.label())));
+            if staged {
+                badge.add_css_class("omafile-git-staged");
+            }
+            badge.set_tooltip_text(Some(&format!("git: {}{}  ·  click to {}", s.label(), if staged { " (staged)" } else { "" }, if staged { "unstage" } else { "stage" })));
             badge.set_visible(true);
         }
         None => badge.set_visible(false),

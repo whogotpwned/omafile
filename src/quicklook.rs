@@ -81,7 +81,8 @@ impl QuickLook {
     fn show_item(self: &Rc<Self>, item: &FileItem) {
         self.title.set_title(&item.display_name());
         self.title.set_subtitle(&item.type_description());
-        self.preview.show(Some(item), 1);
+        let git = self.pane.borrow().as_ref().and_then(|w| w.upgrade()).and_then(|p| p.git_info_for(item));
+        self.preview.show_git(Some(item), 1, git);
     }
 
     /// Move the pane's selection by `delta` and preview the new item.

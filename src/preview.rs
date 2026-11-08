@@ -112,8 +112,56 @@ impl PreviewPane {
     }
 
     pub fn show(self: &Rc<Self>, item: Option<&FileItem>, count: usize) {
+        self.show_git(item, count, None);
+    }
+
+    /// Like `show`, but a file with local git changes gets a coloured diff and a
+    /// credential-looking file is masked.
+    pub fn show_git(self: &Rc<Self>, item: Option<&FileItem>, count: usize, git: Option<(std::path::PathBuf, crate::git::Status)>) {
         let gen = self.generation.get() + 1;
         self.generation.set(gen);
+        if let Some(item) = item {
+            if item.is_secret() {
+                self.name.set_text(&item.display_name());
+                self.details.set_text(&format!("{}  ·  {}", item.type_description(), ops::human_size(item.size())));
+                if let Some(icon) = item.icon() {
+                    self.icon.set_from_gicon(&icon);
+                }
+                self.stack.set_visible_child_name("text");
+                self.text.buffer().set_text("••••••••••••••••••••\n\nLooks like a credential file.\nContents are not shown here.\nOpen it in the editor if\nyou really need to see it.");
+                self.hint.set_text("Secret file: preview masked");
+                return;
+            }
+            if let (Some((root, status)), Some(path)) = (git.as_ref(), item.target_file().path()) {
+                if !item.is_dir() && (item.is_text() || item.size() == 0 || matches!(status, crate::git::Status::Untracked | crate::git::Status::Added)) && !item.is_image() && !item.is_pdf() {
+                    let (root, status) = (root.clone(), status.clone());
+                    self.name.set_text(&item.display_name());
+                    self.details.set_text(&format!("{}  ·  {}  ·  git: {}", item.type_description(), ops::human_size(item.size()), status.label()));
+                    if let Some(icon) = item.icon() {
+                        self.icon.set_from_gicon(&icon);
+                    }
+                    self.stack.set_visible_child_name("text");
+                    self.text.buffer().set_text("");
+                    self.hint.set_text("Loading diff…");
+                    let this = Rc::downgrade(self);
+                    glib::spawn_future_local(async move {
+                        let diff = crate::git::diff(&root, &path, &status).await;
+                        let Some(p) = this.upgrade() else { return };
+                        if p.generation.get() != gen {
+                            return;
+                        }
+                        if diff.trim().is_empty() {
+                            p.hint.set_text("No textual changes (binary or identical)");
+                            p.show_plain_text(&gio::File::for_path(&path), gen);
+                        } else {
+                            let (adds, dels) = p.render_diff(&diff);
+                            p.hint.set_text(&format!("git diff  ·  +{adds} −{dels}"));
+                        }
+                    });
+                    return;
+                }
+            }
+        }
         let Some(item) = item else {
             self.stack.set_visible_child_name("none");
             self.name.set_text(if count > 1 { "Multiple items" } else { "" });
@@ -189,6 +237,73 @@ impl PreviewPane {
         }
         self.stack.set_visible_child_name("icon");
         self.picture.set_paintable(None::<&gdk::Paintable>);
+    }
+}
+
+impl PreviewPane {
+    fn show_plain_text(self: &Rc<Self>, file: &gio::File, gen: u64) {
+        let file = file.clone();
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let head = read_head(&file).await;
+            let Some(p) = this.upgrade() else { return };
+            if p.generation.get() == gen {
+                p.text.buffer().set_text(&head.unwrap_or_default());
+            }
+        });
+    }
+
+    /// Fill the text view with a unified diff, colouring added, removed and
+    /// hunk lines with the theme palette. Returns (added, removed) line counts.
+    fn render_diff(&self, diff: &str) -> (usize, usize) {
+        let buffer = self.text.buffer();
+        buffer.set_text("");
+        let table = buffer.tag_table();
+        let palette = crate::theme::current();
+        let tag = |name: &str, color: Option<String>, dim: bool| -> gtk::TextTag {
+            let t = match table.lookup(name) {
+                Some(t) => t,
+                None => {
+                    let t = gtk::TextTag::new(Some(name));
+                    table.add(&t);
+                    t
+                }
+            };
+            if let Some(c) = color {
+                t.set_foreground(Some(&c));
+            }
+            if dim {
+                t.set_style(pango::Style::Italic);
+            }
+            t
+        };
+        let add = tag("diff-add", palette.as_ref().map(|p| p.green.hex()), false);
+        let del = tag("diff-del", palette.as_ref().map(|p| p.red.hex()), false);
+        let hunk = tag("diff-hunk", palette.as_ref().map(|p| p.cyan.hex()), false);
+        let meta = tag("diff-meta", palette.as_ref().map(|p| p.muted.hex()), true);
+        let (mut adds, mut dels) = (0, 0);
+        let mut end = buffer.end_iter();
+        for line in diff.lines() {
+            let t = if line.starts_with("+++") || line.starts_with("---") || line.starts_with("diff ") || line.starts_with("index ") || line.starts_with("# ") || line.starts_with("new file") || line.starts_with("deleted file") {
+                Some(&meta)
+            } else if line.starts_with('+') {
+                adds += 1;
+                Some(&add)
+            } else if line.starts_with('-') {
+                dels += 1;
+                Some(&del)
+            } else if line.starts_with("@@") {
+                Some(&hunk)
+            } else {
+                None
+            };
+            let text = format!("{line}\n");
+            match t {
+                Some(t) => buffer.insert_with_tags(&mut end, &text, &[t]),
+                None => buffer.insert(&mut end, &text),
+            }
+        }
+        (adds, dels)
     }
 }
 

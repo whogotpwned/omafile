@@ -257,3 +257,50 @@ mod tests {
         std::fs::remove_dir_all(&base).unwrap();
     }
 }
+
+/// Recursive size of a folder in bytes (symlinks not followed). Local folders
+/// are walked on a worker thread; remote ones through GIO.
+pub async fn dir_size(dir: &gio::File) -> u64 {
+    if let Some(path) = dir.path() {
+        return gio::spawn_blocking(move || walk_size(&path)).await.unwrap_or(0);
+    }
+    gio_dir_size(dir.clone()).await
+}
+
+fn walk_size(path: &std::path::Path) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if !meta.file_type().is_symlink() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+fn gio_dir_size(dir: gio::File) -> Pin<Box<dyn Future<Output = u64>>> {
+    Box::pin(async move {
+        let Ok(children) = dir.enumerate_children_future("standard::name,standard::type,standard::size", gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS, PRIO).await else { return 0 };
+        let mut total = 0;
+        loop {
+            let Ok(batch) = children.next_files_future(200, PRIO).await else { break };
+            if batch.is_empty() {
+                break;
+            }
+            for info in batch {
+                if info.file_type() == gio::FileType::Directory {
+                    total += gio_dir_size(children.child(&info)).await;
+                } else {
+                    total += info.size().max(0) as u64;
+                }
+            }
+        }
+        total
+    })
+}

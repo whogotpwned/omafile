@@ -104,6 +104,7 @@ impl Window {
                     Ok(key) => {
                         // Unlock right away so the folder is ready to use.
                         let mount = crypt::unlock(&vault, &p1).await;
+                        crate::status::write(&w);
                         pane.reload();
                         w.show_master_key(&name, &key);
                         if let Ok(m) = mount {
@@ -194,6 +195,7 @@ impl Window {
                 let Some(w) = this.upgrade() else { return };
                 match result {
                     Ok(mount) => {
+                        crate::status::write(&w);
                         w.toast("Unlocked");
                         pane.navigate(gio::File::for_path(mount), true);
                     }
@@ -222,6 +224,7 @@ impl Window {
             let Some(w) = this.upgrade() else { return };
             match result {
                 Ok(()) => {
+                    crate::status::write(&w);
                     w.toast("Locked");
                     pane.reload();
                 }

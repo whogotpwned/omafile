@@ -26,6 +26,8 @@ pub enum Op {
     Create(Vec<(gio::File, bool)>),
     /// Created empties removed (inverse of Create).
     RemoveCreated(Vec<(gio::File, bool)>),
+    /// Files produced from others (converted or resized images). Undo trashes them.
+    Derive(Vec<gio::File>),
     /// Tag changes: (file, old, new).
     Tag(Vec<(gio::File, Option<String>, Option<String>)>),
 }
@@ -40,6 +42,7 @@ impl Op {
             Op::Restore(files) => Op::Trash(files.clone()),
             Op::Create(files) => Op::RemoveCreated(files.clone()),
             Op::RemoveCreated(files) => Op::Create(files.clone()),
+            Op::Derive(files) => Op::Trash(files.clone()),
             Op::Tag(changes) => Op::Tag(changes.iter().map(|(f, old, new)| (f.clone(), new.clone(), old.clone())).collect()),
         }
     }
@@ -55,6 +58,7 @@ impl Op {
             Op::Trash(f) => format!("trashing {}", n(f.len(), "item")),
             Op::Restore(f) => format!("restore of {}", n(f.len(), "item")),
             Op::Create(f) | Op::RemoveCreated(f) => format!("creation of {}", n(f.len(), "item")),
+            Op::Derive(f) => format!("creation of {}", n(f.len(), "file")),
             Op::Tag(c) => format!("tag change on {}", n(c.len(), "item")),
         }
     }
@@ -196,6 +200,20 @@ pub async fn apply(op: &Op, tags: &crate::tags::TagIndex) -> Result<usize, glib:
                     }
                     f.delete_future(glib::Priority::DEFAULT).await?;
                 }
+                done += 1;
+            }
+        }
+        Op::Derive(files) => {
+            // Redo after an undo: the outputs went to the trash, bring them back.
+            for f in files {
+                if f.query_exists(gio::Cancellable::NONE) {
+                    done += 1;
+                    continue;
+                }
+                let Some(trashed) = find_in_trash(f).await else {
+                    return Err(glib::Error::new(gio::IOErrorEnum::NotFound, "The item is no longer in the trash"));
+                };
+                ops::move_file(trashed, f.clone()).await?;
                 done += 1;
             }
         }

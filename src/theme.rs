@@ -503,6 +503,49 @@ toast {{
 .omafile-terminal {{
   padding: 6px 8px;
 }}
+.omafile-git-badge.omafile-git-staged {{
+  box-shadow: inset 0 0 0 1px {accent};
+  text-decoration: underline;
+}}
+.omafile-branch {{
+  font-size: 0.85em;
+  padding: 1px 8px;
+  min-height: 0;
+  color: {accent};
+}}
+.omafile-qr {{
+  background-color: white;
+  border-radius: 10px;
+  padding: 8px;
+}}
+.omafile-share-url {{
+  font-family: monospace;
+  font-size: 0.95em;
+}}
+.omafile-commit-body {{
+  font-family: monospace;
+}}
+.omafile-secret {{
+  color: {yellow};
+}}
+.omafile-rename-popover > contents {{
+  padding: 4px;
+}}
+.omafile-progress {{
+  background-color: @view_bg_color;
+  border-top: 1px solid {border};
+  padding: 8px 14px;
+}}
+.omafile-progress-bar trough {{
+  min-height: 6px;
+  border-radius: 3px;
+  background-color: {border};
+}}
+.omafile-progress-bar progress {{
+  min-height: 6px;
+  border-radius: 3px;
+  background-color: {accent};
+}}
 .omafile-tag-dot {{
   min-width: 10px;
   min-height: 10px;
@@ -546,7 +589,15 @@ toast {{
 
 type Listener = Box<dyn Fn(&Palette)>;
 
-/// Installs the theme CSS and keeps it in sync with the active Omarchy theme.
+thread_local! {
+    static CURRENT: RefCell<Option<Palette>> = const { RefCell::new(None) };
+}
+
+/// The palette last applied, for widgets that need raw colours (diff view).
+pub fn current() -> Option<Palette> {
+    CURRENT.with(|c| c.borrow().clone())
+}
+
 pub struct ThemeManager {
     provider: gtk::CssProvider,
     palette: RefCell<Palette>,
@@ -606,6 +657,7 @@ impl ThemeManager {
         let style = adw::StyleManager::default();
         style.set_color_scheme(if palette.light { adw::ColorScheme::ForceLight } else { adw::ColorScheme::ForceDark });
         self.provider.load_from_string(&css(&palette));
+        CURRENT.with(|c| *c.borrow_mut() = Some(palette.clone()));
         *self.palette.borrow_mut() = palette;
         self.apply_icon_theme();
         let palette = self.palette.borrow().clone();

@@ -11,6 +11,7 @@ use crate::remote;
 use crate::completion::Completion;
 use crate::tags::TagIndex;
 use crate::theme::ThemeManager;
+use crate::transfer::{Mode, Progress, Queue, Request};
 use crate::undo::{Journal, Op};
 use crate::thumbs::ThumbCache;
 use adw::prelude::*;
@@ -64,6 +65,10 @@ pub struct Window {
     pub quicklook: Rc<QuickLook>,
     pub palette: RefCell<Option<Rc<Palette>>>,
     pub recent: RefCell<Vec<gio::File>>,
+    pub queue: Queue,
+    pub progress: Progress,
+    pub containers: RefCell<Vec<crate::containers::Volume>>,
+    session_saved: Cell<bool>,
     pub sidebar_list: gtk::ListBox,
     pub sidebar_menu: gtk::PopoverMenu,
     pub back_btn: gtk::Button,
@@ -213,8 +218,12 @@ impl Window {
         split.set_max_sidebar_width(280.0);
         split.set_sidebar_width_fraction(0.2);
 
+        let progress = Progress::new();
+        let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        outer.append(&split);
+        outer.append(&progress.revealer);
         let toast = adw::ToastOverlay::new();
-        toast.set_child(Some(&split));
+        toast.set_child(Some(&outer));
         window.set_content(Some(&toast));
         let quicklook = QuickLook::new(thumbs.clone(), &window);
 
@@ -236,7 +245,11 @@ impl Window {
             journal: Journal::default(),
             quicklook,
             palette: RefCell::new(None),
-            recent: RefCell::new(Vec::new()),
+            recent: RefCell::new(crate::status::load_recent().iter().map(|l| if l.contains("://") { gio::File::for_uri(l) } else { gio::File::for_path(l) }).collect()),
+            queue: Queue::default(),
+            progress,
+            containers: RefCell::new(Vec::new()),
+            session_saved: Cell::new(false),
             sidebar_list,
             sidebar_menu,
             back_btn,
@@ -259,12 +272,160 @@ impl Window {
             sidebar_target: Cell::new(None),
         });
 
+        {
+            let weak = Rc::downgrade(&this);
+            this.progress.cancel_button().connect_clicked(move |_| {
+                if let Some(w) = weak.upgrade() {
+                    w.cancel_transfer();
+                }
+            });
+        }
         this.setup_tabs();
         this.setup_path_entry(&pathbar_click);
         this.setup_sidebar();
         this.setup_actions();
         this.open_in_new_tab(start, true);
+        this.refresh_containers();
+        {
+            // Close button and Ctrl+Q (app.quit destroys the window without a
+            // close-request) both end here; the first one wins.
+            let weak = Rc::downgrade(&this);
+            this.window.connect_close_request(move |_| {
+                if let Some(w) = weak.upgrade() {
+                    w.save_session_once();
+                    w.cancel_transfer();
+                }
+                glib::Propagation::Proceed
+            });
+            let weak = Rc::downgrade(&this);
+            this.window.connect_unrealize(move |_| {
+                if let Some(w) = weak.upgrade() {
+                    w.save_session_once();
+                }
+            });
+        }
         this
+    }
+
+    pub fn save_session_once(&self) {
+        if self.session_saved.replace(true) {
+            return;
+        }
+        if self.prefs.get_bool("restore-session", true) {
+            self.snapshot_session().save();
+        }
+    }
+
+    /// Docker / podman volumes for the sidebar, fetched off the main loop.
+    pub fn refresh_containers(self: &Rc<Self>) {
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let volumes = crate::containers::volumes().await;
+            let Some(w) = this.upgrade() else { return };
+            if *w.containers.borrow() != volumes {
+                *w.containers.borrow_mut() = volumes;
+                w.refresh_sidebar();
+            }
+        });
+    }
+
+    // ----- sessions ---------------------------------------------------------------
+
+    pub fn snapshot_session(&self) -> crate::session::Session {
+        let mut s = crate::session::Session {
+            width: self.window.width(),
+            height: self.window.height(),
+            maximized: self.window.is_maximized(),
+            split: self.is_split(),
+            sidebar: self.split.shows_sidebar(),
+            active_side: self.active_side.get(),
+            ..Default::default()
+        };
+        let panes = self.panes.borrow();
+        for side in 0..2 {
+            let view = &self.tab_views[side];
+            for i in 0..view.n_pages() {
+                let page = view.nth_page(i);
+                let Some(pane) = panes.iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &page.child()) else { continue };
+                s.sides[side].push((pane.cwd().uri().to_string(), pane.terminal_visible()));
+                if view.selected_page().as_ref() == Some(&page) {
+                    s.selected[side] = i as usize;
+                }
+            }
+        }
+        s
+    }
+
+    /// Rebuild tabs, split and terminal panels from a saved session.
+    pub fn restore_session(self: &Rc<Self>, s: &crate::session::Session) {
+        if s.width > 400 && s.height > 300 {
+            self.window.set_default_size(s.width, s.height);
+        }
+        if s.maximized {
+            self.window.maximize();
+        }
+        self.split.set_show_sidebar(s.sidebar);
+        // Replace the single start tab with the saved ones.
+        let initial: Vec<adw::TabPage> = (0..self.tab_views[0].n_pages()).map(|i| self.tab_views[0].nth_page(i)).collect();
+        for side in 0..2 {
+            if s.sides[side].is_empty() {
+                continue;
+            }
+            if side == 1 {
+                self.split_boxes[1].set_visible(true);
+            }
+            self.active_side.set(side);
+            for (uri, _) in &s.sides[side] {
+                self.open_in_new_tab(gio::File::for_uri(uri), false);
+            }
+        }
+        for page in initial {
+            self.tab_views[0].close_page(&page);
+        }
+        for side in 0..2 {
+            let view = &self.tab_views[side];
+            if view.n_pages() == 0 {
+                continue;
+            }
+            let idx = (s.selected[side] as i32).min(view.n_pages() - 1);
+            view.set_selected_page(&view.nth_page(idx));
+        }
+        let side = if self.is_split() { s.active_side.min(1) } else { 0 };
+        self.active_side.set(side);
+        if self.is_split() {
+            self.split_boxes[side].add_css_class("omafile-split-active");
+            self.split_boxes[1 - side].remove_css_class("omafile-split-active");
+            let this = Rc::downgrade(self);
+            glib::idle_add_local_once(move || {
+                if let Some(w) = this.upgrade() {
+                    let width = w.split_paned.width();
+                    if width > 0 {
+                        w.split_paned.set_position(width / 2);
+                    }
+                }
+            });
+        }
+        // Terminal panels once the widgets are realized.
+        let wanted: Vec<(usize, usize)> = (0..2).flat_map(|side| s.sides[side].iter().enumerate().filter(|(_, (_, t))| *t).map(move |(i, _)| (side, i))).collect();
+        if !wanted.is_empty() {
+            let this = Rc::downgrade(self);
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                let Some(w) = this.upgrade() else { return };
+                let panes = w.panes.borrow().clone();
+                for (side, i) in wanted {
+                    let view = &w.tab_views[side];
+                    if (i as i32) < view.n_pages() {
+                        let child = view.nth_page(i as i32).child();
+                        if let Some(pane) = panes.iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child) {
+                            if !pane.terminal_visible() {
+                                pane.toggle_terminal();
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        self.sync_active();
     }
 
     // ----- tabs ----------------------------------------------------------------
@@ -416,6 +577,8 @@ impl Window {
             recent.retain(|f| !f.equal(&cwd));
             recent.insert(0, cwd);
             recent.truncate(25);
+            let lines: Vec<String> = recent.iter().filter_map(|f| f.path().map(|p| p.to_string_lossy().to_string()).or_else(|| Some(f.uri().to_string()))).collect();
+            crate::status::save_recent(&lines);
         }
         if let Some(page) = self.page_for(pane) {
             let cwd = pane.cwd();
@@ -446,7 +609,7 @@ impl Window {
         }
         let selected = pane.selected_items();
         match selected.as_slice() {
-            [one] => self.preview.show(Some(one), 1),
+            [one] => self.preview.show_git(Some(one), 1, pane.git_info_for(one)),
             _ => self.preview.show(None, selected.len()),
         }
     }
@@ -768,6 +931,9 @@ impl Window {
         }
         add("Projects", "folder-symbolic", home.join("Projects"));
         add("Code", "folder-symbolic", home.join("Code"));
+        if let Some(themes) = crate::omarchy::themes_dir() {
+            places.push(Place::Entry { name: "Omarchy Themes".into(), icon: "applications-graphics-symbolic".into(), file: gio::File::for_path(themes), kind: PlaceKind::Builtin });
+        }
         places.push(Place::Entry { name: "Recent".into(), icon: "document-open-recent-symbolic".into(), file: gio::File::for_uri("recent:///"), kind: PlaceKind::Builtin });
         places.push(Place::Entry { name: "Trash".into(), icon: "user-trash-symbolic".into(), file: gio::File::for_uri("trash:///"), kind: PlaceKind::Builtin });
 
@@ -817,6 +983,15 @@ impl Window {
                 .unwrap_or_else(|| "drive-removable-media-symbolic".into());
             places.push(Place::Entry { name: mount.name().to_string(), icon, file: mount.default_location(), kind: PlaceKind::Mount(mount) });
         }
+
+        let volumes = self.containers.borrow();
+        if !volumes.is_empty() {
+            places.push(Place::Header("Containers".into()));
+            for v in volumes.iter() {
+                places.push(Place::Entry { name: format!("{} ({})", v.name, v.engine), icon: "package-x-generic-symbolic".into(), file: gio::File::for_path(&v.mountpoint), kind: PlaceKind::Builtin });
+            }
+        }
+        drop(volumes);
 
         // The context popover is also a child of the list box, so remove rows by index.
         while let Some(row) = self.sidebar_list.row_at_index(0) {
@@ -1058,6 +1233,18 @@ impl Window {
         }
     }
 
+    pub fn queue_busy(&self) -> bool {
+        self.progress.revealer.reveals_child()
+    }
+
+    /// Copy or move `files` into `dest` through the transfer queue.
+    pub fn transfer(self: &Rc<Self>, files: Vec<gio::File>, dest: gio::File, mode: Mode, pane: Rc<Pane>, auto_rename: bool) {
+        if files.is_empty() {
+            return;
+        }
+        self.enqueue_transfer(Request { files, dest, mode, pane, auto_rename });
+    }
+
     // ----- undo / redo ----------------------------------------------------------------
 
     /// Record an operation and show a toast with an Undo button.
@@ -1239,6 +1426,7 @@ fn main_menu() -> gio::Menu {
     s1.append(Some("New Folder"), Some("win.new-folder"));
     s1.append(Some("New File"), Some("win.new-file"));
     s1.append(Some("New Encrypted Folder…"), Some("win.vault-new"));
+    s1.append(Some("Lock All Encrypted Folders"), Some("win.vault-lock-all"));
     s1.append(Some("Terminal Panel"), Some("win.terminal-panel"));
     s1.append(Some("Open Terminal Window Here"), Some("win.terminal"));
     s1.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
@@ -1250,6 +1438,7 @@ fn main_menu() -> gio::Menu {
     s2.append(Some("Show Sidebar"), Some("win.show-sidebar"));
     s2.append(Some("Show Preview"), Some("win.show-preview"));
     s2.append(Some("Split View"), Some("win.split-view"));
+    s2.append(Some("Show Folder Sizes"), Some("win.folder-sizes"));
     menu.append_section(None, &s2);
     let view = gio::Menu::new();
     view.append(Some("List"), Some("win.view::list"));
@@ -1291,7 +1480,28 @@ impl VaultState {
     }
 }
 
+/// What the selection looks like, for building the context menu.
+#[derive(Default, Clone, Copy)]
+pub struct MenuFlags {
+    pub single_dir: bool,
+    pub archive: bool,
+    pub in_trash: bool,
+    pub multiple: bool,
+    pub in_repo: bool,
+    /// Every selected item is a local image.
+    pub images: bool,
+    /// The single selected folder is an Omarchy theme.
+    pub theme: bool,
+    /// Selection is local (share / scp make sense).
+    pub local: bool,
+}
+
 pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple: bool, vault: VaultState, in_repo: bool) -> gio::Menu {
+    item_menu_model_ext(MenuFlags { single_dir, archive, in_trash, multiple, in_repo, ..Default::default() }, vault)
+}
+
+pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
+    let (single_dir, archive, in_trash, multiple, in_repo) = (f.single_dir, f.archive, f.in_trash, f.multiple, f.in_repo);
     let menu = gio::Menu::new();
     let open = gio::Menu::new();
     open.append(Some("Open"), Some("win.open"));
@@ -1305,8 +1515,16 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple
     if !multiple && !in_trash {
         open.append(Some("Open in Editor"), Some("win.open-editor"));
     }
-    if in_repo && !multiple && !in_trash {
-        open.append(Some("Git Diff in Terminal"), Some("win.git-diff"));
+    if in_repo && !in_trash {
+        let g = gio::Menu::new();
+        g.append(Some("Stage"), Some("win.git-stage"));
+        g.append(Some("Unstage"), Some("win.git-unstage"));
+        g.append(Some("Discard Changes…"), Some("win.git-discard"));
+        g.append(Some("Commit…"), Some("win.git-commit"));
+        if !multiple {
+            g.append(Some("Diff in Terminal"), Some("win.git-diff"));
+        }
+        open.append_submenu(Some("Git"), &g);
     }
     match vault {
         VaultState::Locked => open.append(Some("Unlock Encrypted Folder…"), Some("win.vault-unlock")),
@@ -1318,6 +1536,22 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple
     }
     if archive {
         open.append(Some("Extract Here"), Some("win.extract"));
+    }
+    if f.theme && !in_trash {
+        open.append(Some("Apply Omarchy Theme"), Some("win.apply-theme"));
+    }
+    if f.images && !in_trash {
+        let img = gio::Menu::new();
+        img.append(Some("Set as Wallpaper"), Some("win.set-wallpaper"));
+        img.append(Some("Rotate Left"), Some("win.image-rotate::-90"));
+        img.append(Some("Rotate Right"), Some("win.image-rotate::90"));
+        img.append(Some("Resize…"), Some("win.image-resize"));
+        let conv = gio::Menu::new();
+        conv.append(Some("PNG"), Some("win.image-convert::png"));
+        conv.append(Some("JPEG"), Some("win.image-convert::jpg"));
+        conv.append(Some("WebP"), Some("win.image-convert::webp"));
+        img.append_submenu(Some("Convert to"), &conv);
+        open.append_submenu(Some("Image"), &img);
     }
     menu.append_section(None, &open);
     let edit = gio::Menu::new();
@@ -1343,6 +1577,12 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple
         edit.append_submenu(Some("Tag"), &tags);
         if single_dir {
             edit.append(Some("Add Bookmark"), Some("win.bookmark-selected"));
+        }
+        if f.local {
+            let share = gio::Menu::new();
+            share.append(Some("Copy scp Command"), Some("win.share-scp"));
+            share.append(Some("Share on Local Network…"), Some("win.share-lan"));
+            edit.append_submenu(Some("Share"), &share);
         }
     }
     menu.append_section(None, &edit);
@@ -1386,9 +1626,11 @@ pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>
     }
     if in_repo {
         let g = gio::Menu::new();
+        g.append(Some("Commit…"), Some("win.git-commit"));
+        g.append(Some("Switch Branch…"), Some("win.git-branch"));
         g.append(Some("Git Status in Terminal"), Some("win.git-status"));
         g.append(Some("Git Diff in Terminal"), Some("win.git-diff-all"));
-        menu.append_section(None, &g);
+        menu.append_submenu(Some("Git"), &g);
     }
     let s2 = gio::Menu::new();
     s2.append(Some("Paste"), Some("win.paste"));
@@ -1397,6 +1639,7 @@ pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>
     s2.append(Some("Select All"), Some("win.select-all"));
     menu.append_section(None, &s2);
     let s3 = gio::Menu::new();
+    s3.append(Some("Show Folder Sizes"), Some("win.folder-sizes"));
     s3.append(Some("Terminal Panel"), Some("win.terminal-panel"));
     s3.append(Some("Open Terminal Window Here"), Some("win.terminal"));
     s3.append(Some("Add Bookmark"), Some("win.bookmark"));

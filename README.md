@@ -29,7 +29,19 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb turns into a text field with the cursor at the end, so you fix one segment instead of retyping (`Ctrl+A` selects it all to start over). Folders complete as you type: `Tab` accepts, `↑`/`↓` pick, `Enter` opens. `~`, relative paths, `sftp://` and `user@host` all work. |
 | ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview of the selected file without opening it. PDFs show their first page and page count, images fill the window, text files show their content, folders their item count. `←`/`→` walk through the folder while it is open, `Space` or `Esc` closes. The preview pane (`F3`) is the persistent sidebar variant of the same thing; both can be toggled on and off at any time. |
 | ![terminal](docs/screenshot-terminal.png) | **Terminal panel** (`` Ctrl+` `` or `F7`): your login shell in a VTE terminal docked under the file list, the way VS Code does it. It opens in the folder you are looking at and follows along as you navigate (a `cd` with a leading space, kept out of history); with fish, zsh or a bash prompt that reports its folder (OSC 7) a `cd` in the terminal moves the file view too. Colours are the same mapping Omarchy applies to Alacritty, so it looks like your other terminals; the font is the system monospace font. Drag the splitter to resize, `Ctrl+Shift+C`/`V` copy and paste, `exit` restarts the shell. One terminal per tab, so split view gives you two. |
-| ![git](docs/screenshot-git.png) | **Git awareness**: inside a repository every row carries its status badge (`M` modified, `?` untracked, `A` added, `D` deleted, `!` conflict), folders inherit the strongest state of their contents, and the status line shows `repo on branch · 1 modified · 2 untracked`. *Git Diff in Terminal* on a file, *Git Status / Diff* on the folder. Read-only, `GIT_OPTIONAL_LOCKS=0`, refreshed with the folder. |
+| ![git](docs/screenshot-git.png) | **Git awareness**: inside a repository every row carries its status badge (`M` modified, `?` untracked, `A` added, `D` deleted, `!` conflict), folders inherit the strongest state of their contents, and the status line shows `repo on branch · 1 modified · 2 untracked` plus a branch button. `GIT_OPTIONAL_LOCKS=0`, refreshed with the folder. |
+| ![git commit](docs/screenshot-git-commit.png) | **Git without a terminal**: click a badge to stage or unstage that file (a staged badge is outlined), *Git › Stage / Unstage / Discard Changes…* on a selection, *Commit…* (`Ctrl+Alt+C`) with summary, body and "stage all first", and the branch button or `Ctrl+Alt+B` to switch or create a branch. Errors arrive as one-line toasts (a missing identity tells you which `git config` to run). |
+| ![diff](docs/screenshot-diff.png) | **Diff preview**: a file with local changes shows its coloured `git diff` in the preview pane and in Quick Look instead of the plain text, with the index diff appended and the `+`/`−` count underneath. Untracked files diff against nothing, so you see what a new file would add. |
+| ![conflict](docs/screenshot-conflict.png) | **Conflicts and progress**: paste, drop, Copy To and Move To go through one queue. An existing target asks *Replace*, *Skip*, *Keep Both* (`name (1)`) or *Cancel*, with both sizes and dates and *apply to all*. A banner at the bottom shows what is being copied with a real progress bar; *Cancel* stops it and removes the half-written file. Folders are copied file by file so cancelling and progress work for them too. |
+| ![trash](docs/screenshot-trash.png) | **Trash with memory**: in the trash two extra columns show when an item was deleted and where it came from; `Ctrl+Shift+R` or *Restore* puts it back there. |
+| ![rename](docs/screenshot-rename.png) | **Rename in place** (`F2`): the name turns into a text field on the row, the stem is preselected, `Enter` renames, `Esc` cancels. `Shift+F2` opens the dialog instead, several selected files open batch rename. |
+| ![sizes](docs/screenshot-sizes.png) | **Folder sizes** (`Ctrl+Shift+U`): measures every folder in view in the background, fills the Size column and sorts by it, so the biggest directories come first, the way a disk usage tool would. *Properties* on a folder calculates its size too. |
+| ![secrets](docs/screenshot-secrets.png) | **Secrets protection**: files that usually hold credentials (`.env`, `id_rsa`, `*.pem`, `*.key`, `*.p12`, `*.kdbx`, `credentials.json`, `.netrc`, `.npmrc`, `.git-credentials`, `kubeconfig`, …) get a key badge, their preview and Quick Look are masked, and copying one asks first so a secret does not end up on the clipboard or in a chat by accident. `.env.example` and `*.pub` are exempt. |
+| ![themes](docs/screenshot-themes.png) | **Omarchy themes**: the sidebar has an *Omarchy Themes* place; theme folders show their `preview.png` as thumbnail (any folder with a `preview.png`, `cover.jpg` or a `backgrounds/` directory does), and *Apply Omarchy Theme* on one runs `omarchy-theme-set`. On an image, *Image › Set as Wallpaper* runs `omarchy-theme-bg-set`. |
+| ![image tools](docs/screenshot-image-resize.png) | **Image tools** (context menu › Image, or the palette): rotate left/right in place, convert to PNG / JPEG / WebP, resize by width, height or percent. Conversions and resizes are written next to the original as new files and can be undone (they go to the trash) and redone. Needs ImageMagick. |
+| ![share](docs/screenshot-share.png) | **Share**: *Copy scp Command* puts `scp user@host:/path .` on the clipboard for the selection; *Share on Local Network…* serves it over HTTP from a scratch folder of links (only what you picked, never the siblings) and shows the link and a QR code (`qrencode`) until you close the dialog. |
+| ![containers](docs/screenshot-containers.png) | **Container volumes**: Docker and podman volumes whose mount point you can read appear under *Containers* in the sidebar. Rootless podman volumes always qualify; Docker's live under `/var/lib/docker`, which is root-only, so they show up only when that is readable (the screenshot uses a stub daemon). |
+| ![session](docs/screenshot-session.png) | **Sessions**: tabs, the split view, which terminal panels were open and the window size come back on the next start (`omafile` without a folder argument). Off in Preferences if you prefer a clean window. |
 | ![palette](docs/screenshot-palette.png) | **Command palette** (`Ctrl+K`), the Walker / VS Code pattern: fuzzy search over every action with its shortcut, places, bookmarks, recent folders, SSH hosts and the project commands of the current folder. Type `> cargo test` to run anything in a terminal here. `↑`/`↓` or `Tab` pick, `Enter` runs. |
 | ![project](docs/screenshot-project.png) | **Project actions**: omafile recognises what a folder is (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `PKGBUILD`, `compose.yml`, `Makefile`/`justfile`, an Omarchy plugin, a git checkout) and offers the matching commands in the context menu and the palette: `cargo test`, `npm run dev`, `makepkg -si`, `docker compose up`, `git log` … They run in Alacritty in that folder and wait for Enter, so output stays readable. *Open in Editor* (`Ctrl+E`, `Ctrl+Shift+E` for the folder) uses Omarchy's `omarchy-launch-editor`, so it lands in Neovim. Teams add their own commands with a `.omafile.toml` in the repository. |
 | ![vault](docs/screenshot-vault.png) | **Encrypted folders** with gocryptfs: *New Encrypted Folder…* asks for a name and password and creates `Name.gocryptfs` (the ciphertext) next to `Name` (where files appear while unlocked). Unlock, lock and change the password from the context menu; the password only ever travels through a pipe. The master key for emergencies is shown once. Because gocryptfs encrypts file by file, the `.gocryptfs` folder is the thing to back up, sync or move to another machine: copy it anywhere, unlock it there with the same password. |
@@ -102,6 +114,10 @@ package list or pulled in by one that is (Nautilus, Evince, pacman):
 | `poppler` (`pdftoppm`, `pdfinfo`) | PDF thumbnails and previews | yes (Evince depends on it) | PDFs show the generic icon |
 | `libarchive` (`bsdtar`) | extract / compress | yes (pacman depends on it) | the archive entries do nothing |
 | `util-linux` (`script`) | capturing the master key when a vault is created | yes (base) | the vault is created without showing a master key |
+| `imagemagick` (`magick`) | Image › rotate, convert, resize | yes | the Image menu reports that it is missing |
+| `qrencode` | QR code in *Share on Local Network* | yes | the dialog shows the link only |
+| `python` | *Share on Local Network* (`http.server`) | yes | sharing is unavailable |
+| `docker` or `podman` | container volumes in the sidebar | docker: yes | the *Containers* section stays hidden |
 | `jq` | `plugin/validate.sh`, `omarchy plugin` commands | yes | only needed for plugin development |
 | `xdg-desktop-portal-hyprland`, `xdg-desktop-portal-gtk` | Open With…, file dialogs | yes | GTK falls back to its own dialogs |
 | a terminal: `$TERMINAL`, else `xdg-terminal-exec` (Omarchy's default, foot), else foot, alacritty, kitty, ghostty | Open Terminal Window Here, project commands | yes | set `TERMINAL` |
@@ -176,8 +192,10 @@ What the button does:
 | Click | Action |
 |---|---|
 | Left | Raises the omafile window that is already open (`omarchy-launch-or-focus`), otherwise opens the configured folder |
-| Right | Places menu: Home, Downloads, Documents, Pictures, Projects, Trash, the folder of the active terminal, new window |
+| Right | Places menu: Home, Downloads, Documents, Pictures, Projects, Trash, the folder of the active terminal, new window, and *Lock all encrypted folders* while any is unlocked |
 | Middle | Opens the folder of the active terminal (like Omarchy's own "File manager (cwd)" binding) |
+
+The button also shows a small marker: `⇅` while a copy or move is running and a lock glyph while encrypted folders are unlocked. omafile writes `~/.local/state/omafile/status` (`busy=0|1`, `vaults=N`) and the widget watches that file with Quickshell's `FileView`.
 
 The icon is a Nerd Font folder glyph drawn with the bar's font, exactly like
 the first-party widgets, so it matches the bar in every theme. `omarchy bar
@@ -202,7 +220,10 @@ widget, drops it from the bar layout and deletes the checkout.
 | `Enter` `Ctrl+Shift+O` `F4` | Open, open with…, terminal here |
 | `Space` | Quick Look (toggle); `←` `→` walk the folder inside it |
 | `Ctrl+Shift+N` `Ctrl+Alt+N` | New folder, new file |
-| `F2` | Rename, batch rename with several files selected |
+| `F2` / `Shift+F2` | Rename in place / in a dialog; batch rename with several files selected |
+| `Ctrl+Shift+U` | Folder sizes, sorted by disk usage |
+| `Ctrl+Shift+R` | Restore from trash |
+| `Ctrl+Alt+C` / `Ctrl+Alt+B` | Git commit / switch branch (click a badge to stage or unstage) |
 | `Ctrl+Alt+I` | Change icon |
 | `Ctrl+Alt+1…7` / `Ctrl+Alt+0` | Tag red, orange, yellow, green, blue, purple, gray / remove tag |
 | `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` | Copy, cut, paste, copy path |
@@ -220,6 +241,30 @@ action; a script presses every accelerator under Xvfb and checks that the
 matching action fired). Shortcuts that also mean something in a text field
 (`Ctrl+A/C/X/V`, `Backspace`, `Delete`) act on the text while a field has
 focus and on files otherwise.
+
+## Command line and launchers
+
+```
+omafile [FOLDER…]        open folders (one window each); without arguments the last session is restored
+omafile --print-recent   recent folders, newest first, one path per line
+omafile --lock-all       unmount every unlocked gocryptfs folder (what the bar button's "Lock all" runs)
+omafile --version
+```
+
+Recent folders are kept in `~/.local/state/omafile/recent`, so a launcher can offer them. A Walker / dmenu style picker:
+
+```bash
+#!/bin/bash
+# omafile-recent: pick a recent folder and open it
+dir=$(omafile --print-recent | sed "s|^$HOME|~|" | walker --dmenu -p "Recent folders") || exit 0
+exec uwsm-app -- omafile "${dir/#\~/$HOME}"
+```
+
+Bind it next to the file manager binding in `~/.config/hypr/bindings.lua`:
+
+```lua
+o.rebind("SUPER + SHIFT + R", "Recent folders", { launch = "omafile-recent" })
+```
 
 ## How it follows Omarchy
 
@@ -368,6 +413,13 @@ cargo clippy
 | `crypt` / `vaultui` | gocryptfs vaults and their dialogs |
 | `termpanel` | embedded VTE terminal that follows the folder |
 | `undo` | undo/redo journal |
+| `transfer` | copy/move queue: conflict dialog, progress banner, cancel |
+| `gitui` | stage, unstage, discard, commit and branch dialogs |
+| `imagetools` | ImageMagick rotate / convert / resize, wallpaper and theme hooks |
+| `share` | scp command, local network share with QR code |
+| `containers` | docker / podman volume discovery |
+| `omarchy` | theme folders, `omarchy-theme-set`, `omarchy-theme-bg-set` |
+| `session` / `status` | session file; status file for the bar widget, recent list, `--lock-all` |
 | `completion` / `quicklook` | path completion, Quick Look |
 | `prefs` | the preferences file |
 | `actions` | window actions, clipboard, dialogs, properties, shortcuts |

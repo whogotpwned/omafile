@@ -105,6 +105,17 @@ impl Window {
             }
         });
         views.add(&hidden);
+        let session = adw::SwitchRow::builder().title("Restore tabs on start").subtitle("Reopen the last tabs, split view and terminal panels").active(self.prefs.get_bool("restore-session", true)).build();
+        let this = Rc::downgrade(self);
+        session.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("restore-session", Some(if row.is_active() { "true" } else { "false" }));
+                if !row.is_active() {
+                    let _ = std::fs::remove_file(crate::session::path());
+                }
+            }
+        });
+        views.add(&session);
         page.add(&views);
 
         dialog.add(&page);

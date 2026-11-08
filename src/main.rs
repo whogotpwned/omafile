@@ -1,9 +1,13 @@
 mod actions;
 mod completion;
+mod containers;
 mod crypt;
 mod extras;
 mod git;
+mod gitui;
+mod imagetools;
 mod item;
+mod omarchy;
 mod ops;
 mod palette;
 mod pane;
@@ -13,10 +17,14 @@ mod preview;
 mod quicklook;
 mod remote;
 mod search;
+mod session;
+mod share;
+mod status;
 mod tags;
 mod termpanel;
 mod theme;
 mod thumbs;
+mod transfer;
 mod undo;
 mod vaultui;
 mod window;
@@ -28,7 +36,29 @@ use std::rc::Rc;
 
 const APP_ID: &str = "io.github.whogotpwned.Omafile";
 
+const USAGE: &str = "usage: omafile [FOLDER…]
+       omafile --print-recent   list recent folders, newest first (for launchers)
+       omafile --lock-all       unmount every unlocked encrypted folder
+       omafile --version";
+
 fn main() -> glib::ExitCode {
+    let args: Vec<String> = std::env::args().collect();
+    match args.get(1).map(String::as_str) {
+        Some("--print-recent") => {
+            status::print_recent();
+            return glib::ExitCode::SUCCESS;
+        }
+        Some("--lock-all") => return glib::ExitCode::from(status::lock_all().min(1) as u8),
+        Some("--version") | Some("-V") => {
+            println!("omafile {}", env!("CARGO_PKG_VERSION"));
+            return glib::ExitCode::SUCCESS;
+        }
+        Some("--help") | Some("-h") => {
+            println!("{USAGE}");
+            return glib::ExitCode::SUCCESS;
+        }
+        _ => {}
+    }
     let app = adw::Application::builder()
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_OPEN)
@@ -43,7 +73,15 @@ fn main() -> glib::ExitCode {
         *theme2.borrow_mut() = Some(theme::ThemeManager::install(prefs2.get("icon-theme")));
         let quit = gio::SimpleAction::new("quit", None);
         let app2 = app.clone();
-        quit.connect_activate(move |_, _| app2.quit());
+        quit.connect_activate(move |_, _| {
+            // app.quit() skips close-request, so save the layout here.
+            for w in app2.windows() {
+                if let Some(win) = unsafe { w.data::<Rc<window::Window>>("omafile-window") } {
+                    unsafe { win.as_ref() }.save_session_once();
+                }
+            }
+            app2.quit()
+        });
         app.add_action(&quit);
         let about = gio::SimpleAction::new("about", None);
         let app2 = app.clone();
@@ -57,6 +95,19 @@ fn main() -> glib::ExitCode {
 
     let (prefs_a, theme_a) = (prefs.clone(), theme.clone());
     app.connect_activate(move |app| {
+        // A saved session wins over the current directory when restoring is on
+        // and this is the first window.
+        if app.windows().is_empty() && prefs_a.get_bool("restore-session", true) {
+            if let Some(session) = session::Session::load() {
+                let start = gio::File::for_path(glib::home_dir());
+                let theme_m = theme_a.borrow().clone().expect("theme manager is created at startup");
+                let win = window::Window::new(app, start, prefs_a.clone(), theme_m);
+                unsafe { win.window.set_data("omafile-window", win.clone()) };
+                win.restore_session(&session);
+                win.window.present();
+                return;
+            }
+        }
         let start = std::env::current_dir().map(gio::File::for_path).unwrap_or_else(|_| gio::File::for_path(glib::home_dir()));
         open_window(app, start, &prefs_a, &theme_a);
     });

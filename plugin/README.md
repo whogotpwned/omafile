@@ -33,3 +33,14 @@ Validate after changes:
 ```sh
 omarchy plugin validate .
 ```
+
+## Status marker
+
+omafile writes `~/.local/state/omafile/status` while it runs:
+
+```
+busy=1      a copy or move is running
+vaults=2    unlocked gocryptfs folders
+```
+
+The widget watches that file (`FileView` with `watchChanges`) and shows `⇅` next to the icon while busy and a lock glyph while vaults are open. The popup then offers *Lock all encrypted folders*, which runs `omafile --lock-all`.
