@@ -1,4 +1,5 @@
 mod actions;
+mod completion;
 mod extras;
 mod item;
 mod ops;
@@ -10,6 +11,7 @@ mod search;
 mod tags;
 mod theme;
 mod thumbs;
+mod undo;
 mod window;
 
 use adw::prelude::*;

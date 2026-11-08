@@ -4,6 +4,7 @@ use crate::item::FileItem;
 use crate::ops;
 use crate::pane::Pane;
 use crate::remote;
+use crate::undo::Op;
 use crate::window::{Clipboard, PlaceKind, Window};
 use adw::prelude::*;
 use gtk::{gdk, gio, glib};
@@ -44,6 +45,9 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.bookmark", &["<Control>d"]),
     ("win.connect", &["<Control><Shift>k"]),
     ("win.split-view", &["F6"]),
+    ("win.undo", &["<Control>z"]),
+    ("win.redo", &["<Control><Shift>z", "<Control>y"]),
+    ("win.duplicate", &["<Control><Shift>d"]),
     ("win.deep-search", &["<Control><Shift>f"]),
     ("win.preferences", &["<Control>comma"]),
     ("win.change-icon", &["<Control><Alt>i"]),
@@ -142,6 +146,11 @@ impl Window {
             }
         }));
         simple("preferences", Box::new(|w| w.show_preferences()));
+        simple("undo", Box::new(|w| if !w.forward_to_editable("text.undo") { w.undo() }));
+        simple("redo", Box::new(|w| if !w.forward_to_editable("text.redo") { w.redo() }));
+        simple("copy-to", Box::new(|w| w.transfer_to(false)));
+        simple("move-to", Box::new(|w| w.transfer_to(true)));
+        simple("duplicate", Box::new(|w| w.duplicate_selected()));
         simple("sidebar-tags", Box::new(|w| w.refresh_sidebar()));
         simple("split-view", Box::new(|w| w.toggle_split()));
         simple("deep-search", Box::new(move |w| {
@@ -432,6 +441,7 @@ impl Window {
             let mut done = 0;
             let mut last = None;
             let mut error = None;
+            let mut pairs = Vec::new();
             for src in &files {
                 let Some(name) = src.basename() else { continue };
                 let name = name.to_string_lossy().to_string();
@@ -445,6 +455,7 @@ impl Window {
                         if cut {
                             w.tags.moved(src, &dst);
                         }
+                        pairs.push((src.clone(), dst.clone()));
                         done += 1;
                         last = Some(dst);
                     }
@@ -461,11 +472,81 @@ impl Window {
             if let Some(dst) = last {
                 pane.select_file_later(dst);
             }
+            let message = format!("{} {done} {}", if cut { "Moved" } else { "Copied" }, if done == 1 { "item" } else { "items" });
             match error {
                 Some(e) => w.toast_error(&e),
-                None => w.toast(&format!("{} {done} {}", if cut { "Moved" } else { "Copied" }, if done == 1 { "item" } else { "items" })),
+                None if done == 0 => w.toast(&message),
+                None if cut => w.record(Op::Move(pairs), &message),
+                None => w.record(Op::Copy(pairs), &message),
             }
         });
+    }
+
+    /// Copy To… / Move To…: pick a destination folder in a dialog.
+    fn transfer_to(self: &Rc<Self>, move_files: bool) {
+        let Some(pane) = self.active_pane() else { return };
+        let items = pane.selected_items();
+        if items.is_empty() {
+            return;
+        }
+        let dialog = gtk::FileDialog::builder().title(if move_files { "Move to folder" } else { "Copy to folder" }).modal(true).accept_label(if move_files { "Move" } else { "Copy" }).build();
+        dialog.set_initial_folder(Some(&pane.cwd()));
+        let this = Rc::downgrade(self);
+        dialog.select_folder(Some(&self.window), gio::Cancellable::NONE, move |result| {
+            let (Ok(dest), Some(w)) = (result, this.upgrade()) else { return };
+            let files: Vec<gio::File> = items.iter().map(|i| i.target_file()).collect();
+            w.transfer_files(files, dest, move_files, pane);
+        });
+    }
+
+    /// Shared by Copy To / Move To and Duplicate: copy or move `files` into `dest`.
+    pub fn transfer_files(self: &Rc<Self>, files: Vec<gio::File>, dest: gio::File, move_files: bool, pane: Rc<crate::pane::Pane>) {
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let Some(w) = this.upgrade() else { return };
+            let mut pairs = Vec::new();
+            let mut error = None;
+            for src in &files {
+                let Some(name) = src.basename() else { continue };
+                if move_files && src.parent().map(|p| p.equal(&dest)).unwrap_or(false) {
+                    continue;
+                }
+                let dst = ops::unique_child(&dest, &name.to_string_lossy());
+                let result = if move_files { ops::move_file(src.clone(), dst.clone()).await } else { ops::copy_recursive(src.clone(), dst.clone()).await };
+                match result {
+                    Ok(()) => {
+                        if move_files {
+                            w.tags.moved(src, &dst);
+                        }
+                        pairs.push((src.clone(), dst));
+                    }
+                    Err(e) => {
+                        error = Some(format!("{}: {}", name.to_string_lossy(), e.message()));
+                        break;
+                    }
+                }
+            }
+            pane.reload();
+            let n = pairs.len();
+            let message = format!("{} {n} {} to {}", if move_files { "Moved" } else { "Copied" }, if n == 1 { "item" } else { "items" }, crate::window::display_name(&dest));
+            match error {
+                Some(e) => w.toast_error(&e),
+                None if n == 0 => {}
+                None if move_files => w.record(Op::Move(pairs), &message),
+                None => w.record(Op::Copy(pairs), &message),
+            }
+        });
+    }
+
+    /// Finder's Duplicate: copies next to the originals as "name (1)".
+    fn duplicate_selected(self: &Rc<Self>) {
+        let Some(pane) = self.active_pane() else { return };
+        let files: Vec<gio::File> = pane.selected_items().iter().map(|i| i.target_file()).collect();
+        if files.is_empty() {
+            return;
+        }
+        let dest = pane.cwd();
+        self.transfer_files(files, dest, false, pane);
     }
 
     // ----- trash / delete / restore -------------------------------------------------
@@ -488,9 +569,10 @@ impl Window {
                 w.tags.removed(&item.file());
             }
             pane.reload();
+            let message = format!("Moved {done} {} to trash", if done == 1 { "item" } else { "items" });
             match error {
                 Some(e) => w.toast_error(&e),
-                None => w.toast(&format!("Moved {done} {} to trash", if done == 1 { "item" } else { "items" })),
+                None => w.record(Op::Trash(items.iter().take(done).map(|i| i.file()).collect()), &message),
             }
         });
     }
@@ -765,7 +847,8 @@ impl Window {
                 match result {
                     Ok(()) => {
                         pane.reload();
-                        pane.select_file_later(target);
+                        pane.select_file_later(target.clone());
+                        w.record(Op::Create(vec![(target, folder)]), &format!("Created {name}"));
                     }
                     Err(e) => w.toast_error(&format!("Cannot create {name}: {}", e.message())),
                 }
@@ -813,7 +896,8 @@ impl Window {
                     Ok(new_file) => {
                         w.tags.moved(&item.file(), &new_file);
                         pane.reload();
-                        pane.select_file_later(new_file);
+                        pane.select_file_later(new_file.clone());
+                        w.record(Op::Move(vec![(item.file(), new_file)]), &format!("Renamed to {name}"));
                     }
                     Err(e) => w.toast_error(&format!("Cannot rename: {}", e.message())),
                 }
@@ -902,6 +986,8 @@ impl Window {
                 ("Ctrl+Shift+N  /  Ctrl+Alt+N", "New folder / file"),
                 ("F2", "Rename, batch rename with several selected"),
                 ("Ctrl+C  /  Ctrl+X  /  Ctrl+V", "Copy / cut / paste"),
+                ("Ctrl+Z  /  Ctrl+Shift+Z", "Undo / redo the last file operation"),
+                ("Ctrl+Shift+D", "Duplicate"),
                 ("Ctrl+Shift+C", "Copy path"),
                 ("Ctrl+D", "Bookmark this folder"),
                 ("Delete  /  Shift+Delete", "Trash / delete permanently"),

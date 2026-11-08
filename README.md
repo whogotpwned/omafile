@@ -1,3 +1,5 @@
+`omarchy` `omarchy-plugin` `hyprland` `wayland` `linux` `file-manager` `gtk4` `libadwaita` `rust` `sftp` `scp` `quickshell` `tags` `thumbnails` `pdf-preview` `arch-linux`
+
 # omafile
 
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button-omarchy-shell-plugin)
@@ -5,8 +7,6 @@
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
-
-`omarchy` · `hyprland` · `wayland` · `file-manager` · `gtk4` · `libadwaita` · `rust` · `sftp` · `quickshell-plugin` · `tags` · `thumbnails`
 
 A native GTK 4 / libadwaita file manager for [Omarchy](https://omarchy.org),
 plus an Omarchy shell plugin that puts it on the bar. It looks like it shipped
@@ -22,6 +22,8 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, image and PDF thumbnails, rubber-band and multi-selection, hidden-file toggle, live reload when a folder changes. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs and the preview pane** (`F3`). Images, PDFs (first page, page count), text files in monospace, folder item counts. |
 | ![split](docs/screenshot-split.png) | **Split view** (`F6`): two sets of tabs side by side, each with its own history. Drag files across, or between a local and a remote tab. The active side carries the accent border. |
+| ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb turns into a text field with the cursor at the end, so you fix one segment instead of retyping (`Ctrl+A` selects it all to start over). Folders complete as you type: `Tab` accepts, `↑`/`↓` pick, `Enter` opens. `~`, relative paths, `sftp://` and `user@host` all work. |
+| ![undo](docs/screenshot-undo.png) | **Undo and redo** (`Ctrl+Z`, `Ctrl+Shift+Z`), borrowed from Nautilus and Finder: move, copy, paste, rename, batch rename, duplicate, new folder/file, trash and tag changes can all be taken back, every toast carries an Undo button, and trashed items are restored from the trash by their original path. |
 | ![search](docs/screenshot-search.png) | **Recursive search** (`Ctrl+Shift+F`) through the current folder and everything below. `fd` streams matches while it walks, results appear in batches as they arrive, the previous search is killed the moment you type on, and the final list is ranked (name starts with the query, name contains it, path contains it). On a 5,300-file tree a short query returns in about 40 ms, a query with 200+ hits in under 300 ms including the file information for every hit. A GIO walk takes over where `fd` cannot go, such as SFTP servers. |
 | ![batch rename](docs/screenshot-batch.png) | **Batch rename**: select several files and press `F2`. Pattern with `[name]`, `[ext]`, `[N]`, `[date]`, then find/replace, with a live preview and conflict detection. |
 | ![sftp](docs/screenshot-sftp.png) | **SFTP / SCP**: hosts from `~/.ssh/config` in the sidebar, *Connect to Server…* for `user@host[:port]/path`, native credential prompts, mounted servers under *Devices*. Copy, paste, drag and drop, rename and preview work on remote files like on local ones. |
@@ -30,7 +32,8 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![tags](docs/screenshot-tags.png) | **Tags**, Finder style: give folders and files one of seven colours (`Ctrl+Alt+1…7`, `Ctrl+Alt+0` removes). The dot shows in list and grid, every colour in use appears under *Tags* in the sidebar and lists all tagged items wherever they are. Tags are stored as GIO metadata on the file and in an index, and follow renames and moves done in omafile. |
 | ![light](docs/screenshot-light.png) | **Theme following**: here the same build after `omarchy theme set "Catppuccin Latte"`, which turned the window light and the folders blue, without a restart. |
 
-Also: bookmarks shared with the GTK file chooser (`Ctrl+D`), *Recent* and
+Also: *Copy To…* and *Move To…* with a folder picker and *Duplicate*
+(`Ctrl+Shift+D`) from the context menu, bookmarks shared with the GTK file chooser (`Ctrl+D`), *Recent* and
 *Trash* with restore and empty, drag and drop onto sidebar places, extract and
 create archives via `bsdtar`, cut/copy/paste shared with other apps, properties,
 open with…, copy path, open terminal here (`uwsm app -- alacritty`), context
@@ -139,7 +142,7 @@ widget, drops it from the bar layout and deletes the checkout.
 | Keys | Action |
 |---|---|
 | `Alt+←` `Alt+→` `Alt+↑` `Backspace` | Back, forward, parent |
-| `Ctrl+L` | Type a location (`~`, `/path`, `sftp://host/`, `user@host`) |
+| `Ctrl+L` | Edit the path in place; `Tab` completes folders (`~`, `/path`, `sftp://host/`, `user@host`) |
 | `Ctrl+F` / `Ctrl+Shift+F` | Filter this folder / search subfolders |
 | `Ctrl+T` `Ctrl+W` `Ctrl+Tab` | New, close, next tab |
 | `Ctrl+Enter` / middle click | Open folder in new tab |
@@ -151,6 +154,8 @@ widget, drops it from the bar layout and deletes the checkout.
 | `Ctrl+Alt+I` | Change icon |
 | `Ctrl+Alt+1…7` / `Ctrl+Alt+0` | Tag red, orange, yellow, green, blue, purple, gray / remove tag |
 | `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` | Copy, cut, paste, copy path |
+| `Ctrl+Z` `Ctrl+Shift+Z` | Undo, redo |
+| `Ctrl+Shift+D` | Duplicate |
 | `Delete` `Shift+Delete` | Trash, delete permanently |
 | `Ctrl+D` `Ctrl+Shift+K` `Ctrl+I` | Bookmark, connect to server, properties |
 | `Ctrl+,` `Ctrl+?` `Ctrl+Q` | Preferences, shortcuts, quit |
@@ -186,23 +191,49 @@ focus and on files otherwise.
 
 ### Publishing as an Omarchy plugin
 
-What the Omarchy manual and `bin/omarchy-plugin-validate` require, and what
-this repository does about it:
+Omarchy plugins are distributed as git repositories; there is no package to
+build. Anyone installs, updates and removes the bar button with the normal
+plugin commands, interactively or with `--yes` for scripts:
+
+```sh
+omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # asks for the bar section
+omarchy plugin list
+omarchy plugin update whogotpwned.omafile
+omarchy plugin disable whogotpwned.omafile
+omarchy plugin enable whogotpwned.omafile --section right
+omarchy plugin remove whogotpwned.omafile
+```
+
+`add` clones this repository into `~/.config/omarchy/plugins/whogotpwned.omafile`,
+runs the same validation as the shell, refuses duplicate ids, never executes
+anything from the repository and never asks for sudo. `remove` disables the
+widget, drops it from the bar layout and deletes the checkout. The file
+manager binary is separate (`install.sh`, PKGBUILD or a future AUR package),
+so removing the plugin never touches it and vice versa.
+
+Release checklist for the maintainer:
+
+1. Bump `version` in `Cargo.toml`, `PKGBUILD` and `manifest.json` together.
+2. Run `cargo test`, `cargo clippy` and `omarchy plugin validate .` (the same
+   checks are mirrored in `plugin/validate.sh` for machines without Omarchy).
+3. Commit, tag `vX.Y.Z`, push. `omarchy plugin update` fast-forwards users to
+   the new commit on the default branch, so keep that branch releasable.
+4. Submit the repository URL at [plugins.omarchy.org](https://plugins.omarchy.org),
+   the marketplace the Omarchy manual points to. Suggested GitHub topics so it
+   is found: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`.
+
+What the shell enforces at load time and what this repository does:
 
 | Rule | Here |
 |---|---|
-| Git repo with `manifest.json` at the root | yes, `omarchy plugin add <url>` clones this repo |
+| Git repo with `manifest.json` at the root | yes |
 | `schemaVersion` exactly `1`; `id`, `name`, `version`, `kinds`, `entryPoints` present | yes |
 | `id` is `[A-Za-z0-9][A-Za-z0-9._-]*`, not in the reserved `omarchy.*` namespace, never changes | `whogotpwned.omafile` |
 | Every kind has its entry point (`bar-widget` → `entryPoints.barWidget`), relative path, no `..`, file exists | `plugin/BarWidget.qml` |
 | `barWidget.defaultSection` ∈ left, centerBegin, center, centerEnd, tray, right | `left` |
 | No symlinks anywhere in the folder | none |
-| Theme colours only via `qs.Commons` (`Commons.Color.*`), animations via `Style.duration()` | the widget uses the bar's colours through `BarIconButton` |
-| Plugins run unsandboxed inside `omarchy-shell`, no install hooks, no sudo | the widget only runs `uwsm-app -- omafile` on click |
-| Listed on the marketplace at plugins.omarchy.org once public | to do after the first release |
-
-The Omarchy desktop install still needs the binary (`install.sh` or the
-PKGBUILD); the plugin itself never installs software.
+| Theme colours only via `qs.Commons`, UI via `qs.Ui` components | `BarIconButton`, `PopupCard`, `PopupMenuRow` |
+| Plugins run unsandboxed inside `omarchy-shell`, no install hooks, no sudo | the widget only runs `omafile` and `omarchy-launch-or-focus` on click |
 
 ## Preferences file
 

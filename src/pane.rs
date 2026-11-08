@@ -535,6 +535,8 @@ impl Pane {
             let mut moved = 0;
             let mut copied = 0;
             let mut error = None;
+            let mut move_pairs = Vec::new();
+            let mut copy_pairs = Vec::new();
             for src in files {
                 if src.parent().map(|p| p.equal(&dest_dir)).unwrap_or(false) || src.equal(&dest_dir) || dest_dir.has_prefix(&src) {
                     continue;
@@ -542,10 +544,17 @@ impl Pane {
                 let Some(name) = src.basename() else { continue };
                 let dst = ops::unique_child(&dest_dir, &name.to_string_lossy());
                 let same_fs = src.is_native() && dest_dir.is_native();
-                let result = if same_fs { ops::move_file(src.clone(), dst).await } else { ops::copy_recursive(src.clone(), dst).await };
+                let result = if same_fs { ops::move_file(src.clone(), dst.clone()).await } else { ops::copy_recursive(src.clone(), dst.clone()).await };
                 match result {
-                    Ok(()) if same_fs => moved += 1,
-                    Ok(()) => copied += 1,
+                    Ok(()) if same_fs => {
+                        w.tags.moved(&src, &dst);
+                        move_pairs.push((src.clone(), dst));
+                        moved += 1;
+                    }
+                    Ok(()) => {
+                        copy_pairs.push((src.clone(), dst));
+                        copied += 1;
+                    }
                     Err(e) => {
                         error = Some(format!("{}: {}", name.to_string_lossy(), e.message()));
                         break;
@@ -555,15 +564,12 @@ impl Pane {
             if let Some(p) = this.upgrade() {
                 p.reload();
             }
+            let message = format!("{} {} {}", if moved > 0 { "Moved" } else { "Copied" }, moved + copied, if moved + copied == 1 { "item" } else { "items" });
             match error {
                 Some(e) => w.toast_error(&e),
                 None if moved + copied == 0 => {}
-                None => w.toast(&format!(
-                    "{} {} {}",
-                    if moved > 0 { "Moved" } else { "Copied" },
-                    moved + copied,
-                    if moved + copied == 1 { "item" } else { "items" }
-                )),
+                None if !move_pairs.is_empty() => w.record(crate::undo::Op::Move(move_pairs), &message),
+                None => w.record(crate::undo::Op::Copy(copy_pairs), &message),
             }
         });
     }

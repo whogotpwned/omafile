@@ -336,9 +336,17 @@ impl Window {
                     }
                 }
                 let mut renamed = 0;
-                for (file, new) in staged {
+                let mut pairs = Vec::new();
+                let originals: Vec<gio::File> = plan.iter().map(|(f, _)| f.clone()).collect();
+                for ((file, new), original) in staged.into_iter().zip(originals) {
                     match ops::rename(file, &new).await {
-                        Ok(_) => renamed += 1,
+                        Ok(renamed_file) => {
+                            if let Some(w) = this.upgrade() {
+                                w.tags.moved(&original, &renamed_file);
+                            }
+                            pairs.push((original, renamed_file));
+                            renamed += 1;
+                        }
                         Err(e) => {
                             error.get_or_insert_with(|| format!("{new}: {}", e.message()));
                         }
@@ -348,7 +356,7 @@ impl Window {
                 pane.reload();
                 match error {
                     Some(e) => w.toast_error(&format!("Rename failed: {e}")),
-                    None => w.toast(&format!("Renamed {renamed} items")),
+                    None => w.record(crate::undo::Op::Move(pairs), &format!("Renamed {renamed} items")),
                 }
             });
         });

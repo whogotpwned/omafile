@@ -5,8 +5,10 @@ use crate::pane::Pane;
 use crate::prefs::Prefs;
 use crate::preview::PreviewPane;
 use crate::remote;
+use crate::completion::Completion;
 use crate::tags::TagIndex;
 use crate::theme::ThemeManager;
+use crate::undo::{Journal, Op};
 use crate::thumbs::ThumbCache;
 use adw::prelude::*;
 use gtk::{gdk, gio, glib, pango};
@@ -54,6 +56,8 @@ pub struct Window {
     pub pathbar: gtk::Box,
     pub path_entry: gtk::Entry,
     pub path_stack: gtk::Stack,
+    pub completion: Rc<Completion>,
+    pub journal: Journal,
     pub sidebar_list: gtk::ListBox,
     pub sidebar_menu: gtk::PopoverMenu,
     pub back_btn: gtk::Button,
@@ -108,6 +112,7 @@ impl Window {
             .hexpand(true)
             .build();
         path_entry.add_css_class("omafile-path-entry");
+        let completion = Completion::new(&path_entry);
         let path_stack = gtk::Stack::new();
         path_stack.set_hhomogeneous(false);
         path_stack.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -220,6 +225,8 @@ impl Window {
             pathbar,
             path_entry,
             path_stack,
+            completion,
+            journal: Journal::default(),
             sidebar_list,
             sidebar_menu,
             back_btn,
@@ -460,8 +467,22 @@ impl Window {
             }
         });
         let this = Rc::downgrade(self);
+        self.path_entry.connect_changed(move |_| {
+            let Some(w) = this.upgrade() else { return };
+            // Only while the entry is shown; programmatic updates of the hidden entry stay silent.
+            if w.path_stack.visible_child_name().as_deref() != Some("entry") {
+                return;
+            }
+            let cwd = w.active_pane().map(|p| p.cwd()).unwrap_or_else(|| gio::File::for_path(glib::home_dir()));
+            w.completion.refresh(cwd);
+        });
+        let this = Rc::downgrade(self);
         self.path_entry.connect_activate(move |entry| {
             let Some(w) = this.upgrade() else { return };
+            if std::env::var_os("OMAFILE_TRACE").is_some() {
+                eprintln!("path activate {:?}", entry.text());
+            }
+            w.completion.hide();
             let text = entry.text().to_string();
             let text = text.trim();
             let expanded = if let Some(rest) = text.strip_prefix('~') {
@@ -488,18 +509,46 @@ impl Window {
         let this = Rc::downgrade(self);
         let keys = gtk::EventControllerKey::new();
         keys.connect_key_pressed(move |_, key, _, _| {
-            if key == gdk::Key::Escape {
-                if let Some(w) = this.upgrade() {
-                    w.path_stack.set_visible_child_name("bar");
-                    if let Some(p) = w.active_pane() {
-                        p.focus_view();
+            let Some(w) = this.upgrade() else { return glib::Propagation::Proceed };
+            match key {
+                gdk::Key::Escape => {
+                    if w.completion.is_open() {
+                        w.completion.hide();
+                    } else {
+                        w.path_stack.set_visible_child_name("bar");
+                        if let Some(p) = w.active_pane() {
+                            p.focus_view();
+                        }
                     }
+                    glib::Propagation::Stop
                 }
-                return glib::Propagation::Stop;
+                gdk::Key::Tab | gdk::Key::ISO_Left_Tab => {
+                    // Tab completes; it never moves focus away from the path.
+                    if w.completion.is_open() {
+                        w.completion.accept_selected(false);
+                    }
+                    glib::Propagation::Stop
+                }
+                gdk::Key::Down if w.completion.is_open() => {
+                    w.completion.step(1);
+                    glib::Propagation::Stop
+                }
+                gdk::Key::Up if w.completion.is_open() => {
+                    w.completion.step(-1);
+                    glib::Propagation::Stop
+                }
+                _ => glib::Propagation::Proceed,
             }
-            glib::Propagation::Proceed
         });
         self.path_entry.add_controller(keys);
+        let this = Rc::downgrade(self);
+        let focus = gtk::EventControllerFocus::new();
+        focus.connect_leave(move |_| {
+            if let Some(w) = this.upgrade() {
+                w.completion.hide();
+            }
+        });
+        self.path_entry.add_controller(focus);
     }
 
     pub fn show_location_entry(&self) {
@@ -508,7 +557,9 @@ impl Window {
         }
         self.path_stack.set_visible_child_name("entry");
         self.path_entry.grab_focus();
-        self.path_entry.select_region(0, -1);
+        // Cursor at the end so the path can be edited in place; Ctrl+A still selects it all.
+        self.path_entry.select_region(-1, -1);
+        self.path_entry.set_position(-1);
     }
 
     fn update_pathbar(self: &Rc<Self>, cwd: &gio::File) {
@@ -876,20 +927,78 @@ impl Window {
         if items.is_empty() {
             return;
         }
+        let mut changes = Vec::new();
         for item in &items {
+            let old = self.tags.get(&item.file());
             if let Err(e) = self.tags.set(&item.file(), color.as_deref()) {
                 self.toast_error(&format!("Cannot tag {}: {}", item.display_name(), e.message()));
                 return;
             }
+            changes.push((item.file(), old, color.clone()));
         }
-        match &color {
-            Some(c) => self.toast(&format!("Tagged {} {} {}", items.len(), if items.len() == 1 { "item" } else { "items" }, crate::tags::label(c).to_lowercase())),
-            None => self.toast("Tag removed"),
-        }
+        let message = match &color {
+            Some(c) => format!("Tagged {} {} {}", items.len(), if items.len() == 1 { "item" } else { "items" }, crate::tags::label(c).to_lowercase()),
+            None => "Tag removed".to_string(),
+        };
+        self.record(Op::Tag(changes), &message);
         for p in self.all_panes() {
             p.reload();
         }
         self.refresh_sidebar();
+    }
+
+    // ----- undo / redo ----------------------------------------------------------------
+
+    /// Record an operation and show a toast with an Undo button.
+    pub fn record(&self, op: Op, message: &str) {
+        self.journal.record(op);
+        let toast = adw::Toast::builder().title(message).timeout(5).button_label("Undo").action_name("win.undo").build();
+        self.toast.add_toast(toast);
+    }
+
+    pub fn undo(self: &Rc<Self>) {
+        let Some(op) = self.journal.pop_undo() else {
+            self.toast("Nothing to undo");
+            return;
+        };
+        self.apply_history(op, true);
+    }
+
+    pub fn redo(self: &Rc<Self>) {
+        let Some(op) = self.journal.pop_redo() else {
+            self.toast("Nothing to redo");
+            return;
+        };
+        self.apply_history(op, false);
+    }
+
+    fn apply_history(self: &Rc<Self>, op: Op, is_undo: bool) {
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let Some(w) = this.upgrade() else { return };
+            let to_apply = if is_undo { op.inverse() } else { op.clone() };
+            let result = crate::undo::apply(&to_apply, &w.tags).await;
+            match result {
+                Ok(_) => {
+                    if is_undo {
+                        w.journal.push_redo(op.clone());
+                        w.toast(&format!("Undid {}", op.describe()));
+                    } else {
+                        w.journal.push_undo_only(op.clone());
+                        w.toast(&format!("Redid {}", op.describe()));
+                    }
+                }
+                Err(e) => {
+                    // Put it back so the user can retry after fixing the cause.
+                    if is_undo { w.journal.push_undo_only(op) } else { w.journal.push_redo(op) }
+                    w.toast_error(&format!("Cannot {}: {}", if is_undo { "undo" } else { "redo" }, e.message()));
+                }
+            }
+            for p in w.all_panes() {
+                p.reload();
+            }
+            w.refresh_sidebar();
+        });
     }
 
     // ----- misc helpers -------------------------------------------------------------
@@ -992,6 +1101,10 @@ pub fn abbreviate_home(path: &std::path::Path) -> String {
 
 fn main_menu() -> gio::Menu {
     let menu = gio::Menu::new();
+    let s0 = gio::Menu::new();
+    s0.append(Some("Undo"), Some("win.undo"));
+    s0.append(Some("Redo"), Some("win.redo"));
+    menu.append_section(None, &s0);
     let s1 = gio::Menu::new();
     s1.append(Some("New Tab"), Some("win.new-tab"));
     s1.append(Some("New Folder"), Some("win.new-folder"));
@@ -1045,6 +1158,9 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple
         edit.append(Some("Cut"), Some("win.cut"));
         edit.append(Some("Copy"), Some("win.copy"));
         edit.append(Some("Copy Path"), Some("win.copy-path"));
+        edit.append(Some("Copy To…"), Some("win.copy-to"));
+        edit.append(Some("Move To…"), Some("win.move-to"));
+        edit.append(Some("Duplicate"), Some("win.duplicate"));
         edit.append(Some(if multiple { "Batch Rename…" } else { "Rename…" }), Some("win.rename"));
         edit.append(Some("Compress…"), Some("win.compress"));
         if !multiple {
@@ -1088,6 +1204,8 @@ pub fn background_menu_model(in_trash: bool) -> gio::Menu {
     menu.append_section(None, &s1);
     let s2 = gio::Menu::new();
     s2.append(Some("Paste"), Some("win.paste"));
+    s2.append(Some("Undo"), Some("win.undo"));
+    s2.append(Some("Redo"), Some("win.redo"));
     s2.append(Some("Select All"), Some("win.select-all"));
     menu.append_section(None, &s2);
     let s3 = gio::Menu::new();
