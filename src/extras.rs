@@ -116,7 +116,29 @@ impl Window {
             }
         });
         views.add(&session);
+        let archives = adw::SwitchRow::builder().title("Open archives in place").subtitle("Enter on a .zip / .tar browses inside it instead of launching an app").active(self.prefs.get_bool("browse-archives", true)).build();
+        let this = Rc::downgrade(self);
+        archives.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("browse-archives", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        views.add(&archives);
         page.add(&views);
+
+        let trash = adw::PreferencesGroup::builder().title("Trash").build();
+        let auto = adw::SpinRow::with_range(0.0, 365.0, 1.0);
+        auto.set_title("Delete trashed items after … days");
+        auto.set_subtitle("0 keeps everything until you empty the trash; runs when omafile starts");
+        auto.set_value(self.prefs.get("trash-auto-days").and_then(|v| v.parse().ok()).unwrap_or(0.0));
+        let this = Rc::downgrade(self);
+        auto.connect_value_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("trash-auto-days", Some(&(row.value() as u32).to_string()));
+            }
+        });
+        trash.add(&auto);
+        page.add(&trash);
 
         dialog.add(&page);
         self.present_dialog(dialog.upcast_ref());
@@ -241,16 +263,18 @@ impl Window {
         let pattern = adw::EntryRow::builder().title("Name pattern").text("[name]").build();
         let find = adw::EntryRow::builder().title("Find").build();
         let replace = adw::EntryRow::builder().title("Replace with").build();
+        let regex = adw::SwitchRow::builder().title("Find is a regular expression").subtitle("Capture groups: $1, $2 … in Replace").build();
         let start = adw::SpinRow::with_range(0.0, 99_999.0, 1.0);
         start.set_title("First number");
         start.set_value(1.0);
         let group = adw::PreferencesGroup::builder()
             .title(format!("Rename {} items", items.len()))
-            .description("[name] original name, [ext] extension, [N] running number, [date] modification date. Find/replace runs afterwards.")
+            .description("[name] original name, [ext] extension, [N] running number ([N:3] zero-padded), [date] modification date, [exif] photo date, [artist] [title] [album] [track] from audio tags. Find/replace runs afterwards.")
             .build();
         group.add(&pattern);
         group.add(&find);
         group.add(&replace);
+        group.add(&regex);
         group.add(&start);
 
         let preview_list = gtk::ListBox::new();
@@ -275,9 +299,19 @@ impl Window {
         let items = Rc::new(items);
         let compute = {
             let items = items.clone();
-            let (pattern, find, replace, start) = (pattern.clone(), find.clone(), replace.clone(), start.clone());
+            let (pattern, find, replace, start, regex) = (pattern.clone(), find.clone(), replace.clone(), start.clone(), regex.clone());
+            let meta = Rc::new(std::cell::RefCell::new(std::collections::HashMap::<String, Metadata>::new()));
             move || -> Vec<(String, String, bool)> {
-                let names = batch_names(&items, &pattern.text(), &find.text(), &replace.text(), start.value() as u32);
+                let wants_meta = ["[exif]", "[artist]", "[title]", "[album]", "[track]"].iter().any(|t| pattern.text().contains(t));
+                if wants_meta {
+                    let mut cache = meta.borrow_mut();
+                    for item in items.iter() {
+                        if let Some(path) = item.target_file().path() {
+                            cache.entry(path.to_string_lossy().to_string()).or_insert_with(|| read_metadata(&path));
+                        }
+                    }
+                }
+                let names = batch_names_ext(&items, &pattern.text(), &find.text(), &replace.text(), start.value() as u32, regex.is_active(), &meta.borrow());
                 let mut seen = std::collections::HashSet::new();
                 names
                     .into_iter()
@@ -323,6 +357,8 @@ impl Window {
         }
         let refresh2 = refresh.clone();
         start.connect_value_notify(move |_| refresh2());
+        let refresh3 = refresh.clone();
+        regex.connect_active_notify(move |_| refresh3());
 
         let this = Rc::downgrade(self);
         let dialog2 = dialog.clone();
@@ -396,8 +432,66 @@ fn unset_attribute(file: &gio::File, attribute: &str) -> Result<(), glib::Error>
     }
 }
 
+/// Tags read from a photo (EXIF date) or an audio file (ffprobe), for rename patterns.
+#[derive(Default, Clone, Debug)]
+pub struct Metadata {
+    pub exif_date: String,
+    pub artist: String,
+    pub title: String,
+    pub album: String,
+    pub track: String,
+}
+
+pub fn read_metadata(path: &std::path::Path) -> Metadata {
+    let mut m = Metadata::default();
+    let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
+    if matches!(ext.as_str(), "jpg" | "jpeg" | "tif" | "tiff" | "heic" | "png" | "webp" | "dng" | "cr2" | "nef" | "arw") {
+        for tool in ["magick", "identify"] {
+            if glib::find_program_in_path(tool).is_none() {
+                continue;
+            }
+            let mut cmd = std::process::Command::new(tool);
+            if tool == "magick" {
+                cmd.arg("identify");
+            }
+            if let Ok(out) = cmd.args(["-format", "%[EXIF:DateTimeOriginal]"]).arg(path).stderr(std::process::Stdio::null()).output() {
+                let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                // 2024:06:01 12:30:00 → 2024-06-01
+                if raw.len() >= 10 {
+                    m.exif_date = raw[..10].replace(':', "-");
+                }
+                break;
+            }
+        }
+    } else if glib::find_program_in_path("ffprobe").is_some() {
+        if let Ok(out) = std::process::Command::new("ffprobe").args(["-v", "quiet", "-show_entries", "format_tags=artist,title,album,track", "-of", "default=noprint_wrappers=1"]).arg(path).output() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let Some((k, v)) = line.split_once('=') else { continue };
+                let k = k.trim_start_matches("TAG:").to_ascii_lowercase();
+                let v = v.trim().replace('/', "-");
+                match k.as_str() {
+                    "artist" => m.artist = v,
+                    "title" => m.title = v,
+                    "album" => m.album = v,
+                    "track" => m.track = v.split('/').next().unwrap_or("").to_string(),
+                    _ => {}
+                }
+            }
+        }
+    }
+    m
+}
+
 /// New names for `items` from a pattern, then a plain find/replace.
+#[cfg(test)]
 pub fn batch_names(items: &[FileItem], pattern: &str, find: &str, replace: &str, start: u32) -> Vec<String> {
+    batch_names_ext(items, pattern, find, replace, start, false, &std::collections::HashMap::new())
+}
+
+/// Full variant: `[N:3]` padding, metadata tokens and an optional regex find.
+pub fn batch_names_ext(items: &[FileItem], pattern: &str, find: &str, replace: &str, start: u32, use_regex: bool, meta: &std::collections::HashMap<String, Metadata>) -> Vec<String> {
+    let re = if use_regex && !find.is_empty() { regex::Regex::new(find).ok() } else { None };
+    let pad_re = regex::Regex::new(r"\[N:(\d+)\]").unwrap();
     let width = ((start as usize + items.len()).max(1)).to_string().len().max(2);
     items
         .iter()
@@ -414,13 +508,22 @@ pub fn batch_names(items: &[FileItem], pattern: &str, find: &str, replace: &str,
             };
             let date = item.modified().and_then(|d| d.format("%Y-%m-%d").ok()).map(|s| s.to_string()).unwrap_or_default();
             let number = format!("{:0width$}", start as usize + i, width = width);
+            let md = item.target_file().path().and_then(|p| meta.get(p.to_string_lossy().as_ref()).cloned()).unwrap_or_default();
             let mut name = pattern.replace("[name]", &stem).replace("[N]", &number).replace("[date]", &date);
+            name = pad_re.replace_all(&name, |c: &regex::Captures| {
+                let w: usize = c[1].parse().unwrap_or(2);
+                format!("{:0w$}", start as usize + i, w = w)
+            }).to_string();
+            let exif = if md.exif_date.is_empty() { date.clone() } else { md.exif_date.clone() };
+            name = name.replace("[exif]", &exif).replace("[artist]", &md.artist).replace("[title]", &md.title).replace("[album]", &md.album).replace("[track]", &md.track);
             if name.contains("[ext]") {
                 name = name.replace("[ext]", &ext);
             } else if !ext.is_empty() && pattern.contains("[name]") {
                 name = format!("{name}.{ext}");
             }
-            if !find.is_empty() {
+            if let Some(re) = &re {
+                name = re.replace_all(&name, replace).to_string();
+            } else if !find.is_empty() {
                 name = name.replace(find, replace);
             }
             name.trim().to_string()

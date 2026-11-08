@@ -53,3 +53,38 @@ pub fn apply_theme_argv(dir: &Path) -> Option<Vec<String>> {
 pub fn set_wallpaper_argv(image: &Path) -> Vec<String> {
     vec!["omarchy-theme-bg-set".into(), image.to_string_lossy().to_string()]
 }
+
+/// Does an archive carry an Omarchy theme (colors.toml / alacritty.toml at its top level)?
+pub fn archive_is_theme(archive: &Path) -> bool {
+    let Ok(out) = std::process::Command::new("bsdtar").arg("-tf").arg(archive).output() else { return false };
+    if !out.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&out.stdout).lines().any(|l| {
+        let l = l.trim_end_matches('/');
+        let depth = l.matches('/').count();
+        depth <= 1 && (l.ends_with("colors.toml") || l.ends_with("alacritty.toml"))
+    })
+}
+
+/// Folder name an installed theme archive would get: its top-level directory, else the archive stem.
+pub fn archive_theme_name(archive: &Path) -> String {
+    let fallback = archive.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let fallback = fallback.trim_end_matches(".tar.gz").trim_end_matches(".tgz").trim_end_matches(".zip").trim_end_matches(".tar.zst").to_string();
+    let Ok(out) = std::process::Command::new("bsdtar").arg("-tf").arg(archive).output() else { return fallback };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut tops: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for l in text.lines() {
+        if let Some((top, _)) = l.split_once('/') {
+            tops.insert(top.to_string());
+        } else {
+            return fallback;
+        }
+    }
+    if tops.len() == 1 { tops.into_iter().next().unwrap() } else { fallback }
+}
+
+/// Where a theme gets installed (Omarchy reads `~/.config/omarchy/themes/<name>`).
+pub fn install_dir() -> PathBuf {
+    glib::home_dir().join(".config/omarchy/themes")
+}

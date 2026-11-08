@@ -28,6 +28,10 @@ pub enum Op {
     RemoveCreated(Vec<(gio::File, bool)>),
     /// Files produced from others (converted or resized images). Undo trashes them.
     Derive(Vec<gio::File>),
+    /// Permission changes: (file, old mode, new mode).
+    Mode(Vec<(gio::File, u32, u32)>),
+    /// Ownership changes: (file, (old uid, old gid), (new uid, new gid)).
+    Owner(Vec<(gio::File, (u32, u32), (u32, u32))>),
     /// Tag changes: (file, old, new).
     Tag(Vec<(gio::File, Option<String>, Option<String>)>),
 }
@@ -43,6 +47,8 @@ impl Op {
             Op::Create(files) => Op::RemoveCreated(files.clone()),
             Op::RemoveCreated(files) => Op::Create(files.clone()),
             Op::Derive(files) => Op::Trash(files.clone()),
+            Op::Mode(changes) => Op::Mode(changes.iter().map(|(f, old, new)| (f.clone(), *new, *old)).collect()),
+            Op::Owner(changes) => Op::Owner(changes.iter().map(|(f, old, new)| (f.clone(), *new, *old)).collect()),
             Op::Tag(changes) => Op::Tag(changes.iter().map(|(f, old, new)| (f.clone(), new.clone(), old.clone())).collect()),
         }
     }
@@ -59,6 +65,8 @@ impl Op {
             Op::Restore(f) => format!("restore of {}", n(f.len(), "item")),
             Op::Create(f) | Op::RemoveCreated(f) => format!("creation of {}", n(f.len(), "item")),
             Op::Derive(f) => format!("creation of {}", n(f.len(), "file")),
+            Op::Mode(c) => format!("mode change on {}", n(c.len(), "item")),
+            Op::Owner(c) => format!("ownership change on {}", n(c.len(), "item")),
             Op::Tag(c) => format!("tag change on {}", n(c.len(), "item")),
         }
     }
@@ -214,6 +222,19 @@ pub async fn apply(op: &Op, tags: &crate::tags::TagIndex) -> Result<usize, glib:
                     return Err(glib::Error::new(gio::IOErrorEnum::NotFound, "The item is no longer in the trash"));
                 };
                 ops::move_file(trashed, f.clone()).await?;
+                done += 1;
+            }
+        }
+        Op::Mode(changes) => {
+            for (f, _, new) in changes {
+                f.set_attribute_uint32("unix::mode", *new, gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE)?;
+                done += 1;
+            }
+        }
+        Op::Owner(changes) => {
+            for (f, _, (uid, gid)) in changes {
+                f.set_attribute_uint32("unix::uid", *uid, gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE)?;
+                f.set_attribute_uint32("unix::gid", *gid, gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE)?;
                 done += 1;
             }
         }

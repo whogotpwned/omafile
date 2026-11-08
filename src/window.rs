@@ -9,6 +9,7 @@ use crate::projects;
 use crate::quicklook::QuickLook;
 use crate::remote;
 use crate::completion::Completion;
+use crate::notes::Notes;
 use crate::tags::TagIndex;
 use crate::theme::ThemeManager;
 use crate::transfer::{Mode, Progress, Queue, Request};
@@ -37,6 +38,7 @@ pub enum PlaceKind {
     Ssh(String),
     Mount(gio::Mount),
     Tag(String),
+    Smart(crate::smart::SmartFolder),
 }
 
 pub struct WinState {
@@ -80,6 +82,10 @@ pub struct Window {
     pub prefs: Rc<Prefs>,
     pub theme: Rc<ThemeManager>,
     pub tags: Rc<TagIndex>,
+    pub notes: Rc<Notes>,
+    /// Mounts already warned about for low disk space.
+    pub low_space_warned: RefCell<Vec<String>>,
+    pub trash_summary: RefCell<Option<(usize, u64)>>,
     pub thumbnails_enabled: Cell<bool>,
     pub state: RefCell<WinState>,
     pub syncing_sidebar: Cell<bool>,
@@ -274,6 +280,9 @@ impl Window {
             prefs,
             theme,
             tags: TagIndex::load(),
+            notes: Notes::load(),
+            low_space_warned: RefCell::new(Vec::new()),
+            trash_summary: RefCell::new(None),
             syncing_sidebar: Cell::new(false),
             sidebar_target: Cell::new(None),
         });
@@ -292,6 +301,8 @@ impl Window {
         this.setup_actions();
         this.open_in_new_tab(start, true);
         this.refresh_containers();
+        this.refresh_trash_summary();
+        crate::trashauto::run_auto_empty(&this);
         {
             // Close button and Ctrl+Q (app.quit destroys the window without a
             // close-request) both end here; the first one wins.
@@ -320,6 +331,19 @@ impl Window {
         if self.prefs.get_bool("restore-session", true) {
             self.snapshot_session().save();
         }
+    }
+
+    /// Count and size of the trash for the sidebar label.
+    pub fn refresh_trash_summary(self: &Rc<Self>) {
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let summary = crate::trashauto::summary().await;
+            let Some(w) = this.upgrade() else { return };
+            if *w.trash_summary.borrow() != Some(summary) {
+                *w.trash_summary.borrow_mut() = Some(summary);
+                w.refresh_sidebar();
+            }
+        });
     }
 
     /// Docker / podman volumes for the sidebar, fetched off the main loop.
@@ -855,6 +879,11 @@ impl Window {
                             p.show_tag(&color);
                         }
                     }
+                    PlaceKind::Smart(spec) => {
+                        if let Some(p) = w.active_pane() {
+                            p.show_smart(&spec);
+                        }
+                    }
                     _ => w.navigate(file),
                 }
             }
@@ -891,7 +920,7 @@ impl Window {
             let Ok(list) = value.get::<gdk::FileList>() else { return false };
             let Some(row) = w.sidebar_list.row_at_y(y as i32) else { return false };
             let dest = match w.state.borrow().places.get(row.index() as usize) {
-                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_)) => file.clone(),
+                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_)) => file.clone(),
                 _ => return false,
             };
             if let Some(p) = w.active_pane() {
@@ -958,7 +987,18 @@ impl Window {
             places.push(Place::Entry { name: "Omarchy Themes".into(), icon: "applications-graphics-symbolic".into(), file: gio::File::for_path(themes), kind: PlaceKind::Builtin });
         }
         places.push(Place::Entry { name: "Recent".into(), icon: "document-open-recent-symbolic".into(), file: gio::File::for_uri("recent:///"), kind: PlaceKind::Builtin });
-        places.push(Place::Entry { name: "Trash".into(), icon: "user-trash-symbolic".into(), file: gio::File::for_uri("trash:///"), kind: PlaceKind::Builtin });
+        let trash_name = match *self.trash_summary.borrow() {
+            Some((n, bytes)) if n > 0 => format!("Trash  ·  {n} {}, {}", if n == 1 { "item" } else { "items" }, crate::ops::human_size(bytes)),
+            _ => "Trash".to_string(),
+        };
+        places.push(Place::Entry { name: trash_name, icon: if self.trash_summary.borrow().map(|(n, _)| n > 0).unwrap_or(false) { "user-trash-full-symbolic".into() } else { "user-trash-symbolic".into() }, file: gio::File::for_uri("trash:///"), kind: PlaceKind::Builtin });
+        let smart = crate::smart::load();
+        if !smart.is_empty() {
+            places.push(Place::Header("Smart Folders".into()));
+            for s in smart {
+                places.push(Place::Entry { name: s.name.clone(), icon: "folder-saved-search-symbolic".into(), file: gio::File::for_uri(&crate::smart::uri(&s)), kind: PlaceKind::Smart(s) });
+            }
+        }
 
         let bookmarks = remote::bookmarks();
         if !bookmarks.is_empty() {
@@ -1194,6 +1234,7 @@ impl Window {
                 let (detail, target) = match kind {
                     PlaceKind::Ssh(_) => ("SSH server".to_string(), PaletteTarget::Connect(file.clone())),
                     PlaceKind::Tag(_) => continue,
+                    PlaceKind::Smart(_) => ("Smart folder".to_string(), PaletteTarget::Action(format!("smart-open::{name}"))),
                     PlaceKind::Bookmark => ("Bookmark".to_string(), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Mount(_) => ("Device".to_string(), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
@@ -1205,18 +1246,54 @@ impl Window {
         for file in self.recent.borrow().iter().skip(1) {
             entries.push(PaletteEntry { title: display_name(file), detail: format!("Recent · {}", location_text(file)), icon: "document-open-recent-symbolic", target: PaletteTarget::Folder(file.clone()) });
         }
+        for (i, t) in crate::templates::list().iter().enumerate() {
+            entries.push(PaletteEntry { title: format!("New from Template: {}", crate::templates::label(t)), detail: "creates it here".into(), icon: "folder-templates-symbolic", target: PaletteTarget::Action(format!("new-from-template::{i}")) });
+        }
+        entries.push(PaletteEntry { title: "Export Omarchy Theme…".into(), detail: "selected theme folder → ~/Downloads/<name>.tar.gz".into(), icon: "applications-graphics-symbolic", target: PaletteTarget::Action("export-theme".into()) });
+        entries.push(PaletteEntry { title: "Install as Omarchy Theme".into(), detail: "selected archive → ~/.config/omarchy/themes".into(), icon: "applications-graphics-symbolic", target: PaletteTarget::Action("install-theme".into()) });
+        // Notes on files: searchable by their text, open the folder and select the file.
+        for (file, note) in self.notes.all() {
+            let first = note.lines().next().unwrap_or("").to_string();
+            entries.push(PaletteEntry { title: format!("{}  —  {first}", display_name(&file)), detail: format!("Note · {}", location_text(&file)), icon: "user-available-symbolic", target: PaletteTarget::Reveal(file) });
+        }
         palette.open(entries);
     }
 
     pub fn run_palette_target(self: &Rc<Self>, target: PaletteTarget) {
         match target {
-            PaletteTarget::Action(name) => {
-                gio::prelude::ActionGroupExt::activate_action(&self.window, &name, None);
-            }
+            PaletteTarget::Action(name) => match gio::Action::parse_detailed_name(&name) {
+                Ok((plain, target)) => gio::prelude::ActionGroupExt::activate_action(&self.window, &plain, target.as_ref()),
+                Err(_) => gio::prelude::ActionGroupExt::activate_action(&self.window, &name, None),
+            },
             PaletteTarget::Folder(file) => self.navigate(file),
+            PaletteTarget::Reveal(file) => self.reveal(file),
+            PaletteTarget::Bulk(text) => self.run_bulk(&text),
             PaletteTarget::Connect(file) => self.connect_to(file, true),
             PaletteTarget::Project(command) | PaletteTarget::Command(command) => self.run_in_terminal(&command),
         }
+    }
+
+    /// Open the parent folder and select `file`.
+    pub fn reveal(self: &Rc<Self>, file: gio::File) {
+        let Some(pane) = self.active_pane() else { return };
+        match file.parent() {
+            Some(parent) => {
+                pane.navigate(parent, true);
+                pane.select_file_later(file);
+            }
+            None => pane.navigate(file, true),
+        }
+    }
+
+    /// The pane on the other side of the split, if any.
+    pub fn other_pane(&self) -> Option<Rc<Pane>> {
+        if !self.is_split() {
+            return None;
+        }
+        let other = 1 - self.active_side.get();
+        let page = self.tab_views[other].selected_page()?;
+        let child = page.child();
+        self.panes.borrow().iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child).cloned()
     }
 
     /// Run a shell command in a terminal opened in the active folder.
@@ -1401,6 +1478,7 @@ fn root_label(file: &gio::File) -> (&'static str, String) {
     match file.uri_scheme().as_deref() {
         Some("trash") => ("user-trash-symbolic", "Trash".into()),
         Some("recent") => ("document-open-recent-symbolic", "Recent".into()),
+        Some("archive") => ("package-x-generic-symbolic", archive_name(file)),
         Some("file") | None => ("drive-harddisk-symbolic", "Computer".into()),
         Some(_) => {
             // sftp://user@host/ -> host
@@ -1409,6 +1487,15 @@ fn root_label(file: &gio::File) -> (&'static str, String) {
             ("network-server-symbolic", if host.is_empty() { uri.to_string() } else { host })
         }
     }
+}
+
+/// `archive://file%253A%252F%252F…%252Frelease.tar.gz/` → `release.tar.gz`
+pub fn archive_name(file: &gio::File) -> String {
+    let uri = file.uri();
+    let host = uri.strip_prefix("archive://").unwrap_or("").split('/').next().unwrap_or("");
+    let once = glib::uri_unescape_string(host, None::<&str>).map(|s| s.to_string()).unwrap_or_default();
+    let twice = glib::uri_unescape_string(&once, None::<&str>).map(|s| s.to_string()).unwrap_or(once);
+    twice.rsplit('/').next().unwrap_or("archive").to_string()
 }
 
 pub fn display_name(file: &gio::File) -> String {
@@ -1462,6 +1549,7 @@ fn main_menu() -> gio::Menu {
     s2.append(Some("Show Preview"), Some("win.show-preview"));
     s2.append(Some("Split View"), Some("win.split-view"));
     s2.append(Some("Show Folder Sizes"), Some("win.folder-sizes"));
+    s2.append(Some("Save Search as Smart Folder…"), Some("win.save-smart"));
     menu.append_section(None, &s2);
     let view = gio::Menu::new();
     view.append(Some("List"), Some("win.view::list"));
@@ -1519,6 +1607,12 @@ pub struct MenuFlags {
     pub local: bool,
     /// A single audio or video file.
     pub media: bool,
+    /// Exactly two items selected (compare).
+    pub pair: bool,
+    /// Split view is on (copy / move to the other pane).
+    pub split: bool,
+    /// A single archive that looks like an Omarchy theme.
+    pub theme_archive: bool,
 }
 
 pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple: bool, vault: VaultState, in_repo: bool) -> gio::Menu {
@@ -1567,6 +1661,21 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     }
     if f.theme && !in_trash {
         open.append(Some("Apply Omarchy Theme"), Some("win.apply-theme"));
+        open.append(Some("Export Omarchy Theme…"), Some("win.export-theme"));
+    }
+    if f.theme_archive && !in_trash {
+        open.append(Some("Install as Omarchy Theme"), Some("win.install-theme"));
+    }
+    if archive {
+        open.append(Some("Browse Archive"), Some("win.browse-archive"));
+    }
+    if f.pair && !in_trash {
+        open.append(Some("Compare…"), Some("win.compare"));
+    } else if f.split && !multiple && !in_trash {
+        open.append(Some("Compare with Other Pane…"), Some("win.compare"));
+    }
+    if single_dir && !in_trash && crate::hypr::available() {
+        open.append(Some("Open in New Workspace"), Some("win.open-workspace"));
     }
     if f.images && !in_trash {
         let img = gio::Menu::new();
@@ -1591,6 +1700,10 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
         edit.append(Some("Copy Path"), Some("win.copy-path"));
         edit.append(Some("Copy To…"), Some("win.copy-to"));
         edit.append(Some("Move To…"), Some("win.move-to"));
+        if f.split {
+            edit.append(Some("Copy to Other Pane"), Some("win.copy-other"));
+            edit.append(Some("Move to Other Pane"), Some("win.move-other"));
+        }
         edit.append(Some("Duplicate"), Some("win.duplicate"));
         edit.append(Some(if multiple { "Batch Rename…" } else { "Rename…" }), Some("win.rename"));
         edit.append(Some("Compress…"), Some("win.compress"));
@@ -1621,6 +1734,12 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     danger.append(Some("Delete Permanently…"), Some("win.delete"));
     menu.append_section(None, &danger);
     let info = gio::Menu::new();
+    if !multiple && !single_dir && !in_trash {
+        info.append(Some("Verify Checksum"), Some("win.verify-checksum"));
+    }
+    if !multiple && !in_trash {
+        info.append(Some("Edit Note…"), Some("win.edit-note"));
+    }
     info.append(Some("Properties"), Some("win.properties"));
     menu.append_section(None, &info);
     menu
@@ -1639,6 +1758,12 @@ pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>
     s1.append(Some("New Folder"), Some("win.new-folder"));
     s1.append(Some("New File"), Some("win.new-file"));
     s1.append(Some("New Encrypted Folder…"), Some("win.vault-new"));
+    let tpl = gio::Menu::new();
+    for (i, t) in crate::templates::list().iter().enumerate() {
+        tpl.append(Some(&crate::templates::label(t)), Some(&format!("win.new-from-template::{i}")));
+    }
+    tpl.append(Some("Open Templates Folder"), Some("win.open-templates"));
+    s1.append_submenu(Some("New from Template"), &tpl);
     menu.append_section(None, &s1);
     if let Some(project) = project {
         let sub = gio::Menu::new();
@@ -1668,6 +1793,7 @@ pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>
     menu.append_section(None, &s2);
     let s3 = gio::Menu::new();
     s3.append(Some("Show Folder Sizes"), Some("win.folder-sizes"));
+    s3.append(Some("Save Search as Smart Folder…"), Some("win.save-smart"));
     s3.append(Some("Terminal Panel"), Some("win.terminal-panel"));
     s3.append(Some("Open Terminal Window Here"), Some("win.terminal"));
     s3.append(Some("Add Bookmark"), Some("win.bookmark"));

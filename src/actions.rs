@@ -70,6 +70,15 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("image-to-jpg", "Image: Convert to JPEG", "image-x-generic-symbolic"),
     ("image-to-webp", "Image: Convert to WebP", "image-x-generic-symbolic"),
     ("vault-lock-all", "Lock All Encrypted Folders", "changes-prevent-symbolic"),
+    ("save-smart", "Save Search as Smart Folder…", "folder-saved-search-symbolic"),
+    ("copy-other", "Copy to Other Pane", "edit-copy-symbolic"),
+    ("move-other", "Move to Other Pane", "edit-cut-symbolic"),
+    ("compare", "Compare…", "view-dual-symbolic"),
+    ("verify-checksum", "Verify Checksum (SHA-256)", "security-high-symbolic"),
+    ("edit-note", "Edit Note…", "user-available-symbolic"),
+    ("open-templates", "Open Templates Folder", "folder-templates-symbolic"),
+    ("browse-archive", "Browse Archive", "package-x-generic-symbolic"),
+    ("open-workspace", "Open in New Hyprland Workspace", "view-grid-symbolic"),
 ];
 
 pub const ACCELS: &[(&str, &[&str])] = &[
@@ -129,6 +138,11 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.tag::gray", &["<Control><Alt>7"]),
     ("win.tag::none", &["<Control><Alt>0"]),
     ("win.shortcuts", &["<Control>question", "F1"]),
+    ("win.copy-other", &["<Shift>F5"]),
+    ("win.move-other", &["<Shift>F6"]),
+    ("win.compare", &["<Control><Alt>d"]),
+    ("win.edit-note", &["<Control><Alt>m"]),
+    ("win.save-smart", &["<Control><Alt>s"]),
 ];
 
 impl Window {
@@ -181,6 +195,9 @@ impl Window {
             }
         }));
         simple("open-new-tab", Box::new(|w| {
+            if w.focus_in_editable() {
+                return; // Ctrl+Enter inside a dialog or text field is not a request for tabs
+            }
             for item in w.selected_items() {
                 if item.is_dir() {
                     w.open_in_new_tab(item.target_file(), false);
@@ -233,6 +250,36 @@ impl Window {
         simple("apply-theme", Box::new(|w| w.apply_omarchy_theme()));
         simple("share-scp", Box::new(|w| w.share_copy_scp()));
         simple("share-lan", Box::new(|w| w.share_lan_dialog()));
+        simple("save-smart", Box::new(|w| w.save_smart_dialog()));
+        simple("copy-other", Box::new(|w| w.transfer_to_other_pane(crate::transfer::Mode::Copy)));
+        simple("move-other", Box::new(|w| w.transfer_to_other_pane(crate::transfer::Mode::Move)));
+        simple("compare", Box::new(|w| w.compare_selected()));
+        simple("verify-checksum", Box::new(|w| w.verify_checksum()));
+        simple("edit-note", Box::new(|w| w.edit_note()));
+        simple("open-templates", Box::new(|w| w.open_templates()));
+        simple("export-theme", Box::new(|w| w.export_theme()));
+        simple("install-theme", Box::new(|w| w.install_theme()));
+        simple("browse-archive", Box::new(|w| w.browse_archive_selected()));
+        simple("open-workspace", Box::new(|w| w.open_in_workspace()));
+        {
+            let tpl = gio::SimpleAction::new("new-from-template", Some(glib::VariantTy::STRING));
+            let this = Rc::downgrade(self);
+            tpl.connect_activate(move |_, v| {
+                let i: usize = v.and_then(|v| v.str()).and_then(|s| s.parse().ok()).unwrap_or(0);
+                if let Some(w) = this.upgrade() {
+                    w.new_from_template(i);
+                }
+            });
+            self.window.add_action(&tpl);
+            let smart = gio::SimpleAction::new("smart-open", Some(glib::VariantTy::STRING));
+            let this = Rc::downgrade(self);
+            smart.connect_activate(move |_, v| {
+                if let (Some(w), Some(name)) = (this.upgrade(), v.and_then(|v| v.str())) {
+                    w.open_smart(name);
+                }
+            });
+            self.window.add_action(&smart);
+        }
         simple("vault-lock-all", Box::new(|w| {
             let n = crate::status::lock_all();
             crate::status::write(w);
@@ -1061,15 +1108,32 @@ impl Window {
         if let Some(target) = item.symlink_target() {
             group.add(&row("Link target", &target));
         }
-        let mode = item.mode();
-        if mode != 0 {
-            group.add(&row("Permissions", &format!("{} ({:o})", ops::perm_string(mode, item.is_dir(), item.is_symlink()), mode & 0o7777)));
+
+        if !item.is_dir() && item.target_file().is_native() {
+            let hash_row = row("SHA-256", "Calculating…");
+            let copy = gtk::Button::from_icon_name("edit-copy-symbolic");
+            copy.add_css_class("flat");
+            copy.set_valign(gtk::Align::Center);
+            copy.set_tooltip_text(Some("Copy hash"));
+            copy.set_sensitive(false);
+            hash_row.add_suffix(&copy);
+            group.add(&hash_row);
+            if let Some(path) = item.target_file().path() {
+                let clip = self.window.clipboard();
+                glib::spawn_future_local(async move {
+                    let hash = crate::checksum::sha256(path).await.unwrap_or_else(|| "sha256sum not available".into());
+                    hash_row.set_subtitle(&hash);
+                    copy.set_sensitive(true);
+                    let hash2 = hash.clone();
+                    copy.connect_clicked(move |_| clip.set_text(&hash2));
+                });
+            }
         }
-        let owner = item.owner();
-        if !owner.is_empty() {
-            group.add(&row("Owner", &owner));
+        if let Some(note) = self.notes.get(&item.target_file()) {
+            group.add(&row("Note", &note));
         }
         page.add(&group);
+        page.add(&self.permissions_group(item));
 
         let icon = gtk::Image::new();
         icon.set_pixel_size(64);
@@ -1081,9 +1145,10 @@ impl Window {
         content.add_top_bar(&adw::HeaderBar::new());
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
         vbox.append(&icon);
+        page.set_vexpand(true);
         vbox.append(&page);
         content.set_content(Some(&vbox));
-        let dialog = adw::Dialog::builder().title("Properties").content_width(440).content_height(560).child(&content).build();
+        let dialog = adw::Dialog::builder().title("Properties").content_width(520).content_height(780).child(&content).build();
         self.present_dialog(&dialog);
     }
 

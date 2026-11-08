@@ -1,18 +1,25 @@
 mod actions;
 mod bindings;
+mod bulk;
+mod checksum;
+mod compare;
 mod completion;
 mod containers;
 mod crypt;
 mod extras;
+mod features;
 mod git;
 mod gitui;
+mod hypr;
 mod imagetools;
 mod item;
 mod motion;
+mod notes;
 mod omarchy;
 mod ops;
 mod palette;
 mod pane;
+mod perms;
 mod prefs;
 mod projects;
 mod preview;
@@ -21,12 +28,15 @@ mod remote;
 mod search;
 mod session;
 mod share;
+mod smart;
 mod status;
 mod tags;
+mod templates;
 mod termpanel;
 mod theme;
 mod thumbs;
 mod transfer;
+mod trashauto;
 mod undo;
 mod vaultui;
 mod window;
@@ -41,12 +51,14 @@ const APP_ID: &str = "io.github.whogotpwned.Omafile";
 const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --print-recent   list recent folders, newest first (for launchers)
        omafile --print-bindings list every shortcut (keys, action, group; tab separated)
+       omafile --toggle         Hyprland: show / hide a drop-down omafile on the special workspace files
        omafile --lock-all       unmount every unlocked encrypted folder
        omafile --version";
 
 fn main() -> glib::ExitCode {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
+        Some("--toggle") => return glib::ExitCode::from(hypr::toggle().min(1) as u8),
         Some("--print-bindings") => {
             bindings::print();
             return glib::ExitCode::SUCCESS;

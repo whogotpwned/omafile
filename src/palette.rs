@@ -14,6 +14,10 @@ pub enum Target {
     Connect(gio::File),
     Project(String),
     Command(String),
+    /// Open the folder of this file and select it.
+    Reveal(gio::File),
+    /// A bulk command typed into the palette (rename / chmod / touch / mkdir).
+    Bulk(String),
 }
 
 #[derive(Clone)]
@@ -142,6 +146,8 @@ impl Palette {
             if !cmd.is_empty() {
                 shown.push((0, Entry { title: format!("Run in terminal: {cmd}"), detail: "Opens a terminal in this folder".into(), icon: "utilities-terminal-symbolic", target: Target::Command(cmd.into()) }));
             }
+        } else if let Some((title, detail)) = self.window.upgrade().and_then(|w| w.bulk_preview(&query)) {
+            shown.push((0, Entry { title, detail, icon: "edit-find-replace-symbolic", target: Target::Bulk(query.clone()) }));
         } else {
             for e in self.entries.borrow().iter() {
                 if let Some(s) = score(&query, &e.title).or_else(|| score(&query, &e.detail).map(|s| s - 200)) {

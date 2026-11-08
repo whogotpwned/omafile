@@ -235,6 +235,10 @@ impl Pane {
             lock.add_css_class("omafile-dim");
             lock.set_visible(false);
             hbox.append(&lock);
+            let note = gtk::Image::from_icon_name("user-available-symbolic");
+            note.add_css_class("omafile-note-badge");
+            note.set_visible(false);
+            hbox.append(&note);
             let badge = gtk::Label::new(None);
             badge.add_css_class("omafile-git-badge");
             badge.set_visible(false);
@@ -266,7 +270,8 @@ impl Pane {
             let hbox = list_item.child().and_downcast::<gtk::Box>().unwrap();
             let thumb = hbox.first_child().and_downcast::<gtk::Overlay>().unwrap();
             let badge = hbox.last_child().and_downcast::<gtk::Label>().unwrap();
-            let lock = badge.prev_sibling().and_downcast::<gtk::Image>().unwrap();
+            let note = badge.prev_sibling().and_downcast::<gtk::Image>().unwrap();
+            let lock = note.prev_sibling().and_downcast::<gtk::Image>().unwrap();
             let dot = lock.prev_sibling().and_downcast::<gtk::Box>().unwrap();
             let label = dot.prev_sibling().and_downcast::<gtk::Label>().unwrap();
             if let Some(p) = this.upgrade() {
@@ -277,6 +282,13 @@ impl Pane {
                 let path = item.file().path();
                 let is_vault = item.is_dir() && path.as_ref().map(|d| crate::crypt::is_vault(d)).unwrap_or(false);
                 let is_open_mount = item.is_dir() && !is_vault && path.as_ref().map(|d| crate::crypt::vault_for(d).is_some() && crate::crypt::is_mounted(d)).unwrap_or(false);
+                match p.window.upgrade().and_then(|w| w.notes.cached(&item.target_file())) {
+                    Some(text) => {
+                        note.set_tooltip_text(Some(&text));
+                        note.set_visible(true);
+                    }
+                    None => note.set_visible(false),
+                }
                 let secret = item.is_secret();
                 lock.set_visible(is_vault || is_open_mount || secret);
                 if secret {
@@ -681,6 +693,10 @@ impl Pane {
             if let Some(color) = title.strip_prefix("Tag: ") {
                 let color = color.to_lowercase();
                 self.show_tag(&color);
+            } else if let Some(name) = title.strip_prefix("Smart: ") {
+                if let Some(spec) = crate::smart::load().into_iter().find(|s| s.name == name) {
+                    self.show_smart(&spec);
+                }
             }
             return;
         }
@@ -710,6 +726,7 @@ impl Pane {
             }
             *p.git.borrow_mut() = git;
             p.state.borrow_mut().loading = false;
+            p.check_disk_space(&file);
             let selected: Vec<gio::File> = p.selected_items().iter().map(|i| i.file()).collect();
             match result {
                 Ok(items) => {
@@ -864,8 +881,107 @@ impl Pane {
         w.pane_navigated(self);
     }
 
+    /// Virtual listing of a smart folder: a deep search filtered by glob and age.
+    pub fn show_smart(self: &Rc<Self>, spec: &crate::smart::SmartFolder) {
+        let Some(w) = self.window.upgrade() else { return };
+        let cancel = gio::Cancellable::new();
+        let generation = {
+            let mut state = self.state.borrow_mut();
+            if let Some(c) = state.deep_cancel.take() {
+                c.cancel();
+            }
+            state.deep_cancel = Some(cancel.clone());
+            state.generation += 1;
+            state.deep_results = true;
+            state.virtual_title = Some(format!("Smart: {}", spec.name));
+            state.generation
+        };
+        self.search_bar.set_search_mode(false);
+        self.store.remove_all();
+        self.status.set_text("Searching…");
+        self.update_empty();
+        let root = gio::File::for_path(&spec.root);
+        let spec = spec.clone();
+        let show_hidden = w.show_hidden();
+        let this = Rc::downgrade(self);
+        let emit: Rc<dyn Fn(Vec<gio::File>, bool)> = Rc::new({
+            let this = this.clone();
+            let spec = spec.clone();
+            move |files, done| {
+                let this = this.clone();
+                let spec = spec.clone();
+                glib::spawn_future_local(async move {
+                    let infos = futures_util::future::join_all(files.iter().map(ops::query)).await;
+                    let Some(p) = this.upgrade() else { return };
+                    if p.state.borrow().generation != generation {
+                        return;
+                    }
+                    let mut items = Vec::new();
+                    for (file, info) in files.iter().zip(infos) {
+                        if let Ok(item) = info {
+                            if item.is_dir() || !crate::smart::accepts(&spec, &item.name(), item.modified_unix()) {
+                                continue;
+                            }
+                            item.set_label(Some(window::location_text(file)));
+                            items.push(item);
+                        }
+                    }
+                    p.store.extend_from_slice(&items);
+                    if done {
+                        p.store.sort(|a, b| {
+                            let a = a.downcast_ref::<FileItem>().unwrap();
+                            let b = b.downcast_ref::<FileItem>().unwrap();
+                            b.modified_unix().cmp(&a.modified_unix())
+                        });
+                        p.filter.changed(gtk::FilterChange::Different);
+                        p.update_empty();
+                        p.selection_changed();
+                    }
+                });
+            }
+        });
+        let term = crate::smart::search_term(&spec);
+        if std::env::var_os("OMAFILE_TRACE").is_some() {
+            eprintln!("smart folder {}: root={} term={term:?} glob={:?} days={}", spec.name, spec.root.display(), spec.glob, spec.max_age_days);
+        }
+        glib::spawn_future_local(async move {
+            if term.chars().count() >= 2 {
+                crate::search::deep_search(&root, &term, show_hidden, cancel, emit).await;
+            } else {
+                // No usable term: walk everything below the root (bounded by the glob / age filter).
+                crate::search::deep_search(&root, "", show_hidden, cancel, emit).await;
+            }
+        });
+        w.pane_navigated(self);
+    }
+
     pub fn virtual_title(&self) -> Option<String> {
         self.state.borrow().virtual_title.clone()
+    }
+
+    /// Warn once per mount when the disk behind the folder runs low.
+    fn check_disk_space(self: &Rc<Self>, dir: &gio::File) {
+        if !dir.is_native() {
+            return;
+        }
+        let Some(w) = self.window.upgrade() else { return };
+        let dir = dir.clone();
+        let this = Rc::downgrade(&w);
+        glib::spawn_future_local(async move {
+            let Ok(info) = dir.query_filesystem_info_future("filesystem::free,filesystem::size,id::filesystem", glib::Priority::LOW).await else { return };
+            let free = info.attribute_uint64("filesystem::free");
+            let size = info.attribute_uint64("filesystem::size");
+            let id = info.attribute_string("id::filesystem").map(|s| s.to_string()).unwrap_or_default();
+            if size == 0 || id.is_empty() {
+                return;
+            }
+            let low = free < 2 * 1024 * 1024 * 1024 || (free as f64 / size as f64) < 0.05;
+            let Some(w) = this.upgrade() else { return };
+            if low && !w.low_space_warned.borrow().contains(&id) {
+                w.low_space_warned.borrow_mut().push(id);
+                w.toast(&format!("Low disk space: {} free on this drive", ops::human_size(free)));
+            }
+        });
     }
 
     pub fn thumbnails_enabled(&self) -> bool {
@@ -1237,7 +1353,11 @@ impl Pane {
         if item.is_dir() {
             self.navigate(item.target_file(), true);
         } else if let Some(w) = self.window.upgrade() {
-            w.launch(&item.target_file(), false);
+            if item.is_archive() && item.target_file().is_native() && w.prefs.get_bool("browse-archives", true) {
+                w.browse_archive(&item.target_file(), self);
+            } else {
+                w.launch(&item.target_file(), false);
+            }
         }
     }
 
@@ -1246,7 +1366,10 @@ impl Pane {
         let selected = self.selected_items();
         let deep = self.state.borrow().deep_results;
         let virtual_view = self.state.borrow().virtual_title.is_some();
-        let mut text = if virtual_view {
+        let smart_view = self.state.borrow().virtual_title.as_deref().map(|t| t.starts_with("Smart: ")).unwrap_or(false);
+        let mut text = if smart_view {
+            format!("{total} {} in this smart folder", if total == 1 { "match" } else { "matches" })
+        } else if virtual_view {
             format!("{total} tagged {}", if total == 1 { "item" } else { "items" })
         } else if deep {
             format!("{total} {} found", if total == 1 { "match" } else { "matches" })
@@ -1333,6 +1456,9 @@ impl Pane {
                 theme,
                 local: items.iter().all(|i| i.target_file().is_native()),
                 media: items.len() == 1 && items[0].is_media(),
+                pair: items.len() == 2 && items.iter().all(|i| i.target_file().is_native()),
+                split: self.window.upgrade().map(|w| w.is_split()).unwrap_or(false),
+                theme_archive: items.len() == 1 && items[0].is_archive() && items[0].target_file().path().map(|p| crate::omarchy::archive_is_theme(&p)).unwrap_or(false),
             };
             self.item_menu.set_menu_model(Some(&window::item_menu_model_ext(flags, vault)));
             self.item_menu.set_pointing_to(Some(&rect));

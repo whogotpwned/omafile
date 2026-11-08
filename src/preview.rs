@@ -370,7 +370,15 @@ impl PreviewPane {
     /// Fill the text view with a unified diff, colouring added, removed and
     /// hunk lines with the theme palette. Returns (added, removed) line counts.
     fn render_diff(&self, diff: &str) -> (usize, usize) {
-        let buffer = self.text.buffer();
+        render_diff_into(&self.text, diff)
+    }
+}
+
+/// Fill a text view with a unified diff, colouring added, removed and hunk
+/// lines with the theme palette. Returns (added, removed) line counts.
+pub fn render_diff_into(text: &gtk::TextView, diff: &str) -> (usize, usize) {
+    {
+        let buffer = text.buffer();
         buffer.set_text("");
         let table = buffer.tag_table();
         let palette = crate::theme::current();

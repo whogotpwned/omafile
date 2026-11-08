@@ -11,7 +11,7 @@ pub const ATTRIBUTES: &str = "standard::name,standard::display-name,standard::ty
 standard::icon,standard::is-hidden,standard::is-backup,standard::is-symlink,standard::symlink-target,\
 standard::content-type,standard::fast-content-type,time::modified,unix::mode,access::can-write,\
 access::can-execute,owner::user,owner::group,standard::target-uri,thumbnail::path,thumbnail::is-valid,\
-metadata::custom-icon,metadata::custom-icon-name,trash::deletion-date,trash::orig-path";
+metadata::custom-icon,metadata::custom-icon-name,trash::deletion-date,trash::orig-path,unix::uid,unix::gid";
 
 /// File names that usually hold credentials. They get a warning badge, a masked
 /// preview and a confirmation before they are copied.
