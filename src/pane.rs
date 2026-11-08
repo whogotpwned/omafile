@@ -48,6 +48,7 @@ pub struct Pane {
     pub item_menu: gtk::PopoverMenu,
     pub background_menu: gtk::PopoverMenu,
     pub cell_items: RefCell<HashMap<gtk::Widget, gtk::ListItem>>,
+    pub git: RefCell<Option<crate::git::RepoStatus>>,
     pub state: RefCell<PaneState>,
     pub window: Weak<Window>,
     pub thumbs: Rc<ThumbCache>,
@@ -115,10 +116,10 @@ impl Pane {
         root.append(&search_bar);
         root.append(&card);
 
-        let item_menu = gtk::PopoverMenu::from_model(Some(&window::item_menu_model(false, false, false, false)));
+        let item_menu = gtk::PopoverMenu::from_model(Some(&window::item_menu_model(false, false, false, false, window::VaultState::None, false)));
         item_menu.set_has_arrow(false);
         item_menu.set_parent(&view_stack);
-        let background_menu = gtk::PopoverMenu::from_model(Some(&window::background_menu_model(false)));
+        let background_menu = gtk::PopoverMenu::from_model(Some(&window::background_menu_model(false, None, false)));
         background_menu.set_has_arrow(false);
         background_menu.set_parent(&view_stack);
 
@@ -140,6 +141,7 @@ impl Pane {
             item_menu,
             background_menu,
             cell_items: RefCell::new(HashMap::new()),
+            git: RefCell::new(None),
             state: RefCell::new(PaneState {
                 cwd: start.clone(),
                 back: Vec::new(),
@@ -208,6 +210,14 @@ impl Pane {
             hbox.append(&thumb);
             hbox.append(&label);
             hbox.append(&make_tag_dot());
+            let lock = gtk::Image::from_icon_name("changes-prevent-symbolic");
+            lock.add_css_class("omafile-dim");
+            lock.set_visible(false);
+            hbox.append(&lock);
+            let badge = gtk::Label::new(None);
+            badge.add_css_class("omafile-git-badge");
+            badge.set_visible(false);
+            hbox.append(&badge);
             list_item.set_child(Some(&hbox));
             if let Some(p) = this.upgrade() {
                 p.cell_items.borrow_mut().insert(hbox.clone().upcast(), list_item.clone());
@@ -220,11 +230,20 @@ impl Pane {
             let Some(item) = list_item.item().and_downcast::<FileItem>() else { return };
             let hbox = list_item.child().and_downcast::<gtk::Box>().unwrap();
             let thumb = hbox.first_child().and_downcast::<gtk::Stack>().unwrap();
-            let dot = hbox.last_child().and_downcast::<gtk::Box>().unwrap();
+            let badge = hbox.last_child().and_downcast::<gtk::Label>().unwrap();
+            let lock = badge.prev_sibling().and_downcast::<gtk::Image>().unwrap();
+            let dot = lock.prev_sibling().and_downcast::<gtk::Box>().unwrap();
             let label = dot.prev_sibling().and_downcast::<gtk::Label>().unwrap();
             if let Some(p) = this.upgrade() {
                 bind_thumb(&p.thumbs, &thumb, &item, ICON_LIST, p.thumbnails_enabled());
                 bind_tag_dot(&dot, p.tag_of(&item));
+                bind_git_badge(&badge, p.git_status_of(&item));
+                let path = item.file().path();
+                let is_vault = item.is_dir() && path.as_ref().map(|d| crate::crypt::is_vault(d)).unwrap_or(false);
+                let is_open_mount = item.is_dir() && !is_vault && path.as_ref().map(|d| crate::crypt::vault_for(d).is_some() && crate::crypt::is_mounted(d)).unwrap_or(false);
+                lock.set_visible(is_vault || is_open_mount);
+                lock.set_icon_name(Some(if is_open_mount { "changes-allow-symbolic" } else { "changes-prevent-symbolic" }));
+                lock.set_tooltip_text(Some(if is_open_mount { "Encrypted folder, unlocked" } else { "Encrypted folder (gocryptfs), locked" }));
             }
             label.set_text(&item.display_label());
             apply_item_classes(&hbox, &item);
@@ -632,11 +651,20 @@ impl Pane {
         };
         let this = Rc::downgrade(self);
         glib::spawn_future_local(async move {
-            let result = ops::list_dir(&file).await;
+            let git_wanted = file.is_native() && crate::git::available();
+            let (result, git) = futures_util::future::join(ops::list_dir(&file), async {
+                if git_wanted {
+                    crate::git::status(&file.path().unwrap_or_default()).await
+                } else {
+                    None
+                }
+            })
+            .await;
             let Some(p) = this.upgrade() else { return };
             if p.state.borrow().generation != generation {
                 return;
             }
+            *p.git.borrow_mut() = git;
             p.state.borrow_mut().loading = false;
             let selected: Vec<gio::File> = p.selected_items().iter().map(|i| i.file()).collect();
             match result {
@@ -673,6 +701,13 @@ impl Pane {
                 }
             }
         });
+    }
+
+    pub fn git_status_of(&self, item: &FileItem) -> Option<crate::git::Status> {
+        let git = self.git.borrow();
+        let repo = git.as_ref()?;
+        let path = item.file().path()?;
+        repo.files.get(&path).cloned()
     }
 
     pub fn tag_of(&self, item: &FileItem) -> Option<String> {
@@ -1008,6 +1043,8 @@ impl Pane {
                 text.push_str(&format!(" ({})", ops::human_size(size)));
             }
         } else if deep {
+        } else if let Some(repo) = self.git.borrow().as_ref() {
+            text.push_str(&format!("  ·  {}", repo.summary()));
         } else if let Some(path) = self.state.borrow().cwd.path() {
             text.push_str(&format!("  ·  {}", window::abbreviate_home(&path)));
         } else {
@@ -1052,11 +1089,15 @@ impl Pane {
             let items = self.selected_items();
             let single_dir = items.len() == 1 && items[0].is_dir();
             let archive = items.len() == 1 && items[0].is_archive() && items[0].target_file().is_native();
-            self.item_menu.set_menu_model(Some(&window::item_menu_model(single_dir, archive, in_trash, items.len() > 1)));
+            let vault = window::VaultState::of(items.first().filter(|_| single_dir).and_then(|i| i.file().path()));
+            let in_repo = self.git.borrow().is_some();
+            self.item_menu.set_menu_model(Some(&window::item_menu_model(single_dir, archive, in_trash, items.len() > 1, vault, in_repo)));
             self.item_menu.set_pointing_to(Some(&rect));
             self.item_menu.popup();
         } else {
-            self.background_menu.set_menu_model(Some(&window::background_menu_model(in_trash)));
+            let project = self.cwd().path().and_then(|d| crate::projects::detect(&d));
+            let in_repo = self.git.borrow().is_some();
+            self.background_menu.set_menu_model(Some(&window::background_menu_model(in_trash, project.as_ref(), in_repo)));
             self.background_menu.set_pointing_to(Some(&rect));
             self.background_menu.popup();
         }
@@ -1132,6 +1173,21 @@ fn bind_tag_dot(dot: &gtk::Box, color: Option<String>) {
             dot.set_visible(true);
         }
         None => dot.set_visible(false),
+    }
+}
+
+fn bind_git_badge(badge: &gtk::Label, status: Option<crate::git::Status>) {
+    for cls in ["omafile-git-modified", "omafile-git-added", "omafile-git-deleted", "omafile-git-ignored"] {
+        badge.remove_css_class(cls);
+    }
+    match status {
+        Some(s) => {
+            badge.set_text(s.badge());
+            badge.add_css_class(s.css());
+            badge.set_tooltip_text(Some(&format!("git: {}", s.label())));
+            badge.set_visible(true);
+        }
+        None => badge.set_visible(false),
     }
 }
 

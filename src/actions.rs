@@ -12,6 +12,46 @@ use std::rc::Rc;
 
 type Handler = Box<dyn Fn(&Rc<Window>)>;
 
+/// Actions offered by the command palette: (action name, label, icon).
+pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
+    ("new-folder", "New Folder", "folder-new-symbolic"),
+    ("new-file", "New File", "document-new-symbolic"),
+    ("vault-new", "New Encrypted Folder", "changes-prevent-symbolic"),
+    ("new-tab", "New Tab", "tab-new-symbolic"),
+    ("split-view", "Toggle Split View", "view-dual-symbolic"),
+    ("show-preview", "Toggle Preview Pane", "sidebar-show-right-symbolic"),
+    ("show-sidebar", "Toggle Sidebar", "sidebar-show-symbolic"),
+    ("show-hidden", "Toggle Hidden Files", "view-reveal-symbolic"),
+    ("toggle-view", "Toggle List / Grid", "view-grid-symbolic"),
+    ("quick-look", "Quick Look", "view-reveal-symbolic"),
+    ("search", "Filter This Folder", "edit-find-symbolic"),
+    ("deep-search", "Search Subfolders", "folder-saved-search-symbolic"),
+    ("location", "Edit Path", "folder-symbolic"),
+    ("terminal", "Open Terminal Here", "utilities-terminal-symbolic"),
+    ("open-editor-cwd", "Open Folder in Editor", "text-editor-symbolic"),
+    ("open-with", "Open With…", "document-open-symbolic"),
+    ("rename", "Rename", "document-edit-symbolic"),
+    ("duplicate", "Duplicate", "edit-copy-symbolic"),
+    ("copy-to", "Copy To…", "edit-copy-symbolic"),
+    ("move-to", "Move To…", "edit-cut-symbolic"),
+    ("compress", "Compress…", "package-x-generic-symbolic"),
+    ("extract", "Extract Here", "package-x-generic-symbolic"),
+    ("change-icon", "Change Icon…", "image-x-generic-symbolic"),
+    ("bookmark", "Bookmark This Folder", "user-bookmarks-symbolic"),
+    ("connect", "Connect to Server…", "network-server-symbolic"),
+    ("trash", "Move to Trash", "user-trash-symbolic"),
+    ("empty-trash", "Empty Trash", "user-trash-full-symbolic"),
+    ("undo", "Undo", "edit-undo-symbolic"),
+    ("redo", "Redo", "edit-redo-symbolic"),
+    ("properties", "Properties", "dialog-information-symbolic"),
+    ("cwd-properties", "Folder Properties", "dialog-information-symbolic"),
+    ("preferences", "Preferences", "emblem-system-symbolic"),
+    ("shortcuts", "Keyboard Shortcuts", "input-keyboard-symbolic"),
+    ("home", "Go Home", "user-home-symbolic"),
+    ("up", "Parent Folder", "go-up-symbolic"),
+    ("reload", "Reload", "view-refresh-symbolic"),
+];
+
 pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.back", &["<Alt>Left"]),
     ("win.forward", &["<Alt>Right"]),
@@ -46,6 +86,9 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.connect", &["<Control><Shift>k"]),
     ("win.split-view", &["F6"]),
     ("win.undo", &["<Control>z"]),
+    ("win.palette", &["<Control>k", "<Control><Shift>p"]),
+    ("win.open-editor", &["<Control>e"]),
+    ("win.open-editor-cwd", &["<Control><Shift>e"]),
     ("win.redo", &["<Control><Shift>z", "<Control>y"]),
     ("win.duplicate", &["<Control><Shift>d"]),
     ("win.deep-search", &["<Control><Shift>f"]),
@@ -147,6 +190,32 @@ impl Window {
         }));
         simple("preferences", Box::new(|w| w.show_preferences()));
         simple("quick-look", Box::new(|w| w.toggle_quick_look()));
+        simple("palette", Box::new(|w| w.open_palette()));
+        simple("open-editor", Box::new(|w| {
+            match w.selected_items().first() {
+                Some(item) => w.open_in_editor(&item.target_file()),
+                None => {
+                    if let Some(p) = w.active_pane() {
+                        w.open_in_editor(&p.cwd());
+                    }
+                }
+            }
+        }));
+        simple("open-editor-cwd", Box::new(move |w| { if let Some(p) = pane(w) { w.open_in_editor(&p.cwd()) } }));
+        simple("git-status", Box::new(|w| w.run_in_terminal("git status")));
+        simple("git-diff-all", Box::new(|w| w.run_in_terminal("git diff")));
+        simple("git-diff", Box::new(|w| {
+            let names: Vec<String> = w.selected_items().iter().map(|i| format!("'{}'", i.name().replace('\'', "'\\''"))).collect();
+            if names.is_empty() {
+                w.run_in_terminal("git diff");
+            } else {
+                w.run_in_terminal(&format!("git diff -- {}", names.join(" ")));
+            }
+        }));
+        simple("vault-new", Box::new(|w| w.vault_new()));
+        simple("vault-unlock", Box::new(|w| w.vault_unlock()));
+        simple("vault-lock", Box::new(|w| w.vault_lock()));
+        simple("vault-passwd", Box::new(|w| w.vault_passwd()));
         simple("undo", Box::new(|w| if !w.forward_to_editable("text.undo") { w.undo() }));
         simple("redo", Box::new(|w| if !w.forward_to_editable("text.redo") { w.redo() }));
         simple("copy-to", Box::new(|w| w.transfer_to(false)));
@@ -306,6 +375,18 @@ impl Window {
             }
         });
         self.window.add_action(&view);
+
+        let project_run = gio::SimpleAction::new("project-run", Some(glib::VariantTy::STRING));
+        let this = Rc::downgrade(self);
+        project_run.connect_activate(move |_, param| {
+            let Some(w) = this.upgrade() else { return };
+            let Some(index) = param.and_then(|p| p.get::<String>()).and_then(|s| s.parse::<usize>().ok()) else { return };
+            let Some(dir) = w.active_pane().and_then(|p| p.cwd().path()) else { return };
+            if let Some(action) = crate::projects::detect(&dir).and_then(|p| p.actions.get(index).cloned()) {
+                w.run_in_terminal(&action.command);
+            }
+        });
+        self.window.add_action(&project_run);
 
         let tag = gio::SimpleAction::new("tag", Some(glib::VariantTy::STRING));
         let this = Rc::downgrade(self);
@@ -979,6 +1060,12 @@ impl Window {
                 ("F9", "Sidebar"),
                 ("Ctrl+1  /  Ctrl+2", "List / grid view"),
                 ("Ctrl+H", "Hidden files"),
+            ]),
+            ("Developer", &[
+                ("Ctrl+K", "Command palette: actions, folders, project commands, > shell"),
+                ("Ctrl+E  /  Ctrl+Shift+E", "Open selection / folder in the editor"),
+                ("Context menu › Project", "cargo, npm, make, docker compose, git… in a terminal"),
+                ("Context menu › New Encrypted Folder", "gocryptfs vault; Unlock / Lock on the folder"),
             ]),
             ("Files", &[
                 ("Enter", "Open"),

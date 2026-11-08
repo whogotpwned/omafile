@@ -4,6 +4,8 @@ use crate::item::FileItem;
 use crate::pane::Pane;
 use crate::prefs::Prefs;
 use crate::preview::PreviewPane;
+use crate::palette::{Entry as PaletteEntry, Palette, Target as PaletteTarget};
+use crate::projects;
 use crate::quicklook::QuickLook;
 use crate::remote;
 use crate::completion::Completion;
@@ -60,6 +62,8 @@ pub struct Window {
     pub completion: Rc<Completion>,
     pub journal: Journal,
     pub quicklook: Rc<QuickLook>,
+    pub palette: RefCell<Option<Rc<Palette>>>,
+    pub recent: RefCell<Vec<gio::File>>,
     pub sidebar_list: gtk::ListBox,
     pub sidebar_menu: gtk::PopoverMenu,
     pub back_btn: gtk::Button,
@@ -231,6 +235,8 @@ impl Window {
             completion,
             journal: Journal::default(),
             quicklook,
+            palette: RefCell::new(None),
+            recent: RefCell::new(Vec::new()),
             sidebar_list,
             sidebar_menu,
             back_btn,
@@ -404,6 +410,13 @@ impl Window {
 
     /// Called by a pane whenever its directory changes.
     pub fn pane_navigated(self: &Rc<Self>, pane: &Rc<Pane>) {
+        {
+            let cwd = pane.cwd();
+            let mut recent = self.recent.borrow_mut();
+            recent.retain(|f| !f.equal(&cwd));
+            recent.insert(0, cwd);
+            recent.truncate(25);
+        }
         if let Some(page) = self.page_for(pane) {
             let cwd = pane.cwd();
             page.set_title(&display_name(&cwd));
@@ -951,6 +964,89 @@ impl Window {
         self.refresh_sidebar();
     }
 
+    // ----- command palette ----------------------------------------------------------
+
+    pub fn open_palette(self: &Rc<Self>) {
+        let existing = self.palette.borrow().clone();
+        let palette = match existing {
+            Some(p) => p,
+            None => {
+                let p = Palette::new(self);
+                *self.palette.borrow_mut() = Some(p.clone());
+                p
+            }
+        };
+        let mut entries = Vec::new();
+        // Actions with their shortcuts.
+        for (name, label, icon) in crate::actions::PALETTE_ACTIONS {
+            let accel = crate::actions::ACCELS.iter().find(|(a, _)| *a == format!("win.{name}")).and_then(|(_, keys)| keys.first()).map(|k| pretty_accel(k)).unwrap_or_default();
+            entries.push(PaletteEntry { title: label.to_string(), detail: accel, icon, target: PaletteTarget::Action(name.to_string()) });
+        }
+        // Project commands of the current folder.
+        if let Some(cwd) = self.active_pane().map(|p| p.cwd()) {
+            if let Some(project) = cwd.path().and_then(|d| projects::detect(&d)) {
+                for action in project.actions {
+                    entries.push(PaletteEntry { title: action.label.clone(), detail: format!("{} project · terminal", project.kind), icon: "utilities-terminal-symbolic", target: PaletteTarget::Project(action.command) });
+                }
+            }
+        }
+        // Places, bookmarks, recent folders, servers.
+        for place in &self.state.borrow().places {
+            if let Place::Entry { name, icon, file, kind } = place {
+                let (detail, target) = match kind {
+                    PlaceKind::Ssh(_) => ("SSH server".to_string(), PaletteTarget::Connect(file.clone())),
+                    PlaceKind::Tag(_) => continue,
+                    PlaceKind::Bookmark => ("Bookmark".to_string(), PaletteTarget::Folder(file.clone())),
+                    PlaceKind::Mount(_) => ("Device".to_string(), PaletteTarget::Folder(file.clone())),
+                    PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
+                };
+                let icon: &'static str = if icon.starts_with("tag:") { "tag-symbolic" } else { leak_icon(icon) };
+                entries.push(PaletteEntry { title: name.clone(), detail, icon, target });
+            }
+        }
+        for file in self.recent.borrow().iter().skip(1) {
+            entries.push(PaletteEntry { title: display_name(file), detail: format!("Recent · {}", location_text(file)), icon: "document-open-recent-symbolic", target: PaletteTarget::Folder(file.clone()) });
+        }
+        palette.open(entries);
+    }
+
+    pub fn run_palette_target(self: &Rc<Self>, target: PaletteTarget) {
+        match target {
+            PaletteTarget::Action(name) => {
+                gio::prelude::ActionGroupExt::activate_action(&self.window, &name, None);
+            }
+            PaletteTarget::Folder(file) => self.navigate(file),
+            PaletteTarget::Connect(file) => self.connect_to(file, true),
+            PaletteTarget::Project(command) | PaletteTarget::Command(command) => self.run_in_terminal(&command),
+        }
+    }
+
+    /// Run a shell command in a terminal opened in the active folder.
+    pub fn run_in_terminal(self: &Rc<Self>, command: &str) {
+        let Some(dir) = self.active_pane().and_then(|p| p.cwd().path()) else {
+            self.toast_error("Commands run in local folders only");
+            return;
+        };
+        let argv = projects::terminal_argv(&dir, command);
+        let args: Vec<&std::path::Path> = argv.iter().map(std::path::Path::new).collect();
+        match glib::spawn_async(None::<&std::path::Path>, &args, &[], glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::STDOUT_TO_DEV_NULL | glib::SpawnFlags::STDERR_TO_DEV_NULL, None) {
+            Ok(_) => self.toast(&format!("Running: {command}")),
+            Err(e) => self.toast_error(&format!("Cannot open terminal: {}", e.message())),
+        }
+    }
+
+    pub fn open_in_editor(self: &Rc<Self>, target: &gio::File) {
+        let Some(path) = target.path() else {
+            self.toast_error("The editor opens local files only");
+            return;
+        };
+        let argv = projects::editor_argv(&path);
+        let args: Vec<&std::path::Path> = argv.iter().map(std::path::Path::new).collect();
+        if let Err(e) = glib::spawn_async(None::<&std::path::Path>, &args, &[], glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::STDOUT_TO_DEV_NULL | glib::SpawnFlags::STDERR_TO_DEV_NULL, None) {
+            self.toast_error(&format!("Cannot open editor: {}", e.message()));
+        }
+    }
+
     /// Space: large preview of the selected file, like Quick Look.
     pub fn toggle_quick_look(self: &Rc<Self>) {
         if std::env::var_os("OMAFILE_TRACE").is_some() {
@@ -1054,6 +1150,23 @@ impl Window {
     }
 }
 
+fn pretty_accel(accel: &str) -> String {
+    accel
+        .replace("<Control>", "Ctrl+")
+        .replace("<Shift>", "Shift+")
+        .replace("<Alt>", "Alt+")
+        .replace("comma", ",")
+        .replace("question", "?")
+        .replace("Return", "Enter")
+        .replace("Page_Down", "PgDn")
+        .replace("Page_Up", "PgUp")
+}
+
+fn leak_icon(name: &str) -> &'static str {
+    // Icon names are a small fixed set; leaking them keeps the palette entries 'static.
+    Box::leak(name.to_string().into_boxed_str())
+}
+
 fn nav_button(icon: &str, tooltip: &str, action: &str) -> gtk::Button {
     gtk::Button::builder().icon_name(icon).tooltip_text(tooltip).action_name(action).build()
 }
@@ -1120,10 +1233,13 @@ fn main_menu() -> gio::Menu {
     s0.append(Some("Redo"), Some("win.redo"));
     menu.append_section(None, &s0);
     let s1 = gio::Menu::new();
+    s1.append(Some("Command Palette…"), Some("win.palette"));
     s1.append(Some("New Tab"), Some("win.new-tab"));
     s1.append(Some("New Folder"), Some("win.new-folder"));
     s1.append(Some("New File"), Some("win.new-file"));
+    s1.append(Some("New Encrypted Folder…"), Some("win.vault-new"));
     s1.append(Some("Open Terminal Here"), Some("win.terminal"));
+    s1.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
     s1.append(Some("Connect to Server…"), Some("win.connect"));
     menu.append_section(None, &s1);
     let s2 = gio::Menu::new();
@@ -1151,7 +1267,29 @@ fn main_menu() -> gio::Menu {
     menu
 }
 
-pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple: bool) -> gio::Menu {
+#[derive(Clone, Copy, PartialEq)]
+pub enum VaultState {
+    None,
+    /// A ciphertext folder (contains gocryptfs.conf).
+    Locked,
+    /// A mount point that is currently unlocked.
+    Unlocked,
+}
+
+impl VaultState {
+    pub fn of(path: Option<std::path::PathBuf>) -> VaultState {
+        let Some(path) = path else { return VaultState::None };
+        if crate::crypt::is_vault(&path) {
+            if crate::crypt::is_mounted(&crate::crypt::mount_point_for(&path)) { VaultState::Unlocked } else { VaultState::Locked }
+        } else if crate::crypt::vault_for(&path).is_some() && crate::crypt::is_mounted(&path) {
+            VaultState::Unlocked
+        } else {
+            VaultState::None
+        }
+    }
+}
+
+pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple: bool, vault: VaultState, in_repo: bool) -> gio::Menu {
     let menu = gio::Menu::new();
     let open = gio::Menu::new();
     open.append(Some("Open"), Some("win.open"));
@@ -1161,6 +1299,20 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple
         open.append(Some("Open in Terminal"), Some("win.terminal-selected"));
     } else {
         open.append(Some("Open With…"), Some("win.open-with"));
+    }
+    if !multiple && !in_trash {
+        open.append(Some("Open in Editor"), Some("win.open-editor"));
+    }
+    if in_repo && !multiple && !in_trash {
+        open.append(Some("Git Diff in Terminal"), Some("win.git-diff"));
+    }
+    match vault {
+        VaultState::Locked => open.append(Some("Unlock Encrypted Folder…"), Some("win.vault-unlock")),
+        VaultState::Unlocked => open.append(Some("Lock Encrypted Folder"), Some("win.vault-lock")),
+        VaultState::None => {}
+    }
+    if vault != VaultState::None {
+        open.append(Some("Change Vault Password…"), Some("win.vault-passwd"));
     }
     if archive {
         open.append(Some("Extract Here"), Some("win.extract"));
@@ -1204,7 +1356,7 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple
     menu
 }
 
-pub fn background_menu_model(in_trash: bool) -> gio::Menu {
+pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>, in_repo: bool) -> gio::Menu {
     let menu = gio::Menu::new();
     if in_trash {
         let s = gio::Menu::new();
@@ -1216,7 +1368,26 @@ pub fn background_menu_model(in_trash: bool) -> gio::Menu {
     let s1 = gio::Menu::new();
     s1.append(Some("New Folder"), Some("win.new-folder"));
     s1.append(Some("New File"), Some("win.new-file"));
+    s1.append(Some("New Encrypted Folder…"), Some("win.vault-new"));
     menu.append_section(None, &s1);
+    if let Some(project) = project {
+        let sub = gio::Menu::new();
+        sub.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
+        for (i, action) in project.actions.iter().enumerate() {
+            sub.append(Some(&action.label), Some(&format!("win.project-run::{i}")));
+        }
+        menu.append_submenu(Some(&format!("{} project", project.kind)), &sub);
+    } else {
+        let s = gio::Menu::new();
+        s.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
+        menu.append_section(None, &s);
+    }
+    if in_repo {
+        let g = gio::Menu::new();
+        g.append(Some("Git Status in Terminal"), Some("win.git-status"));
+        g.append(Some("Git Diff in Terminal"), Some("win.git-diff-all"));
+        menu.append_section(None, &g);
+    }
     let s2 = gio::Menu::new();
     s2.append(Some("Paste"), Some("win.paste"));
     s2.append(Some("Undo"), Some("win.undo"));

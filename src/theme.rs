@@ -435,6 +435,32 @@ toast {{
 .omafile-quicklook .omafile-preview {{
   background-color: @dialog_bg_color;
 }}
+.omafile-git-badge {{
+  font-size: 0.75em;
+  font-weight: 700;
+  min-width: 14px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background-color: {hover};
+}}
+.omafile-git-modified {{ color: {yellow}; }}
+.omafile-git-added {{ color: {green}; }}
+.omafile-git-deleted {{ color: {red}; }}
+.omafile-git-ignored {{ color: {dim}; }}
+.omafile-palette-entry {{
+  font-size: 1.1em;
+  border-radius: 10px;
+}}
+.omafile-palette-list {{
+  background: transparent;
+}}
+.omafile-palette-list row {{
+  border-radius: 8px;
+}}
+.omafile-master-key {{
+  font-family: monospace;
+  font-size: 1.05em;
+}}
 .omafile-tag-dot {{
   min-width: 10px;
   min-height: 10px;

@@ -1,4 +1,4 @@
-`omarchy` `omarchy-plugin` `hyprland` `wayland` `linux` `file-manager` `gtk4` `libadwaita` `rust` `sftp` `scp` `quickshell` `tags` `thumbnails` `pdf-preview` `arch-linux`
+`omarchy` `omarchy-plugin` `hyprland` `wayland` `linux` `file-manager` `gtk4` `libadwaita` `rust` `sftp` `scp` `quickshell` `tags` `thumbnails` `pdf-preview` `git` `gocryptfs` `encryption` `command-palette` `arch-linux`
 
 # omafile
 
@@ -24,6 +24,10 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![split](docs/screenshot-split.png) | **Split view** (`F6`): two sets of tabs side by side, each with its own history. Drag files across, or between a local and a remote tab. The active side carries the accent border. |
 | ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb turns into a text field with the cursor at the end, so you fix one segment instead of retyping (`Ctrl+A` selects it all to start over). Folders complete as you type: `Tab` accepts, `↑`/`↓` pick, `Enter` opens. `~`, relative paths, `sftp://` and `user@host` all work. |
 | ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview of the selected file without opening it. PDFs show their first page and page count, images fill the window, text files show their content, folders their item count. `←`/`→` walk through the folder while it is open, `Space` or `Esc` closes. The preview pane (`F3`) is the persistent sidebar variant of the same thing; both can be toggled on and off at any time. |
+| ![git](docs/screenshot-git.png) | **Git awareness**: inside a repository every row carries its status badge (`M` modified, `?` untracked, `A` added, `D` deleted, `!` conflict), folders inherit the strongest state of their contents, and the status line shows `repo on branch · 1 modified · 2 untracked`. *Git Diff in Terminal* on a file, *Git Status / Diff* on the folder. Read-only, `GIT_OPTIONAL_LOCKS=0`, refreshed with the folder. |
+| ![palette](docs/screenshot-palette.png) | **Command palette** (`Ctrl+K`), the Walker / VS Code pattern: fuzzy search over every action with its shortcut, places, bookmarks, recent folders, SSH hosts and the project commands of the current folder. Type `> cargo test` to run anything in a terminal here. `↑`/`↓` or `Tab` pick, `Enter` runs. |
+| ![project](docs/screenshot-project.png) | **Project actions**: omafile recognises what a folder is (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `PKGBUILD`, `compose.yml`, `Makefile`/`justfile`, an Omarchy plugin, a git checkout) and offers the matching commands in the context menu and the palette: `cargo test`, `npm run dev`, `makepkg -si`, `docker compose up`, `git log` … They run in Alacritty in that folder and wait for Enter, so output stays readable. *Open in Editor* (`Ctrl+E`, `Ctrl+Shift+E` for the folder) uses Omarchy's `omarchy-launch-editor`, so it lands in Neovim. Teams add their own commands with a `.omafile.toml` in the repository. |
+| ![vault](docs/screenshot-vault.png) | **Encrypted folders** with gocryptfs: *New Encrypted Folder…* asks for a name and password and creates `Name.gocryptfs` (the ciphertext) next to `Name` (where files appear while unlocked). Unlock, lock and change the password from the context menu; the password only ever travels through a pipe. The master key for emergencies is shown once. Because gocryptfs encrypts file by file, the `.gocryptfs` folder is the thing to back up, sync or move to another machine: copy it anywhere, unlock it there with the same password. |
 | ![undo](docs/screenshot-undo.png) | **Undo and redo** (`Ctrl+Z`, `Ctrl+Shift+Z`), borrowed from Nautilus and Finder: move, copy, paste, rename, batch rename, duplicate, new folder/file, trash and tag changes can all be taken back, every toast carries an Undo button, and trashed items are restored from the trash by their original path. |
 | ![search](docs/screenshot-search.png) | **Recursive search** (`Ctrl+Shift+F`) through the current folder and everything below. `fd` streams matches while it walks, results appear in batches as they arrive, the previous search is killed the moment you type on, and the final list is ranked (name starts with the query, name contains it, path contains it). On a 5,300-file tree a short query returns in about 40 ms, a query with 200+ hits in under 300 ms including the file information for every hit. A GIO walk takes over where `fd` cannot go, such as SFTP servers. |
 | ![batch rename](docs/screenshot-batch.png) | **Batch rename**: select several files and press `F2`. Pattern with `[name]`, `[ext]`, `[N]`, `[date]`, then find/replace, with a live preview and conflict detection. |
@@ -55,6 +59,10 @@ Custom folder icon applied
 
 ![custom icon](docs/screenshot-icon-applied.png)
 
+Lock, unlock and change the password of an encrypted folder from its context menu
+
+![vault menu](docs/screenshot-vault-menu.png)
+
 A tag opened from the sidebar lists every tagged item with its location
 
 ![tag listing](docs/screenshot-tagview.png)
@@ -84,7 +92,9 @@ or `--bind` for only one of the two, or nothing for just the binary.
 
 Build dependencies on Omarchy: `sudo pacman -S --needed rust gtk4 libadwaita`.
 Runtime extras are already part of a stock install: `gvfs` (trash, drives,
-SFTP), `poppler` (PDF previews), `fd` (fast search), `libarchive` (archives).
+SFTP), `poppler` (PDF previews), `fd` (fast search), `libarchive` (archives),
+`git` (status badges). Encrypted folders need `gocryptfs`
+(`sudo pacman -S gocryptfs`); everything else works without it.
 
 Arch package: `makepkg -si`, remove with `sudo pacman -Rns omafile`.
 
@@ -157,6 +167,8 @@ widget, drops it from the bar layout and deletes the checkout.
 | `Ctrl+Alt+1…7` / `Ctrl+Alt+0` | Tag red, orange, yellow, green, blue, purple, gray / remove tag |
 | `Ctrl+C` `Ctrl+X` `Ctrl+V` `Ctrl+Shift+C` | Copy, cut, paste, copy path |
 | `Ctrl+Z` `Ctrl+Shift+Z` | Undo, redo |
+| `Ctrl+K` | Command palette |
+| `Ctrl+E` `Ctrl+Shift+E` | Open selection / folder in the editor |
 | `Ctrl+Shift+D` | Duplicate |
 | `Delete` `Shift+Delete` | Trash, delete permanently |
 | `Ctrl+D` `Ctrl+Shift+K` `Ctrl+I` | Bookmark, connect to server, properties |
@@ -237,6 +249,43 @@ What the shell enforces at load time and what this repository does:
 | Theme colours only via `qs.Commons`, UI via `qs.Ui` components | `BarIconButton`, `PopupCard`, `PopupMenuRow` |
 | Plugins run unsandboxed inside `omarchy-shell`, no install hooks, no sudo | the widget only runs `omafile` and `omarchy-launch-or-focus` on click |
 
+## Encrypted folders in detail
+
+- **Format.** gocryptfs: AES-256-GCM per file, file names encrypted (EME),
+  keys derived from the password with scrypt. The `.gocryptfs` directory
+  holds only ciphertext plus `gocryptfs.conf` (the wrapped master key).
+- **Migration and backup.** Copy or sync `Name.gocryptfs` with any tool
+  (rsync, a USB stick, a cloud folder, `scp`). On the other machine, put it
+  next to an empty `Name` folder and use *Unlock Encrypted Folder…*, or
+  `gocryptfs Name.gocryptfs Name` on the command line. Changing the password
+  rewraps the master key inside `gocryptfs.conf`, so a copy made before the
+  change still opens with the old password; copy again afterwards. The master
+  key shown once at creation opens the folder without any password, keep it
+  in a password manager as the last resort.
+- **Handling.** Unlocking mounts the folder for your user only (FUSE, no
+  root). Lock it with the context menu, or it stays unlocked until logout.
+  The password is piped to gocryptfs and never written to disk or passed on
+  a command line. Deleting the ciphertext folder deletes the data.
+- **Scope.** Local file systems only; a vault cannot live on an SFTP share.
+
+## Project actions file
+
+`.omafile.toml` in a project root adds commands to the *Project* submenu and
+the command palette for everyone who opens the folder with omafile:
+
+```toml
+[[action]]
+name = "Deploy to staging"
+command = "./deploy.sh staging"
+
+[[action]]
+name = "Run migrations"
+command = "docker compose exec app rails db:migrate"
+```
+
+Commands run through `bash -lc` in the project folder inside a terminal
+window and wait for Enter before closing.
+
 ## Preferences file
 
 `~/.config/omafile/omafile.conf`, written by the Preferences dialog:
@@ -272,6 +321,12 @@ cargo clippy
 | `remote` | ssh config hosts, server URIs, GTK bookmarks |
 | `extras` | preferences, icon chooser, batch rename |
 | `tags` | colour tags: metadata, index file, virtual listings |
+| `git` | repository status for badges and the status line |
+| `projects` | project detection, actions, `.omafile.toml`, editor and terminal launch |
+| `palette` | command palette with fuzzy matching |
+| `crypt` / `vaultui` | gocryptfs vaults and their dialogs |
+| `undo` | undo/redo journal |
+| `completion` / `quicklook` | path completion, Quick Look |
 | `prefs` | the preferences file |
 | `actions` | window actions, clipboard, dialogs, properties, shortcuts |
 | `plugin/` | the Omarchy shell bar widget |

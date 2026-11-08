@@ -1,10 +1,14 @@
 mod actions;
 mod completion;
+mod crypt;
 mod extras;
+mod git;
 mod item;
 mod ops;
+mod palette;
 mod pane;
 mod prefs;
+mod projects;
 mod preview;
 mod quicklook;
 mod remote;
@@ -13,6 +17,7 @@ mod tags;
 mod theme;
 mod thumbs;
 mod undo;
+mod vaultui;
 mod window;
 
 use adw::prelude::*;
