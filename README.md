@@ -1,5 +1,9 @@
 `omarchy` `omarchy-plugin` `hyprland` `wayland` `linux` `file-manager` `gtk4` `libadwaita` `rust` `sftp` `scp` `quickshell` `tags` `thumbnails` `pdf-preview` `git` `gocryptfs` `encryption` `command-palette` `vte` `terminal` `arch-linux`
 
+<p align="center">
+  <img src="data/icons/io.github.whogotpwned.Omafile.svg" width="128" height="128" alt="omafile icon">
+</p>
+
 # omafile
 
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button-omarchy-shell-plugin)
@@ -104,6 +108,7 @@ package list or pulled in by one that is (Nautilus, Evince, pacman):
 | `omarchy-launch-editor` | Open in Editor | yes | `$VISUAL`/`$EDITOR` in a terminal |
 | `uwsm` | launching windows as session apps | yes | commands run directly |
 | Yaru icon themes | file icons matching the theme | yes | the Adwaita icons are used |
+| hicolor icon theme | omafile's own app icon (dock, launcher, About) | yes | `install.sh` and the PKGBUILD put the SVG into `hicolor/scalable/apps` |
 | Omarchy shell (`omarchy-shell`, Omarchy 4 and later) | the bar button plugin | yes on current Omarchy | older Waybar-based releases cannot load shell plugins; the file manager itself still works there |
 
 `install.sh` checks the build requirements before compiling and lists any

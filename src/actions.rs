@@ -1129,7 +1129,7 @@ where
 pub fn about(app: &adw::Application) {
     let dialog = adw::AboutDialog::builder()
         .application_name("Files")
-        .application_icon("system-file-manager")
+        .application_icon("io.github.whogotpwned.Omafile")
         .developer_name("omafile")
         .version(env!("CARGO_PKG_VERSION"))
         .website("https://github.com/whogotpwned/omafile")

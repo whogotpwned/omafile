@@ -42,9 +42,13 @@ fi
 echo ":: building omafile (release)"
 cargo build --release --manifest-path "$here/Cargo.toml"
 
-mkdir -p "$bin_dir" "$apps_dir" "$share_dir"
+icons_dir="$HOME/.local/share/icons/hicolor"
+mkdir -p "$bin_dir" "$apps_dir" "$share_dir" "$icons_dir/scalable/apps" "$icons_dir/symbolic/apps"
 install -m755 "$here/target/release/omafile" "$bin_dir/omafile"
 install -m644 "$here/data/$desktop" "$apps_dir/$desktop"
+install -m644 "$here/data/icons/io.github.whogotpwned.Omafile.svg" "$icons_dir/scalable/apps/"
+install -m644 "$here/data/icons/io.github.whogotpwned.Omafile-symbolic.svg" "$icons_dir/symbolic/apps/"
+command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t "$icons_dir" 2>/dev/null || true
 install -m644 "$here/data/hyprland-bindings.lua" "$share_dir/hyprland-bindings.lua"
 install -m644 "$here/data/hyprland-bindings.conf" "$share_dir/hyprland-bindings.conf"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" || true

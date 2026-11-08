@@ -1,6 +1,6 @@
 # Maintainer: whogotpwned
 pkgname=omafile
-pkgver=0.4.0
+pkgver=0.5.0
 pkgrel=1
 pkgdesc="Native GTK4/libadwaita file manager that follows the Omarchy theme"
 arch=('x86_64' 'aarch64')
@@ -43,6 +43,10 @@ package() {
   install -Dm755 target/release/omafile "$pkgdir/usr/bin/omafile"
   install -Dm644 data/io.github.whogotpwned.Omafile.desktop \
     "$pkgdir/usr/share/applications/io.github.whogotpwned.Omafile.desktop"
+  install -Dm644 data/icons/io.github.whogotpwned.Omafile.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.whogotpwned.Omafile.svg"
+  install -Dm644 data/icons/io.github.whogotpwned.Omafile-symbolic.svg \
+    "$pkgdir/usr/share/icons/hicolor/symbolic/apps/io.github.whogotpwned.Omafile-symbolic.svg"
   install -Dm644 data/hyprland-bindings.lua "$pkgdir/usr/share/omafile/hyprland-bindings.lua"
   install -Dm644 data/hyprland-bindings.conf "$pkgdir/usr/share/omafile/hyprland-bindings.conf"
   install -Dm644 manifest.json "$pkgdir/usr/share/omafile/plugin/manifest.json"

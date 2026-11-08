@@ -39,7 +39,7 @@ fn main() -> glib::ExitCode {
     let theme2 = theme.clone();
     let prefs2 = prefs.clone();
     app.connect_startup(move |app| {
-        gtk::Window::set_default_icon_name("system-file-manager");
+        gtk::Window::set_default_icon_name("io.github.whogotpwned.Omafile");
         *theme2.borrow_mut() = Some(theme::ThemeManager::install(prefs2.get("icon-theme")));
         let quit = gio::SimpleAction::new("quit", None);
         let app2 = app.clone();

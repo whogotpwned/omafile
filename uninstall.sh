@@ -15,6 +15,8 @@ purge=false
 [ "${1:-}" = "--purge" ] && purge=true
 
 rm -f "$bin_dir/omafile" "$apps_dir/$desktop"
+rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.whogotpwned.Omafile.svg" \
+      "$HOME/.local/share/icons/hicolor/symbolic/apps/io.github.whogotpwned.Omafile-symbolic.svg"
 rm -rf "$share_dir"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" || true
 echo ":: removed binary and desktop entry"
