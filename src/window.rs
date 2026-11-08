@@ -4,6 +4,7 @@ use crate::item::FileItem;
 use crate::pane::Pane;
 use crate::prefs::Prefs;
 use crate::preview::PreviewPane;
+use crate::quicklook::QuickLook;
 use crate::remote;
 use crate::completion::Completion;
 use crate::tags::TagIndex;
@@ -58,6 +59,7 @@ pub struct Window {
     pub path_stack: gtk::Stack,
     pub completion: Rc<Completion>,
     pub journal: Journal,
+    pub quicklook: Rc<QuickLook>,
     pub sidebar_list: gtk::ListBox,
     pub sidebar_menu: gtk::PopoverMenu,
     pub back_btn: gtk::Button,
@@ -210,6 +212,7 @@ impl Window {
         let toast = adw::ToastOverlay::new();
         toast.set_child(Some(&split));
         window.set_content(Some(&toast));
+        let quicklook = QuickLook::new(thumbs.clone(), &window);
 
         let this = Rc::new(Window {
             window,
@@ -227,6 +230,7 @@ impl Window {
             path_stack,
             completion,
             journal: Journal::default(),
+            quicklook,
             sidebar_list,
             sidebar_menu,
             back_btn,
@@ -947,6 +951,16 @@ impl Window {
         self.refresh_sidebar();
     }
 
+    /// Space: large preview of the selected file, like Quick Look.
+    pub fn toggle_quick_look(self: &Rc<Self>) {
+        if std::env::var_os("OMAFILE_TRACE").is_some() {
+            eprintln!("quick-look toggle, selected={}", self.selected_items().len());
+        }
+        if let Some(pane) = self.active_pane() {
+            self.quicklook.toggle(&pane, &self.window);
+        }
+    }
+
     // ----- undo / redo ----------------------------------------------------------------
 
     /// Record an operation and show a toast with an Undo button.
@@ -1141,6 +1155,7 @@ pub fn item_menu_model(single_dir: bool, archive: bool, in_trash: bool, multiple
     let menu = gio::Menu::new();
     let open = gio::Menu::new();
     open.append(Some("Open"), Some("win.open"));
+    open.append(Some("Quick Look"), Some("win.quick-look"));
     if single_dir {
         open.append(Some("Open in New Tab"), Some("win.open-new-tab"));
         open.append(Some("Open in Terminal"), Some("win.terminal-selected"));

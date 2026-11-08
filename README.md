@@ -23,6 +23,7 @@ the active Omarchy theme and follow along live when you switch themes.
 | ![tabs](docs/screenshot-tabs.png) | **Tabs and the preview pane** (`F3`). Images, PDFs (first page, page count), text files in monospace, folder item counts. |
 | ![split](docs/screenshot-split.png) | **Split view** (`F6`): two sets of tabs side by side, each with its own history. Drag files across, or between a local and a remote tab. The active side carries the accent border. |
 | ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb turns into a text field with the cursor at the end, so you fix one segment instead of retyping (`Ctrl+A` selects it all to start over). Folders complete as you type: `Tab` accepts, `↑`/`↓` pick, `Enter` opens. `~`, relative paths, `sftp://` and `user@host` all work. |
+| ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview of the selected file without opening it. PDFs show their first page and page count, images fill the window, text files show their content, folders their item count. `←`/`→` walk through the folder while it is open, `Space` or `Esc` closes. The preview pane (`F3`) is the persistent sidebar variant of the same thing; both can be toggled on and off at any time. |
 | ![undo](docs/screenshot-undo.png) | **Undo and redo** (`Ctrl+Z`, `Ctrl+Shift+Z`), borrowed from Nautilus and Finder: move, copy, paste, rename, batch rename, duplicate, new folder/file, trash and tag changes can all be taken back, every toast carries an Undo button, and trashed items are restored from the trash by their original path. |
 | ![search](docs/screenshot-search.png) | **Recursive search** (`Ctrl+Shift+F`) through the current folder and everything below. `fd` streams matches while it walks, results appear in batches as they arrive, the previous search is killed the moment you type on, and the final list is ranked (name starts with the query, name contains it, path contains it). On a 5,300-file tree a short query returns in about 40 ms, a query with 200+ hits in under 300 ms including the file information for every hit. A GIO walk takes over where `fd` cannot go, such as SFTP servers. |
 | ![batch rename](docs/screenshot-batch.png) | **Batch rename**: select several files and press `F2`. Pattern with `[name]`, `[ext]`, `[N]`, `[date]`, then find/replace, with a live preview and conflict detection. |
@@ -146,9 +147,10 @@ widget, drops it from the bar layout and deletes the checkout.
 | `Ctrl+F` / `Ctrl+Shift+F` | Filter this folder / search subfolders |
 | `Ctrl+T` `Ctrl+W` `Ctrl+Tab` | New, close, next tab |
 | `Ctrl+Enter` / middle click | Open folder in new tab |
-| `F3` `F6` `F9` | Preview pane, split view, sidebar |
+| `F3` `F6` `F9` | Toggle preview pane, split view, sidebar |
 | `Ctrl+1` `Ctrl+2` `Ctrl+H` | List, grid, hidden files |
 | `Enter` `Ctrl+Shift+O` `F4` | Open, open with…, terminal here |
+| `Space` | Quick Look (toggle); `←` `→` walk the folder inside it |
 | `Ctrl+Shift+N` `Ctrl+Alt+N` | New folder, new file |
 | `F2` | Rename, batch rename with several files selected |
 | `Ctrl+Alt+I` | Change icon |

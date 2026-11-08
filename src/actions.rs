@@ -146,6 +146,7 @@ impl Window {
             }
         }));
         simple("preferences", Box::new(|w| w.show_preferences()));
+        simple("quick-look", Box::new(|w| w.toggle_quick_look()));
         simple("undo", Box::new(|w| if !w.forward_to_editable("text.undo") { w.undo() }));
         simple("redo", Box::new(|w| if !w.forward_to_editable("text.redo") { w.redo() }));
         simple("copy-to", Box::new(|w| w.transfer_to(false)));
@@ -981,6 +982,7 @@ impl Window {
             ]),
             ("Files", &[
                 ("Enter", "Open"),
+                ("Space", "Quick Look: large preview, arrows walk the folder"),
                 ("Ctrl+Shift+O", "Open with…"),
                 ("F4", "Open terminal here"),
                 ("Ctrl+Shift+N  /  Ctrl+Alt+N", "New folder / file"),

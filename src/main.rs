@@ -6,6 +6,7 @@ mod ops;
 mod pane;
 mod prefs;
 mod preview;
+mod quicklook;
 mod remote;
 mod search;
 mod tags;

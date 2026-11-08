@@ -21,10 +21,21 @@ pub struct PreviewPane {
     hint: gtk::Label,
     thumbs: Rc<ThumbCache>,
     generation: Cell<u64>,
+    /// Pixel size requested for images and PDF pages.
+    image_size: i32,
 }
 
 impl PreviewPane {
     pub fn new(thumbs: Rc<ThumbCache>) -> Rc<Self> {
+        Self::build(thumbs, 1024)
+    }
+
+    /// Quick Look variant: larger renders, same widgets.
+    pub fn new_large(thumbs: Rc<ThumbCache>) -> Rc<Self> {
+        Self::build(thumbs, 1800)
+    }
+
+    fn build(thumbs: Rc<ThumbCache>, image_size: i32) -> Rc<Self> {
         let stack = gtk::Stack::new();
         stack.set_vexpand(true);
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -97,7 +108,7 @@ impl PreviewPane {
         root.append(&stack);
         root.append(&info);
 
-        Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0) })
+        Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size })
     }
 
     pub fn show(self: &Rc<Self>, item: Option<&FileItem>, count: usize) {
@@ -126,7 +137,7 @@ impl PreviewPane {
         }
         if ThumbCache::can_thumbnail(item) {
             self.stack.set_visible_child_name("image");
-            self.thumbs.assign(item, &self.picture, 1024);
+            self.thumbs.assign(item, &self.picture, self.image_size);
             if item.is_pdf() {
                 if let Some(path) = item.target_file().path() {
                     let this = Rc::downgrade(self);

@@ -366,6 +366,8 @@ impl Pane {
             // Keys that mean something else in text fields are handled on the views only.
             let this = Rc::downgrade(self);
             let keys = gtk::EventControllerKey::new();
+            // Capture phase: the focused row would otherwise swallow Space for selection.
+            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
             keys.connect_key_pressed(move |_, key, _, state| {
                 let Some(p) = this.upgrade() else { return glib::Propagation::Proceed };
                 let Some(w) = p.window.upgrade() else { return glib::Propagation::Proceed };
@@ -378,6 +380,10 @@ impl Pane {
                     gdk::Key::Delete if plain => {
                         let action = if state.contains(gdk::ModifierType::SHIFT_MASK) { "delete" } else { "trash" };
                         gio::prelude::ActionGroupExt::activate_action(&w.window, action, None);
+                        glib::Propagation::Stop
+                    }
+                    gdk::Key::space if plain && !state.contains(gdk::ModifierType::SHIFT_MASK) => {
+                        w.toggle_quick_look();
                         glib::Propagation::Stop
                     }
                     _ => glib::Propagation::Proceed,

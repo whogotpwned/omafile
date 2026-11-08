@@ -432,6 +432,9 @@ pub fn css(p: &Palette) -> String {
 toast {{
   border-radius: 999px;
 }}
+.omafile-quicklook .omafile-preview {{
+  background-color: @dialog_bg_color;
+}}
 .omafile-tag-dot {{
   min-width: 10px;
   min-height: 10px;
