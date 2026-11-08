@@ -402,7 +402,8 @@ impl Window {
         dialog.set_close_response("cancel");
         dialog.set_response_enabled("clear", !current.is_empty());
         let pane = self.active_pane();
-        let save: Rc<dyn Fn(&Rc<Window>, String)> = Rc::new(move |w: &Rc<Window>, text: String| match w.notes.set(&file, &text) {
+        type Save = Rc<dyn Fn(&Rc<Window>, String)>;
+        let save: Save = Rc::new(move |w: &Rc<Window>, text: String| match w.notes.set(&file, &text) {
             Ok(()) => {
                 w.toast(if text.trim().is_empty() { "Note removed" } else { "Note saved" });
                 if let Some(p) = &pane {

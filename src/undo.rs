@@ -10,6 +10,9 @@ use std::cell::RefCell;
 
 const LIMIT: usize = 50;
 
+/// (file, (old uid, old gid), (new uid, new gid))
+pub type OwnerChange = (gio::File, (u32, u32), (u32, u32));
+
 #[derive(Clone, Debug)]
 pub enum Op {
     /// Files moved or renamed: (from, to).
@@ -31,7 +34,7 @@ pub enum Op {
     /// Permission changes: (file, old mode, new mode).
     Mode(Vec<(gio::File, u32, u32)>),
     /// Ownership changes: (file, (old uid, old gid), (new uid, new gid)).
-    Owner(Vec<(gio::File, (u32, u32), (u32, u32))>),
+    Owner(Vec<OwnerChange>),
     /// Tag changes: (file, old, new).
     Tag(Vec<(gio::File, Option<String>, Option<String>)>),
 }
