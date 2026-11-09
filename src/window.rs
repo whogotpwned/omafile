@@ -84,6 +84,8 @@ pub struct Window {
     pub theme: Rc<ThemeManager>,
     pub tags: Rc<TagIndex>,
     pub notes: Rc<Notes>,
+    pub shelf: RefCell<Option<Rc<crate::shelf::Shelf>>>,
+    pub rule_monitors: RefCell<Vec<gio::FileMonitor>>,
     /// Mounts already warned about for low disk space.
     pub low_space_warned: RefCell<Vec<String>>,
     pub trash_summary: RefCell<Option<(usize, u64)>>,
@@ -242,6 +244,8 @@ impl Window {
 
         let this = Rc::new(Window {
             window,
+            shelf: RefCell::new(None),
+            rule_monitors: RefCell::new(Vec::new()),
             toast,
             split,
             preview_split,
@@ -304,6 +308,19 @@ impl Window {
         this.refresh_containers();
         this.refresh_trash_summary();
         crate::trashauto::run_auto_empty(&this);
+        crate::rules::watch(&this);
+        {
+            let weak = Rc::downgrade(&this);
+            glib::spawn_future_local(async move {
+                let Some(w) = weak.upgrade() else { return };
+                if let Some(summary) = crate::rules::run(&w, None).await {
+                    w.toast(&summary);
+                    for p in w.panes.borrow().clone() {
+                        p.reload();
+                    }
+                }
+            });
+        }
         {
             // Close button and Ctrl+Q (app.quit destroys the window without a
             // close-request) both end here; the first one wins.
@@ -1389,6 +1406,19 @@ impl Window {
         }
     }
 
+    /// The shelf window, created on first use.
+    pub fn shelf(self: &Rc<Self>) -> Rc<crate::shelf::Shelf> {
+        if let Some(s) = self.shelf.borrow().as_ref() {
+            return s.clone();
+        }
+        let s = crate::shelf::Shelf::new(self);
+        self.shelf.replace(Some(s.clone()));
+        s
+    }
+
+    /// Called by the shelf when its contents change.
+    pub fn shelf_changed(&self, _n: usize) {}
+
     pub fn queue_busy(&self) -> bool {
         self.progress.revealer.reveals_child()
     }
@@ -1605,6 +1635,10 @@ fn main_menu() -> gio::Menu {
     s2.append(Some(tr("Show Preview").as_str()), Some("win.show-preview"));
     s2.append(Some(tr("Split View").as_str()), Some("win.split-view"));
     s2.append(Some(tr("Show Folder Sizes").as_str()), Some("win.folder-sizes"));
+    s2.append(Some(tr("Disk Usage Map…").as_str()), Some("win.treemap"));
+    s2.append(Some(tr("Find Duplicates…").as_str()), Some("win.find-duplicates"));
+    s2.append(Some(tr("Folder Rules…").as_str()), Some("win.rules"));
+    s2.append(Some(tr("Shelf").as_str()), Some("win.shelf-show"));
     s2.append(Some(tr("Save Search as Smart Folder…").as_str()), Some("win.save-smart"));
     menu.append_section(None, &s2);
     let view = gio::Menu::new();
@@ -1705,6 +1739,8 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     if single_dir {
         open.append(Some(tr("Open in New Tab").as_str()), Some("win.open-new-tab"));
         open.append(Some(tr("Open in Terminal").as_str()), Some("win.terminal-selected"));
+        open.append(Some(tr("Disk Usage Map…").as_str()), Some("win.treemap-selected"));
+        open.append(Some(tr("Find Duplicates…").as_str()), Some("win.find-duplicates-selected"));
     } else {
         open.append(Some(tr("Open With…").as_str()), Some("win.open-with"));
     }
@@ -1819,6 +1855,7 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
         edit.append(Some(tr("Make Alias").as_str()), Some("win.make-alias"));
         edit.append(Some(&if multiple { tr("New Folder with Selection") } else { tr("New Folder with Item") }), Some("win.new-folder-with-selection"));
         edit.append(Some(&if multiple { tr("Batch Rename…") } else { tr("Rename…") }), Some("win.rename"));
+        edit.append(Some(tr("Add to Shelf").as_str()), Some("win.shelf-add"));
         edit.append(Some(tr("Compress…").as_str()), Some("win.compress"));
         if !multiple {
             edit.append(Some(tr("Change Icon…").as_str()), Some("win.change-icon"));

@@ -10,12 +10,12 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.11.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.0-f7768e)](CHANGELOG.md)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-47%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-55%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-pdf.png" alt="omafile in Tokyo Night: grid view with image and PDF thumbnails and the preview pane" width="900">
@@ -78,6 +78,10 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![thumbnails](docs/screenshot-thumbs.png) | **Previews in the icon**, like Finder and Explorer: text and source files show a page with their first lines, images and SVGs their picture, PDFs their first page, videos a frame (`ffmpegthumbnailer`, else `ffmpeg`), music its cover art, theme folders their `preview.png`. Everything decodes off the main thread and is cached; credential files are never rendered. |
 | ![play badge](docs/screenshot-play-badge.png) | **Play in place**: songs and videos carry a round play badge over their icon; one click starts them. Audio shows cover and transport controls in the preview pane, `Space` (Quick Look) plays right away, `←`/`→` walk the album. GStreamer decodes, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
 | ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview without opening the file. PDFs with page count and **page turning** (`↑`/`↓`, the wheel, or the ‹ › buttons under the page), images, text, folders with item count, git diffs for changed files. `←`/`→` move through the folder, `Space` or `Esc` closes. The **preview pane** (`F3`) is the persistent sidebar version of the same thing; there `Alt+PgUp` / `Alt+PgDn` turn the pages. |
+| ![shelf](docs/screenshot-shelf.png) | **Shelf** (`Ctrl+Shift+S`, context menu › *Add to Shelf*, or drop files onto it): a small floating window that collects files from any folder, like Dropover or Yoink. Drag them out together, or *Copy Here* / *Move Here* into the folder omafile shows. The shelf survives a restart (`~/.local/state/omafile/shelf`). `Ctrl+Shift+B` shows or hides it; a Hyprland `windowrule = float, title:^(Shelf)$` keeps it floating. |
+| ![treemap](docs/screenshot-treemap.png) | **Disk usage map** (`Ctrl+Alt+U`, menu, or the context menu of a folder): the folder as a squarified treemap, two levels deep, sizes in every box. Click zooms into a folder, `Backspace` goes up, double click opens it in omafile, right click offers *Open*, *Reveal* and *Move to Trash* (undoable). Scanning runs off the main thread and can be cancelled by closing the dialog. |
+| ![rules](docs/screenshot-rules.png) | **Folder rules** (`Ctrl+Alt+R`), Hazel style: for the folder on show, "name matches *.pdf, older than 7 days → move to ~/Documents/Invoices", "*.iso → red tag", "*.tmp → trash", "screenshots → sort into YYYY-MM folders", or "run a command with $FILE". Each rule has a switch; *Run Now* applies them at once. Rules run when omafile starts and a few seconds after something lands in a watched folder; moves, copies, tags and trashing go into the undo journal. Stored in `~/.config/omafile/rules`. |
+| ![duplicates](docs/screenshot-duplicates.png) | **Find duplicates** (`Ctrl+Alt+F`): files below the folder with the same size and SHA-256, grouped with the wasted space. One copy per group stays unticked (*keep the oldest / newest / shortest path*), *Move Ticked to Trash* removes the rest in one undoable step. Only size collisions are hashed, so large trees scan quickly. |
 | ![pdf pages](docs/screenshot-pdf-pages.png) | **Multi-page documents**: a `‹ 2 / 3 ›` turner appears under the page in the preview pane and in Quick Look. Pages render on demand through poppler at the pane's resolution, so flipping through a long PDF never blocks the list. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs** (`Ctrl+T`), **split view** (`F6`) with two sets of tabs and their own histories, drag files across sides or between a local and a remote tab. **Sessions** bring tabs, split, open terminal panels and window size back on the next start. |
 | ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb becomes a text field with the cursor at the end, folders complete as you type (`Tab` accepts, `↑`/`↓` pick, `Enter` opens). `~`, relative paths, `sftp://` and `user@host` all work. |
@@ -200,7 +204,9 @@ Panels move the way the rest of Omarchy moves instead of snapping: the terminal 
 | `Shift+F5` / `Shift+F6` | Copy / move to the other pane of the split |
 | `Delete` `Shift+Delete` `Ctrl+Shift+R` | Trash, delete permanently, restore |
 | `Ctrl+Z` `Ctrl+Shift+Z` | Undo, redo |
-| `Ctrl+Shift+U` | Folder sizes |
+| `Ctrl+Shift+U` / `Ctrl+Alt+U` | Folder sizes / disk usage map |
+| `Ctrl+Alt+F` `Ctrl+Alt+R` | Find duplicates, folder rules |
+| `Ctrl+Shift+S` / `Ctrl+Shift+B` | Add the selection to the shelf / show or hide the shelf |
 | `Ctrl+Alt+C` / `Ctrl+Alt+B` | Git commit / switch branch (click a badge to stage) |
 | `Ctrl+Alt+D` `Ctrl+Alt+M` `Ctrl+Alt+S` `Ctrl+Alt+V` | Compare, note, save smart folder, activate venv |
 | `Ctrl+Alt+1…7` / `Ctrl+Alt+0` `Ctrl+Alt+I` | Tags, remove tag, change icon |
@@ -423,6 +429,8 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
+| `~/.config/omafile/rules` | Folder rules: folder, glob, older-than-days, action, argument, enabled |
+| `~/.local/state/omafile/shelf` | Files currently on the shelf, one URI per line |
 | `~/.config/omafile/i18n/<code>.json` | Your own translations, override the built-in catalog key by key |
 | `~/.local/state/omafile/session` | Last window layout |
 | `~/.local/state/omafile/recent` | Recent folders for `--print-recent` |
@@ -442,11 +450,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.11.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.12.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 47 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 55 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

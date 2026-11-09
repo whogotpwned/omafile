@@ -49,6 +49,11 @@ mod undo;
 mod vaultui;
 mod views;
 mod vimkeys;
+mod shelf;
+mod treemap;
+mod rules;
+mod rulesui;
+mod dupes;
 mod window;
 
 use adw::prelude::*;

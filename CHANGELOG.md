@@ -2,6 +2,15 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.12.0 — 2026-11-09
+
+### Added
+- **Shelf** (`Ctrl+Shift+S`, `Ctrl+Shift+B`, context menu › Add to Shelf, or drop files onto it): a floating window that collects files from anywhere; drag them out together or *Copy Here* / *Move Here* into the folder on show. Persists across restarts.
+- **Disk usage map** (`Ctrl+Alt+U`): squarified treemap of the folder, click to zoom, double click to open, right click to reveal or trash. Scans off the main thread.
+- **Folder rules** (`Ctrl+Alt+R`): Hazel-style rules per folder (glob, age; move, copy, tag, trash, sort into YYYY-MM, run a command with `$FILE`), with switches and *Run Now*; run at start and when a watched folder changes; undoable.
+- **Find duplicates** (`Ctrl+Alt+F`): same size and SHA-256 below a folder, grouped, keep-policy, *Move Ticked to Trash* in one undoable step.
+- A *Tools* section in the bindings overlay, palette entries and menu items for all four.
+
 ## 0.11.0 — 2026-11-09
 
 ### Added

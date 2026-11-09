@@ -54,6 +54,11 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("up", "Parent Folder", "go-up-symbolic"),
     ("reload", "Reload", "view-refresh-symbolic"),
     ("folder-sizes", "Show Folder Sizes (disk usage)", "drive-harddisk-symbolic"),
+    ("treemap", "Disk Usage Map", "drive-harddisk-symbolic"),
+    ("find-duplicates", "Find Duplicates", "edit-copy-symbolic"),
+    ("rules", "Folder Rules", "emblem-system-symbolic"),
+    ("shelf-add", "Add to Shelf", "folder-open-symbolic"),
+    ("shelf-show", "Show Shelf", "folder-open-symbolic"),
     ("restore", "Restore from Trash", "edit-undo-symbolic"),
     ("git-commit", "Git: Commit…", "vcs-commit-symbolic"),
     ("git-branch", "Git: Switch Branch…", "vcs-branch-symbolic"),
@@ -134,6 +139,11 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.rename-dialog", &["<Shift>F2"]),
     ("win.restore", &["<Control><Shift>r"]),
     ("win.folder-sizes", &["<Control><Shift>u"]),
+    ("win.treemap", &["<Control><Alt>u"]),
+    ("win.find-duplicates", &["<Control><Alt>f"]),
+    ("win.rules", &["<Control><Alt>r"]),
+    ("win.shelf-add", &["<Control><Shift>s"]),
+    ("win.shelf-show", &["<Control><Shift>b"]),
     ("win.git-commit", &["<Control><Alt>c"]),
     ("win.git-branch", &["<Control><Alt>b"]),
     ("win.delete", &["<Shift>Delete"]),
@@ -266,6 +276,42 @@ impl Window {
         }));
         simple("rename-dialog", Box::new(|w| w.prompt_rename()));
         simple("folder-sizes", Box::new(move |w| { if let Some(p) = pane(w) { p.compute_folder_sizes() } }));
+        simple("treemap", Box::new(move |w| {
+            match pane(w).and_then(|p| p.cwd().path()) {
+                Some(path) => crate::treemap::Treemap::open(w, path),
+                None => w.toast_error(&tr("The disk usage map works on local folders")),
+            }
+        }));
+        simple("treemap-selected", Box::new(move |w| {
+            match pane(w).and_then(|p| p.selected_items().into_iter().next()).filter(|i| i.is_dir()).and_then(|i| i.target_file().path()) {
+                Some(path) => crate::treemap::Treemap::open(w, path),
+                None => w.toast_error(&tr("Select a folder first")),
+            }
+        }));
+        simple("find-duplicates", Box::new(move |w| {
+            match pane(w).and_then(|p| p.cwd().path()) {
+                Some(path) => crate::dupes::Finder::open(w, path),
+                None => w.toast_error(&tr("The duplicate finder works on local folders")),
+            }
+        }));
+        simple("find-duplicates-selected", Box::new(move |w| {
+            match pane(w).and_then(|p| p.selected_items().into_iter().next()).filter(|i| i.is_dir()).and_then(|i| i.target_file().path()) {
+                Some(path) => crate::dupes::Finder::open(w, path),
+                None => w.toast_error(&tr("Select a folder first")),
+            }
+        }));
+        simple("rules", Box::new(|w| w.open_rules()));
+        simple("shelf-add", Box::new(move |w| {
+            let files: Vec<gio::File> = pane(w).map(|p| p.selected_items().iter().map(|i| i.target_file()).collect()).unwrap_or_default();
+            if files.is_empty() {
+                w.toast_error(&tr("Select something to put on the shelf"));
+                return;
+            }
+            let shelf = w.shelf();
+            shelf.add(files);
+            shelf.present();
+        }));
+        simple("shelf-show", Box::new(|w| w.shelf().toggle()));
         simple("git-stage", Box::new(|w| w.git_stage_selected(false)));
         simple("git-unstage", Box::new(|w| w.git_stage_selected(true)));
         simple("git-discard", Box::new(|w| w.git_discard_selected()));
