@@ -10,11 +10,12 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
+[![Version](https://img.shields.io/badge/version-0.9.0-f7768e)](CHANGELOG.md)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-42%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-45%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-pdf.png" alt="omafile in Tokyo Night: grid view with image and PDF thumbnails and the preview pane" width="900">
@@ -36,7 +37,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 
 <div align="center">
 
-[Highlights](#highlights) · [Features](#features) · [Shortcuts](#keyboard-shortcuts) · [Command line](#command-line-and-launchers) · [Install](#install) · [Bar button](#bar-button) · [Omarchy](#how-it-follows-omarchy) · [Publishing](#publishing-as-an-omarchy-plugin) · [Development](#development)
+[Highlights](#highlights) · [Features](#features) · [Shortcuts](#keyboard-shortcuts) · [Command line](#command-line-and-launchers) · [Install](#install) · [Bar button](#bar-button) · [Omarchy](#how-it-follows-omarchy) · [Publishing](#publishing-as-an-omarchy-plugin) · [Development](#development) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -437,9 +438,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
+Current version: **0.9.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+
 ```sh
 cargo run -- ~/Projects
-cargo test          # 42 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 45 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

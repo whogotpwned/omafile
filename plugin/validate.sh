@@ -29,3 +29,10 @@ done
 link=$(find "$dir" -name .git -prune -o -name target -prune -o -type l -print -quit)
 [ -z "$link" ] || fail "symlinks are not allowed: $link"
 echo "valid: $id $(jq -r .version "$m")"
+# Version consistency: Cargo.toml, PKGBUILD, CHANGELOG.md and the README badge must agree with manifest.json.
+v=$(jq -r .version "$m")
+[ "$(sed -n 's/^version = "\(.*\)"/\1/p' "$dir/Cargo.toml" | head -1)" = "$v" ] || fail "Cargo.toml version differs from manifest ($v)"
+[ "$(sed -n 's/^pkgver=//p' "$dir/PKGBUILD")" = "$v" ] || fail "PKGBUILD pkgver differs from manifest ($v)"
+[ "$(sed -n 's/^## \([0-9][^ ]*\).*/\1/p' "$dir/CHANGELOG.md" | head -1)" = "$v" ] || fail "CHANGELOG.md newest entry is not $v"
+grep -q "version-$v-" "$dir/README.md" || fail "README version badge is not $v"
+echo "version: $v (Cargo.toml, PKGBUILD, CHANGELOG.md, README agree)"
