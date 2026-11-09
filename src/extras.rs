@@ -133,6 +133,9 @@ impl Window {
             }
         });
         views.add(&venv);
+        page.add(&views);
+
+        let keys = adw::PreferencesGroup::builder().title(tr("Keys")).build();
         let mac = adw::SwitchRow::builder().title(tr("macOS keys")).subtitle(tr("Enter renames, Ctrl+O or Ctrl+↓ opens, Ctrl+↑ goes up")).active(self.prefs.get_bool("mac-keys", false)).build();
         let this = Rc::downgrade(self);
         mac.connect_active_notify(move |row| {
@@ -140,8 +143,27 @@ impl Window {
                 w.prefs.set("mac-keys", Some(if row.is_active() { "true" } else { "false" }));
             }
         });
-        views.add(&mac);
-        page.add(&views);
+        keys.add(&mac);
+        let vim = adw::ExpanderRow::builder().title(tr("Vim keys")).subtitle(tr("h j k l move and open, gg / G jump, / filters, : opens the palette; only while the file list has focus")).show_enable_switch(true).enable_expansion(crate::vimkeys::enabled(&self.prefs)).build();
+        let this = Rc::downgrade(self);
+        vim.connect_enable_expansion_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("vim-keys", Some(if row.enables_expansion() { "true" } else { "false" }));
+            }
+        });
+        for (id, keys_text, what) in crate::vimkeys::GROUPS {
+            let row = adw::SwitchRow::builder().title(keys_text.to_string()).subtitle(tr(what)).active(!crate::vimkeys::disabled(&self.prefs).iter().any(|g| g == id)).build();
+            row.add_css_class("monospace");
+            let this = Rc::downgrade(self);
+            row.connect_active_notify(move |r| {
+                if let Some(w) = this.upgrade() {
+                    crate::vimkeys::set_group(&w.prefs, id, r.is_active());
+                }
+            });
+            vim.add_row(&row);
+        }
+        keys.add(&vim);
+        page.add(&keys);
 
         let trash = adw::PreferencesGroup::builder().title(tr("Trash")).build();
         let auto = adw::SpinRow::with_range(0.0, 365.0, 1.0);

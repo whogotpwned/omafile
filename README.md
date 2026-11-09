@@ -10,12 +10,12 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.9.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.0-f7768e)](CHANGELOG.md)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-45%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-47%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-pdf.png" alt="omafile in Tokyo Night: grid view with image and PDF thumbnails and the preview pane" width="900">
@@ -106,6 +106,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![open with](docs/screenshot-open-with.png) | **Always Open With…**: pick an application for this file type and make it the default, applications that claim the type first. **Make Alias** creates a symbolic link next to the original, **Show Original** jumps to a link's target. **New Folder with Selection** (`Ctrl+Shift+M`) wraps the selected items into a new folder. |
 | ![pdf tools](docs/screenshot-pdf-tools.png) | **PDF quick actions**: images → PDF, merge selected PDFs, split into pages, extract a page range (poppler, ImageMagick). **Video / Audio**: trim without re-encoding, make a GIF of the first ten seconds, extract the audio track, convert to MP3 / Opus / FLAC (ffmpeg). All outputs are new files, undo trashes them. |
 | ![spring](docs/screenshot-spring.png) | **Spring-loaded folders**: hover a folder (or a sidebar place) while dragging and it opens after a moment, so a drop can go several levels deep in one move. **macOS keys** in Preferences: `Enter` renames, `Ctrl+O` / `Ctrl+↓` opens, `Ctrl+↑` goes up. |
+| ![vim keys](docs/screenshot-vim-keys.png) | **Vim keys** (Preferences › Keys): `h` parent, `l` open, `j` / `k` move, `gg` / `G` first and last, `/` filter, `:` palette, `dd` trash, `yy` / `p` / `x` copy, paste, cut, `u` undo. One master switch, one switch per group, so `hjkl` can stay on while `dd` stays off. They act only while the file list has focus; text fields and the terminal never see them. |
 | ![templates](docs/screenshot-templates.png) | **New from Template**: `~/Templates` entries plus built-in scaffolds for a Rust crate, a Python project, an Omarchy shell plugin, a Hyprland snippet and a static web page. |
 
 ### Developer
@@ -203,6 +204,7 @@ Panels move the way the rest of Omarchy moves instead of snapping: the terminal 
 | `Ctrl+Alt+1…7` / `Ctrl+Alt+0` `Ctrl+Alt+I` | Tags, remove tag, change icon |
 | `Ctrl+D` `Ctrl+Shift+K` `Ctrl+I` | Bookmark, connect to server, properties |
 | `Ctrl+,` `F1` `Ctrl+Q` | Preferences, all bindings, quit |
+| `h` `j` `k` `l` `gg` `G` `/` `:` `dd` `yy` `p` `x` `u` | **Vim keys**, off by default: Preferences › Keys turns them on, group by group |
 
 Every shortcut is exercised by an automated run under Xvfb (`OMAFILE_TRACE=1` logs each action). Shortcuts that also mean something in a text field act on the text while a field has focus and on files otherwise.
 
@@ -415,7 +417,7 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 
 | File | Content |
 |---|---|
-| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `trash-auto-days`) |
+| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `trash-auto-days`) |
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
@@ -438,11 +440,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.9.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.10.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 45 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 47 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

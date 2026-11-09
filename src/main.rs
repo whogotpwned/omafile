@@ -48,6 +48,7 @@ mod trashauto;
 mod undo;
 mod vaultui;
 mod views;
+mod vimkeys;
 mod window;
 
 use adw::prelude::*;

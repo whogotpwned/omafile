@@ -2,6 +2,12 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.10.0 — 2026-11-09
+
+### Added
+- **Vim keys**, off by default: `h` parent, `l` open, `j` / `k` move, `gg` / `G` first and last, `/` filter, `:` palette, `dd` trash, `yy` / `p` / `x` copy, paste, cut, `u` undo. Preferences › Keys has a master switch and one switch per group (`vim-keys`, `vim-keys-off` in `omafile.conf`); the keys act only while the file list has focus. Listed in the bindings overlay.
+- Preferences: the macOS keys switch moved into the new *Keys* group.
+
 ## 0.9.0 — 2026-11-09
 
 ### Added

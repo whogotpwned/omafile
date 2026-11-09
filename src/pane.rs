@@ -514,6 +514,9 @@ impl Pane {
                 let Some(p) = this.upgrade() else { return glib::Propagation::Proceed };
                 let Some(w) = p.window.upgrade() else { return glib::Propagation::Proceed };
                 let plain = !state.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK);
+                if crate::vimkeys::handle(&p, &w, key, state) {
+                    return glib::Propagation::Stop;
+                }
                 match key {
                     gdk::Key::Return | gdk::Key::KP_Enter if plain && !state.contains(gdk::ModifierType::SHIFT_MASK) && w.prefs.get_bool("mac-keys", false) => {
                         // macOS habit: Enter renames, Ctrl+O / Ctrl+↓ opens.
