@@ -10,12 +10,12 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.14.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.15.0-f7768e)](CHANGELOG.md)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-60%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-66%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-pdf.png" alt="omafile in Tokyo Night: grid view with image and PDF thumbnails and the preview pane" width="900">
@@ -84,6 +84,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![treemap](docs/screenshot-treemap.png) | **Disk usage map** (`Ctrl+Alt+U`, menu, or the context menu of a folder): the folder as a squarified treemap, two levels deep, sizes in every box. Click zooms into a folder, `Backspace` goes up, double click opens it in omafile, right click offers *Open*, *Reveal* and *Move to Trash* (undoable). Scanning runs off the main thread and can be cancelled by closing the dialog. |
 | ![rules](docs/screenshot-rules.png) | **Folder rules** (`Ctrl+Alt+R`), Hazel style: for the folder on show, "name matches *.pdf, older than 7 days → move to ~/Documents/Invoices", "*.iso → red tag", "*.tmp → trash", "screenshots → sort into YYYY-MM folders", or "run a command with $FILE". Each rule has a switch; *Run Now* applies them at once. Rules run when omafile starts and a few seconds after something lands in a watched folder; moves, copies, tags and trashing go into the undo journal. Stored in `~/.config/omafile/rules`. |
 | ![duplicates](docs/screenshot-duplicates.png) | **Find duplicates** (`Ctrl+Alt+F`): files below the folder with the same size and SHA-256, grouped with the wasted space. One copy per group stays unticked (*keep the oldest / newest / shortest path*), *Move Ticked to Trash* removes the rest in one undoable step. Only size collisions are hashed, so large trees scan quickly. |
+| ![nearby](docs/screenshot-nearby.png) | **iPhone & iPad, three ways.** **Nearby** (`Ctrl+Alt+P`): omafile speaks the LocalSend protocol, so with the free LocalSend app on the phone (Settings › Encryption off) the iPhone appears under *iPhone & iPad* in the sidebar; drop files on it to send them, and files sent from the phone arrive after an *Accept* prompt in `~/Downloads` (or any folder you pick), with a *Show* button on the toast. **USB**: with `gvfs-afc` the phone mounts like a drive; *Import Photos* copies the camera roll into `Pictures/iPhone/YYYY-MM`, converts HEIC to JPEG (libheif or ImageMagick), skips what was imported before, undoable; also `omafile --import-photos` and the bar menu. **No app at all**: *Share on Local Network* now serves a phone-friendly page with the selection to download **and** a drop zone / picker that sends photos straight into the folder on show; scan the QR code with the camera. |
 | ![ebooks](docs/screenshot-ebook.png) | **eBooks**: EPUB, comic archives (CBZ / CBR) and FictionBook show their **cover** in list, grid and preview, the preview and Properties list title, author, series, publisher, year, language, ISBN and chapter count, and the page turner pages from the cover into the **chapters** (text) or comic pages (`↑` `↓` in Quick Look). Context menu › *eBook*: *Open in Reader* (foliate, Calibre viewer, KOReader, Okular), *Rename from Metadata* (`Author - Title (Series 1).epub`, undoable), *Send to eReader* (Kindle `documents/`, Kobo, Tolino, PocketBook… when plugged in) and *Convert to* EPUB / MOBI / AZW3 / PDF with Calibre's `ebook-convert`. Covers go through the shared thumbnail cache; everything is read with `bsdtar`, no Calibre needed for reading. |
 | ![pdf pages](docs/screenshot-pdf-pages.png) | **Multi-page documents**: a `‹ 2 / 3 ›` turner appears under the page in the preview pane and in Quick Look. Pages render on demand through poppler at the pane's resolution, so flipping through a long PDF never blocks the list. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs** (`Ctrl+T`), **split view** (`F6`) with two sets of tabs and their own histories, drag files across sides or between a local and a remote tab. **Sessions** bring tabs, split, open terminal panels and window size back on the next start. |
@@ -210,6 +211,7 @@ Panels move the way the rest of Omarchy moves instead of snapping: the terminal 
 | `Ctrl+Shift+U` / `Ctrl+Alt+U` | Folder sizes / disk usage map |
 | `Ctrl+Alt+F` `Ctrl+Alt+R` | Find duplicates, folder rules |
 | `Ctrl+Shift+S` / `Ctrl+Shift+B` | Add the selection to the shelf / show or hide the shelf |
+| `Ctrl+Alt+P` | Nearby devices (LocalSend): send the selection to a phone, receive settings |
 | `Ctrl+Alt+C` / `Ctrl+Alt+B` | Git commit / switch branch (click a badge to stage) |
 | `Ctrl+Alt+D` `Ctrl+Alt+M` `Ctrl+Alt+S` `Ctrl+Alt+V` | Compare, note, save smart folder, activate venv |
 | `Ctrl+Alt+1…7` / `Ctrl+Alt+0` `Ctrl+Alt+I` | Tags, remove tag, change icon |
@@ -303,6 +305,8 @@ omafile is built for a stock Omarchy install and uses what is already there. Onl
 | `ripgrep` | full-text search | yes | the content toggle is hidden |
 | `bat` | syntax highlighting in previews | yes | code shows as plain text |
 | `jq` | JSON formatting in previews, `plugin/validate.sh` | yes | JSON shows as plain text |
+| `gvfs-afc`, `libimobiledevice` | iPhone / iPad over USB (sidebar entry, photo import) | no | only wireless via LocalSend or the share page |
+| `libheif` (`heif-convert`) or ImageMagick | HEIC → JPEG when importing photos | ImageMagick yes | HEIC files are imported as they are |
 | `poppler` (`pdfunite`, `pdfseparate`) | PDF merge / split / extract | yes | the PDF menu reports it |
 | `util-linux` (`script`) | master key display for new vaults | yes (base) | vault created without the key shown |
 | `imagemagick` | Image › rotate, convert, resize; EXIF dates | yes | the Image menu says so |
@@ -428,7 +432,7 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 
 | File | Content |
 |---|---|
-| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `trash-auto-days`) |
+| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `nearby-enabled`, `nearby-folder`, `nearby-accept-all`, `iphone-folder`, `iphone-convert-heic`, `trash-auto-days`) |
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
@@ -436,10 +440,11 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 | `~/.config/omafile/views` | Remembered view per folder: uri, view, sort, order, group, grid |
 | `~/.cache/thumbnails/` | freedesktop thumbnail cache, shared with other apps |
 | `~/.local/state/omafile/shelf` | Files currently on the shelf, one URI per line |
+| `~/.local/state/omafile/iphone-imported` | Photos already imported from a device (name and size) |
 | `~/.config/omafile/i18n/<code>.json` | Your own translations, override the built-in catalog key by key |
 | `~/.local/state/omafile/session` | Last window layout |
 | `~/.local/state/omafile/recent` | Recent folders for `--print-recent` |
-| `~/.local/state/omafile/status` | `busy` / `vaults` for the bar widget |
+| `~/.local/state/omafile/status` | `busy` / `vaults` / `iphone` / `nearby` for the bar widget |
 | `.omafile.toml` in a project | Team actions for the *Project* menu and the palette |
 
 ```toml
@@ -455,11 +460,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.14.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.15.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 60 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 66 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

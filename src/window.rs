@@ -40,6 +40,8 @@ pub enum PlaceKind {
     Mount(gio::Mount),
     Tag(String),
     Smart(crate::smart::SmartFolder),
+    /// A LocalSend device (fingerprint).
+    Nearby(String),
 }
 
 pub struct WinState {
@@ -88,6 +90,7 @@ pub struct Window {
     pub tags: Rc<TagIndex>,
     pub notes: Rc<Notes>,
     pub shelf: RefCell<Option<Rc<crate::shelf::Shelf>>>,
+    pub nearby: RefCell<Option<Rc<crate::nearby::Nearby>>>,
     /// Recently listed folders: uri → (when, items). Prefetched neighbours and
     /// remote folders show instantly from here while the fresh listing streams in.
     pub dir_cache: RefCell<std::collections::HashMap<String, (std::time::Instant, Vec<FileItem>)>>,
@@ -259,6 +262,7 @@ impl Window {
         let this = Rc::new(Window {
             window,
             shelf: RefCell::new(None),
+            nearby: RefCell::new(None),
             dir_cache: RefCell::new(std::collections::HashMap::new()),
             last_toast: RefCell::new(None),
             retry: RefCell::new(None),
@@ -326,6 +330,15 @@ impl Window {
         this.refresh_trash_summary();
         crate::trashauto::run_auto_empty(&this);
         crate::rules::watch(&this);
+        let _ = this.nearby();
+        if std::env::args().any(|a| a == "--import-photos") {
+            let weak = Rc::downgrade(&this);
+            glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
+                if let Some(w) = weak.upgrade() {
+                    w.import_photos();
+                }
+            });
+        }
         for tab_bar in &tab_bars {
             let weak = Rc::downgrade(&this);
             tab_bar.connect_extra_drag_drop(move |_, page, value| {
@@ -967,6 +980,7 @@ impl Window {
                             p.show_smart(&spec);
                         }
                     }
+                    PlaceKind::Nearby(_) => w.open_nearby(),
                     _ => w.navigate(file),
                 }
             }
@@ -1017,7 +1031,7 @@ impl Window {
                             spring2.borrow_mut().take();
                             let Some(w) = this2.upgrade() else { return };
                             let file = match w.state.borrow().places.get(i as usize) {
-                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_)) => Some(file.clone()),
+                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_)) => Some(file.clone()),
                                 _ => None,
                             };
                             if let Some(f) = file {
@@ -1044,8 +1058,16 @@ impl Window {
             let Some(w) = this.upgrade() else { return false };
             let Ok(list) = value.get::<gdk::FileList>() else { return false };
             let Some(row) = w.sidebar_list.row_at_y(y as i32) else { return false };
+            let nearby = match w.state.borrow().places.get(row.index() as usize) {
+                Some(Place::Entry { kind: PlaceKind::Nearby(fp), .. }) => Some(fp.clone()),
+                _ => None,
+            };
+            if let Some(fp) = nearby {
+                w.nearby_send(&fp, list.files());
+                return true;
+            }
             let dest = match w.state.borrow().places.get(row.index() as usize) {
-                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_)) => file.clone(),
+                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_)) => file.clone(),
                 _ => return false,
             };
             if let Some(p) = w.active_pane() {
@@ -1146,6 +1168,20 @@ impl Window {
                 });
             }
         }
+        let phones = crate::iphone::devices();
+        let peers = self.nearby_peers();
+        if !phones.is_empty() || !peers.is_empty() {
+            places.push(Place::Header(tr("iPhone & iPad")));
+            for (name, root) in &phones {
+                places.push(Place::Entry { name: name.clone(), icon: "phone-symbolic".into(), file: root.clone(), kind: PlaceKind::Builtin });
+            }
+            if !phones.is_empty() {
+                places.push(Place::Action { name: tr("Import Photos"), icon: "camera-photo-symbolic".into(), action: "import-photos" });
+            }
+            for peer in &peers {
+                places.push(Place::Entry { name: peer.alias.clone(), icon: peer.icon().into(), file: gio::File::for_uri(&format!("localsend://{}", peer.fingerprint)), kind: PlaceKind::Nearby(peer.fingerprint.clone()) });
+            }
+        }
         places.push(Place::Header(tr("Remote")));
         for host in remote::ssh_hosts() {
             places.push(Place::Entry {
@@ -1169,6 +1205,9 @@ impl Window {
                 .ok()
                 .and_then(|i| i.names().first().map(|n| n.to_string()))
                 .unwrap_or_else(|| "drive-removable-media-symbolic".into());
+            if phones.iter().any(|(_, root)| root.equal(&mount.root())) {
+                continue;
+            }
             places.push(Place::Entry { name: mount.name().to_string(), icon, file: mount.default_location(), kind: PlaceKind::Mount(mount) });
         }
 
@@ -1361,6 +1400,7 @@ impl Window {
                     PlaceKind::Tag(_) => continue,
                     PlaceKind::Smart(_) => (tr("Smart folder"), PaletteTarget::Action(format!("smart-open::{name}"))),
                     PlaceKind::Bookmark => (tr("Bookmark"), PaletteTarget::Folder(file.clone())),
+                    PlaceKind::Nearby(_) => continue,
                     PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
                 };
@@ -1480,6 +1520,17 @@ impl Window {
 
     /// Called by the shelf when its contents change.
     pub fn shelf_changed(&self, _n: usize) {}
+
+    pub fn show_import_progress(&self, text: &str, fraction: f64) {
+        self.progress.set_text_and_fraction(text, fraction);
+        self.progress.revealer.set_reveal_child(true);
+    }
+
+    pub fn hide_import_progress(&self) {
+        if !self.queue.running.get() {
+            self.progress.revealer.set_reveal_child(false);
+        }
+    }
 
     pub fn queue_busy(&self) -> bool {
         self.progress.revealer.reveals_child()
@@ -1777,6 +1828,8 @@ fn main_menu() -> gio::Menu {
     s2.append(Some(tr("Find Duplicates…").as_str()), Some("win.find-duplicates"));
     s2.append(Some(tr("Folder Rules…").as_str()), Some("win.rules"));
     s2.append(Some(tr("Shelf").as_str()), Some("win.shelf-show"));
+    s2.append(Some(tr("Nearby Devices…").as_str()), Some("win.nearby"));
+    s2.append(Some(tr("Import Photos from iPhone").as_str()), Some("win.import-photos"));
     s2.append(Some(tr("Save Search as Smart Folder…").as_str()), Some("win.save-smart"));
     menu.append_section(None, &s2);
     let view = gio::Menu::new();
@@ -1829,7 +1882,7 @@ impl VaultState {
 }
 
 /// What the selection looks like, for building the context menu.
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 pub struct MenuFlags {
     pub single_dir: bool,
     pub archive: bool,
@@ -1848,6 +1901,8 @@ pub struct MenuFlags {
     pub pdfs: usize,
     /// Every selected item is a local eBook.
     pub ebooks: usize,
+    /// LocalSend peers that can receive: (alias, fingerprint).
+    pub nearby: Vec<(String, String)>,
     /// A single local video / audio file.
     pub video: bool,
     pub audio: bool,
@@ -1963,6 +2018,13 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
             e.append_submenu(Some(tr("Convert to").as_str()), &c);
         }
         open.append_submenu(Some(tr("eBook").as_str()), &e);
+    }
+    if f.local && !in_trash && !f.nearby.is_empty() {
+        let n = gio::Menu::new();
+        for (alias, fp) in &f.nearby {
+            n.append(Some(alias), Some(&format!("win.nearby-send::{fp}")));
+        }
+        open.append_submenu(Some(tr("Send to Nearby Device").as_str()), &n);
     }
     if f.video && !in_trash {
         let v = gio::Menu::new();

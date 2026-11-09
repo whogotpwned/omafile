@@ -45,6 +45,11 @@ pub struct Progress {
 }
 
 impl Progress {
+    pub fn set_text_and_fraction(&self, text: &str, fraction: f64) {
+        self.label.set_text(text);
+        self.bar.set_fraction(fraction.clamp(0.0, 1.0));
+    }
+
     pub fn cancel_button(&self) -> &gtk::Button {
         &self.cancel
     }
@@ -72,7 +77,7 @@ impl Progress {
 #[derive(Default)]
 pub struct Queue {
     pending: RefCell<VecDeque<Request>>,
-    running: Cell<bool>,
+    pub running: Cell<bool>,
     cancel: RefCell<Option<gio::Cancellable>>,
 }
 

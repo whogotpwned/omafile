@@ -173,6 +173,34 @@ impl Window {
         keys.add(&vim);
         page.add(&keys);
 
+        let phone = adw::PreferencesGroup::builder().title(tr("iPhone & Nearby")).build();
+        let nearby = adw::SwitchRow::builder().title(tr("Nearby devices (LocalSend)")).subtitle(tr("Be visible on this network and receive files from phones and computers running LocalSend; takes effect on the next start")).active(self.prefs.get_bool("nearby-enabled", true)).build();
+        let this = Rc::downgrade(self);
+        nearby.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("nearby-enabled", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        phone.add(&nearby);
+        let heic = adw::SwitchRow::builder().title(tr("Convert HEIC photos to JPEG on import")).subtitle(tr("Needs heif-convert (libheif) or ImageMagick; originals are not kept")).active(self.prefs.get_bool("iphone-convert-heic", true)).build();
+        let this = Rc::downgrade(self);
+        heic.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("iphone-convert-heic", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        phone.add(&heic);
+        let import_dir = adw::EntryRow::builder().title(tr("Import photos into")).text(self.prefs.get("iphone-folder").unwrap_or_else(|| "~/Pictures/iPhone".into())).build();
+        let this = Rc::downgrade(self);
+        import_dir.connect_changed(move |row| {
+            if let Some(w) = this.upgrade() {
+                let t = row.text().trim().to_string();
+                w.prefs.set("iphone-folder", if t.is_empty() { None } else { Some(&t) });
+            }
+        });
+        phone.add(&import_dir);
+        page.add(&phone);
+
         let trash = adw::PreferencesGroup::builder().title(tr("Trash")).build();
         let auto = adw::SpinRow::with_range(0.0, 365.0, 1.0);
         auto.set_title(&tr("Delete trashed items after … days"));

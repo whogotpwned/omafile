@@ -1,5 +1,6 @@
 //! Status file for the bar widget: `~/.local/state/omafile/status`
-//! (`busy=0|1`, `vaults=<count of unlocked gocryptfs mounts>`).
+//! (`busy=0|1`, `vaults=<unlocked gocryptfs mounts>`, `iphone=<connected Apple devices>`,
+//! `nearby=<LocalSend devices on the LAN>`).
 
 use crate::window::Window;
 use gtk::glib;
@@ -29,11 +30,15 @@ pub fn unlocked_vaults() -> Vec<std::path::PathBuf> {
 pub fn write(window: &Window) {
     let busy = window.queue_busy();
     let vaults = unlocked_vaults().len();
+    let iphone = crate::iphone::devices().len();
+    let peers = window.nearby_peers();
+    let nearby = peers.len();
+    let iphone = iphone + peers.iter().filter(|p| p.is_mobile() && p.is_apple()).count();
     let p = path();
     if let Some(parent) = p.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(p, format!("busy={}\nvaults={vaults}\n", busy as u8));
+    let _ = std::fs::write(p, format!("busy={}\nvaults={vaults}\niphone={iphone}\nnearby={nearby}\n", busy as u8));
 }
 
 /// `omafile --lock-all`: unmount every gocryptfs mount of this user.

@@ -59,6 +59,8 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("rules", "Folder Rules", "emblem-system-symbolic"),
     ("shelf-add", "Add to Shelf", "folder-open-symbolic"),
     ("shelf-show", "Show Shelf", "folder-open-symbolic"),
+    ("nearby", "Nearby Devices (LocalSend)", "phone-symbolic"),
+    ("import-photos", "Import Photos from iPhone", "camera-photo-symbolic"),
     ("ebook-rename", "eBook: Rename from Metadata", "x-office-address-book-symbolic"),
     ("ebook-send", "eBook: Send to eReader", "send-to-symbolic"),
     ("ebook-reader", "eBook: Open in Reader", "x-office-address-book-symbolic"),
@@ -147,6 +149,7 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.rules", &["<Control><Alt>r"]),
     ("win.shelf-add", &["<Control><Shift>s"]),
     ("win.shelf-show", &["<Control><Shift>b"]),
+    ("win.nearby", &["<Control><Alt>p"]),
     ("win.git-commit", &["<Control><Alt>c"]),
     ("win.git-branch", &["<Control><Alt>b"]),
     ("win.delete", &["<Shift>Delete"]),
@@ -327,6 +330,20 @@ impl Window {
                 }
             });
             self.window.add_action(&convert);
+        }
+        simple("nearby", Box::new(|w| w.open_nearby()));
+        simple("nearby-show-received", Box::new(|w| w.nearby_show_received()));
+        simple("import-photos", Box::new(|w| w.import_photos()));
+        {
+            let send = gio::SimpleAction::new("nearby-send", Some(glib::VariantTy::STRING));
+            let this = Rc::downgrade(self);
+            send.connect_activate(move |_, param| {
+                if let (Some(w), Some(fp)) = (this.upgrade(), param.and_then(|p| p.get::<String>())) {
+                    let files: Vec<gio::File> = w.selected_items().iter().map(|i| i.target_file()).collect();
+                    w.nearby_send(&fp, files);
+                }
+            });
+            self.window.add_action(&send);
         }
         simple("retry", Box::new(|w| {
             let retry = w.retry.borrow_mut().take();

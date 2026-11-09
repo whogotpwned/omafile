@@ -2,6 +2,14 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.15.0 — 2026-11-09
+
+### Added
+- **Nearby devices (LocalSend protocol)**: phones and computers running LocalSend appear under *iPhone & iPad* in the sidebar; drop files on one to send, receive with an Accept prompt into a chosen folder (`Ctrl+Alt+P` opens the devices dialog). Plain HTTP, discovery by UDP multicast, no external crates.
+- **iPhone over USB**: devices mounted through gvfs-afc get their own sidebar section and *Import Photos* (camera roll → `Pictures/iPhone/YYYY-MM`, HEIC → JPEG, skips earlier imports, undoable); `omafile --import-photos`; bar-widget rows for a connected phone and nearby devices.
+- **Share page with uploads**: *Share on Local Network* is now served by omafile itself with a phone-friendly page: download the selection, or drop / pick files to send them into the folder on show.
+- Preferences › iPhone & Nearby: nearby on/off, HEIC conversion, import folder.
+
 ## 0.14.0 — 2026-11-09
 
 ### Added

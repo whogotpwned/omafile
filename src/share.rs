@@ -1,5 +1,6 @@
 //! Share: copy an scp command, or serve the selection on the local network
-//! for a moment (python http.server) with a QR code (qrencode).
+//! for a moment with a QR code (qrencode). The page also takes uploads, so a
+//! phone can send photos back into the folder on show.
 
 use crate::i18n::tr;
 use crate::window::Window;
@@ -9,16 +10,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub struct LanShare {
-    process: gio::Subprocess,
-    dir: PathBuf,
+    /// Dropping it stops the server.
+    _server: crate::httpd::Server,
     pub url: String,
-}
-
-impl Drop for LanShare {
-    fn drop(&mut self) {
-        self.process.force_exit();
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
+    /// Files the phone uploaded, reported to the UI.
+    pub uploads: std::sync::mpsc::Receiver<PathBuf>,
 }
 
 /// The address other machines on the LAN would use (no packet is sent).
@@ -33,10 +29,6 @@ pub fn lan_ip() -> Option<String> {
     }
 }
 
-fn free_port() -> Option<u16> {
-    std::net::TcpListener::bind("0.0.0.0:0").ok()?.local_addr().ok().map(|a| a.port())
-}
-
 pub fn scp_command(paths: &[PathBuf]) -> String {
     let user = glib::user_name().to_string_lossy().to_string();
     let host = lan_ip().unwrap_or_else(|| glib::host_name().to_string());
@@ -49,30 +41,123 @@ pub fn scp_command(paths: &[PathBuf]) -> String {
     format!("scp {}{} .", if recursive { "-r " } else { "" }, sources.join(" "))
 }
 
-/// Serve `paths` from a scratch directory of symlinks so siblings stay private.
-pub fn start(paths: &[PathBuf]) -> Result<LanShare, String> {
-    if glib::find_program_in_path("python3").is_none() {
-        return Err(tr("python3 is not installed"));
+/// Colours for the share page, from the Omarchy palette.
+#[derive(Clone)]
+pub struct PageTheme {
+    pub bg: String,
+    pub fg: String,
+    pub accent: String,
+    pub card: String,
+    pub dim: String,
+}
+
+fn escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// The page a phone sees: the shared files to download, and a drop zone / picker to send files back.
+pub fn page_html(files: &[PathBuf], upload_dir: &std::path::Path, theme: &PageTheme, strings: &[(&str, String)]) -> String {
+    let t = |k: &str| strings.iter().find(|(key, _)| *key == k).map(|(_, v)| v.clone()).unwrap_or_else(|| k.to_string());
+    let mut rows = String::new();
+    for (i, p) in files.iter().enumerate() {
+        let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let size = std::fs::metadata(p).map(|m| if m.is_dir() { t("folder") } else { crate::ops::human_size(m.len()) }).unwrap_or_default();
+        let href = format!("/dl/{i}/{}", crate::httpd::percent_encode(&name));
+        rows.push_str(&format!("<a class=\"file\" href=\"{href}\" download><span class=\"name\">{}</span><span class=\"size\">{}</span><span class=\"get\">↓</span></a>", escape(&name), escape(&size)));
     }
+    let dest = escape(&crate::rules::shorten(upload_dir));
+    format!(r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>omafile</title>
+<style>
+:root{{color-scheme:dark light}}
+body{{margin:0;font:16px/1.4 -apple-system,system-ui,sans-serif;background:{bg};color:{fg};padding:max(16px,env(safe-area-inset-top)) 16px 32px}}
+h1{{font-size:20px;margin:8px 0 4px;display:flex;align-items:center;gap:10px}}
+h1 small{{color:{dim};font-weight:400;font-size:13px}}
+h2{{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:{dim};margin:26px 0 10px}}
+.card{{background:{card};border-radius:16px;overflow:hidden}}
+.file{{display:flex;align-items:center;gap:12px;padding:14px 16px;text-decoration:none;color:{fg};border-top:1px solid rgba(127,127,127,.15)}}
+.file:first-child{{border-top:0}}
+.name{{flex:1;word-break:break-all}} .size{{color:{dim};font-size:13px}} .get{{color:{accent};font-weight:700}}
+.drop{{border:2px dashed {accent};border-radius:16px;padding:28px 16px;text-align:center;color:{dim}}}
+.drop.hot{{background:rgba(127,127,127,.12)}}
+button,.btn{{display:inline-block;background:{accent};color:{bg};border:0;border-radius:999px;padding:12px 22px;font:600 16px system-ui;margin-top:12px;cursor:pointer}}
+input[type=file]{{display:none}}
+#status{{margin-top:12px;color:{dim};font-size:14px;white-space:pre-line}}
+.done{{color:{accent}}}
+</style></head><body>
+<h1>omafile <small>{host}</small></h1>
+<h2>{download}</h2>
+<div class="card">{rows}</div>
+<h2>{upload}</h2>
+<div class="drop" id="drop">
+<div>{drop_hint}</div>
+<label class="btn" for="pick">{choose}</label>
+<input id="pick" type="file" multiple>
+<div id="status">{into} {dest}</div>
+</div>
+<script>
+const drop=document.getElementById('drop'),status=document.getElementById('status'),pick=document.getElementById('pick');
+async function send(files){{
+  let n=0;for(const f of files){{
+    status.textContent='{sending} '+f.name+' ('+(++n)+'/'+files.length+')';
+    const fd=new FormData();fd.append('files',f,f.name);
+    const r=await fetch('/upload',{{method:'POST',body:fd}});
+    if(!r.ok){{status.textContent='{failed} '+f.name;return;}}
+  }}
+  status.textContent='✓ '+n+' {sent}';status.className='done';
+}}
+pick.onchange=()=>send([...pick.files]);
+['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{{ev.preventDefault();drop.classList.add('hot')}}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{{ev.preventDefault();drop.classList.remove('hot')}}));
+drop.addEventListener('drop',ev=>send([...ev.dataTransfer.files]));
+</script></body></html>"#,
+        bg = theme.bg, fg = theme.fg, accent = theme.accent, card = theme.card, dim = theme.dim,
+        host = escape(&glib::host_name()), download = escape(&t("Download")), upload = escape(&t("Send to this computer")),
+        drop_hint = escape(&t("Drop files here or pick them")), choose = escape(&t("Choose files")), into = escape(&t("They land in")), dest = dest,
+        sending = escape(&t("Sending")), failed = escape(&t("Failed:")), sent = escape(&t("files sent")))
+}
+
+/// Serve `paths` on the LAN and accept uploads into `upload_dir` until the `LanShare` is dropped.
+pub fn start(paths: &[PathBuf], upload_dir: PathBuf, theme: PageTheme, strings: Vec<(&'static str, String)>) -> Result<LanShare, String> {
     let ip = lan_ip().ok_or_else(|| tr("No network address found: not connected to a LAN?"))?;
-    let port = free_port().ok_or_else(|| tr("No free port"))?;
-    let dir = glib::user_runtime_dir().join(format!("omafile-share-{port}"));
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    for p in paths {
-        let Some(name) = p.file_name() else { continue };
-        let _ = std::os::unix::fs::symlink(p, dir.join(name));
-    }
-    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::STDOUT_SILENCE | gio::SubprocessFlags::STDERR_SILENCE);
-    launcher.set_cwd(&dir);
-    let port_s = port.to_string();
-    let argv = ["python3", "-m", "http.server", &port_s, "--bind", "0.0.0.0"];
-    let args: Vec<&std::ffi::OsStr> = argv.iter().map(std::ffi::OsStr::new).collect();
-    let process = launcher.spawn(&args).map_err(|e| e.message().to_string())?;
-    let url = match paths {
-        [one] if one.is_file() => format!("http://{ip}:{port}/{}", glib::uri_escape_string(one.file_name().unwrap().to_string_lossy().as_ref(), None::<&str>, false)),
-        _ => format!("http://{ip}:{port}/"),
-    };
-    Ok(LanShare { process, dir, url })
+    let files: Vec<PathBuf> = paths.to_vec();
+    let (tx, rx) = std::sync::mpsc::channel::<PathBuf>();
+    let tx = std::sync::Mutex::new(tx);
+    let page = page_html(&files, &upload_dir, &theme, &strings);
+    let handler: std::sync::Arc<crate::httpd::Handler> = std::sync::Arc::new(move |req: &crate::httpd::Request, body: &mut dyn std::io::Read| {
+        use crate::httpd::Response;
+        match (req.method.as_str(), req.path.as_str()) {
+            ("GET", "/") | ("GET", "/index.html") => Response::html(page.clone()),
+            ("GET", p) if p.starts_with("/dl/") => {
+                let index: usize = p.trim_start_matches("/dl/").split('/').next().and_then(|i| i.parse().ok()).unwrap_or(usize::MAX);
+                match files.get(index) {
+                    Some(f) if f.is_file() => {
+                        let (ct, _) = gio::content_type_guess(Some(f.as_path()), None);
+                        let name = f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                        Response::file(f, &ct).with_header("Content-Disposition", &format!("attachment; filename*=UTF-8''{}", crate::httpd::percent_encode(&name)))
+                    }
+                    _ => Response::empty(404),
+                }
+            }
+            ("POST", "/upload") => {
+                let ct = req.headers.get("content-type").cloned().unwrap_or_default();
+                let mut saved = 0;
+                crate::httpd::read_multipart(body, &ct, |name, reader| {
+                    let target = crate::localsend::unique_path(&upload_dir, &crate::localsend::safe_name(name));
+                    if let Ok(mut f) = std::fs::File::create(&target) {
+                        if std::io::copy(reader, &mut f).is_ok() {
+                            saved += 1;
+                            let _ = tx.lock().unwrap().send(target);
+                        }
+                    }
+                });
+                if saved > 0 { Response::empty(200) } else { Response::empty(400) }
+            }
+            _ => Response::empty(404),
+        }
+    });
+    let server = crate::httpd::start(0, handler).map_err(|e| e.to_string())?;
+    let url = format!("http://{ip}:{}/", server.port);
+    Ok(LanShare { _server: server, url, uploads: rx })
 }
 
 pub fn qr_texture(text: &str) -> Option<gdk::Texture> {
@@ -104,7 +189,14 @@ impl Window {
         if paths.is_empty() {
             return;
         }
-        let share = match start(&paths) {
+        let upload_dir = self.active_pane().and_then(|p| p.cwd().path()).filter(|p| p.is_dir()).unwrap_or_else(crate::nearby::default_dest);
+        let pal = self.theme.palette();
+        let theme = PageTheme { bg: pal.background.hex(), fg: pal.foreground.hex(), accent: pal.accent.hex(), card: pal.lighter_background.hex(), dim: pal.muted.hex() };
+        let strings = vec![
+            ("Download", tr("Download")), ("Send to this computer", tr("Send to this computer")), ("Drop files here or pick them", tr("Drop files here or pick them")),
+            ("Choose files", tr("Choose files")), ("They land in", tr("They land in")), ("Sending", tr("Sending")), ("Failed:", tr("Failed:")), ("files sent", tr("files sent")), ("folder", tr("folder")),
+        ];
+        let share = match start(&paths, upload_dir.clone(), theme, strings) {
             Ok(s) => s,
             Err(e) => {
                 self.toast_error(&trf!("Cannot share: {e}", e = e));
@@ -125,7 +217,7 @@ impl Window {
         link.add_css_class("omafile-share-url");
         let copy = gtk::Button::with_label(&tr("Copy Link"));
         copy.add_css_class("pill");
-        let note = gtk::Label::builder().label(tr("Anyone on your local network can download this while the dialog is open. Closing it stops the share.")).wrap(true).justify(gtk::Justification::Center).build();
+        let note = gtk::Label::builder().label(trf!("Anyone on your local network can download this while the dialog is open, and the page lets a phone send files back into {folder}. Closing it stops the share.", folder = crate::rules::shorten(&upload_dir))).wrap(true).justify(gtk::Justification::Center).build();
         note.add_css_class("omafile-dim");
         note.add_css_class("caption");
         let n = paths.len();
@@ -155,9 +247,24 @@ impl Window {
                 w.toast(&tr("Link copied"));
             }
         });
-        let share = std::cell::RefCell::new(Some(share));
+        let share = Rc::new(std::cell::RefCell::new(Some(share)));
+        // Uploads from the phone: toast and refresh the folder.
+        let this = Rc::downgrade(self);
+        let share_poll = share.clone();
+        glib::timeout_add_local(std::time::Duration::from_millis(400), move || {
+            let (Some(w), Some(s)) = (this.upgrade(), share_poll.borrow().as_ref().map(|s| s.uploads.try_recv().ok())) else { return glib::ControlFlow::Break };
+            if let Some(path) = s {
+                w.toast_keyed("share-upload", &trf!("Received {name}", name = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()));
+                for p in w.panes.borrow().clone() {
+                    if p.cwd().path().as_deref() == path.parent() {
+                        p.reload();
+                    }
+                }
+            }
+            glib::ControlFlow::Continue
+        });
         dialog.connect_closed(move |_| {
-            share.borrow_mut().take(); // Drop stops the server and removes the scratch dir.
+            share.borrow_mut().take(); // Drop stops the server.
         });
         self.present_dialog(&dialog);
     }
@@ -177,16 +284,26 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
+    fn writes_page_for_a_screenshot() {
+        let Some(out) = std::env::var_os("OMAFILE_PAGE_OUT") else { return };
+        let theme = PageTheme { bg: "#1a1b26".into(), fg: "#c0caf5".into(), accent: "#7aa2f7".into(), card: "#24283b".into(), dim: "#565f89".into() };
+        let files = vec![PathBuf::from("/tmp/Rechnung Oktober.pdf"), PathBuf::from("/tmp/Urlaub 2026.jpg"), PathBuf::from("/tmp/omarchy-theme.tar.gz")];
+        std::fs::write(out, page_html(&files, std::path::Path::new("/home/nora/Downloads"), &theme, &[])).unwrap();
+    }
+
+    #[test]
     fn lan_share_serves_the_file() {
-        if glib::find_program_in_path("python3").is_none() || glib::find_program_in_path("curl").is_none() {
+        if glib::find_program_in_path("curl").is_none() {
             return;
         }
         let dir = std::env::temp_dir().join(format!("omafile-share-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("hello world.txt");
         std::fs::write(&file, b"shared!").unwrap();
-        let Ok(share) = start(&[file.clone()]) else { return }; // no LAN in some sandboxes
-        let url = share.url.replace(&lan_ip().unwrap(), "127.0.0.1");
+        let theme = PageTheme { bg: "#000".into(), fg: "#fff".into(), accent: "#7aa2f7".into(), card: "#222".into(), dim: "#888".into() };
+        let Ok(share) = start(&[file.clone()], dir.clone(), theme, Vec::new()) else { return }; // no LAN in some sandboxes
+        let url = share.url.replace(&lan_ip().unwrap(), "127.0.0.1") + "dl/0/hello%20world.txt";
         let mut body = Vec::new();
         for _ in 0..20 {
             std::thread::sleep(std::time::Duration::from_millis(150));
@@ -198,9 +315,13 @@ mod tests {
             }
         }
         assert_eq!(body, b"shared!");
-        let scratch = share.dir.clone();
+        // Upload back through the page's form.
+        let page_url = share.url.replace(&lan_ip().unwrap(), "127.0.0.1");
+        let out = std::process::Command::new("curl").args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "--noproxy", "*", "-F", &format!("files=@{}", file.display()), &format!("{page_url}upload")]).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "200");
+        assert_eq!(std::fs::read(dir.join("hello world (1).txt")).unwrap(), b"shared!");
+        assert!(share.uploads.recv_timeout(std::time::Duration::from_secs(2)).is_ok());
         drop(share);
-        assert!(!scratch.exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -32,17 +32,23 @@ BarWidget {
   // encrypted folders.
   property bool busy: false
   property int vaults: 0
+  property int iphones: 0
+  property int nearby: 0
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/omafile"
 
   function readStatus(text) {
-    var b = false, v = 0
+    var b = false, v = 0, ip = 0, nb = 0
     text.split("\n").forEach(function(line) {
       var kv = line.split("=")
       if (kv[0] === "busy") b = kv[1] === "1"
       if (kv[0] === "vaults") v = parseInt(kv[1]) || 0
+      if (kv[0] === "iphone") ip = parseInt(kv[1]) || 0
+      if (kv[0] === "nearby") nb = parseInt(kv[1]) || 0
     })
     busy = b
     vaults = v
+    iphones = ip
+    nearby = nb
   }
 
   FileView {
@@ -52,7 +58,7 @@ BarWidget {
     printErrors: false
     onLoaded: root.readStatus(text())
     onFileChanged: reload()
-    onLoadFailed: { root.busy = false; root.vaults = 0 }
+    onLoadFailed: { root.busy = false; root.vaults = 0; root.iphones = 0; root.nearby = 0 }
   }
 
   // Required by PopupCard (owner.close) and by the shell's popout routing.
@@ -138,6 +144,24 @@ BarWidget {
             root.menuOpen = false
             root.launch(modelData.target)
           }
+        }
+      }
+
+      PopupMenuRow {
+        visible: root.iphones > 0
+        text: i18n.t("Import photos from iPhone")
+        onTriggered: {
+          root.menuOpen = false
+          root.bar.run("setsid uwsm-app -- omafile --import-photos")
+        }
+      }
+
+      PopupMenuRow {
+        visible: root.nearby > 0
+        text: i18n.t("Nearby devices") + " (" + root.nearby + ")"
+        onTriggered: {
+          root.menuOpen = false
+          root.bar.run("omarchy-launch-or-focus " + windowClass + " 'uwsm-app -- omafile'")
         }
       }
 

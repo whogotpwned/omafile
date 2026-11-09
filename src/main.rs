@@ -56,6 +56,11 @@ mod rules;
 mod rulesui;
 mod dupes;
 mod ebook;
+mod json;
+mod httpd;
+mod localsend;
+mod nearby;
+mod iphone;
 mod ebookui;
 mod window;
 
@@ -71,6 +76,7 @@ const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --print-bindings list every shortcut (keys, action, group; tab separated)
        omafile --toggle         Hyprland: show / hide a drop-down omafile on the special workspace files
        omafile --lock-all       unmount every unlocked encrypted folder
+       omafile --import-photos  open omafile and import the camera roll of a connected iPhone / iPad
        omafile --version";
 
 fn main() -> glib::ExitCode {
