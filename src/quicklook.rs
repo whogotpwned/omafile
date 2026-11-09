@@ -1,4 +1,5 @@
-//! Quick Look: press Space on a file for a large preview of its first page
+//! Quick Look: press Space on a file for a large preview of a document (↑ ↓
+//! turn its pages),
 //! (PDF), the image, or the text; Space or Escape closes it, the arrow keys
 //! walk through the folder while it stays open.
 
@@ -25,7 +26,7 @@ impl QuickLook {
         let title = adw::WindowTitle::new(&tr("Quick Look"), "");
         let header = adw::HeaderBar::new();
         header.set_title_widget(Some(&title));
-        let hint = gtk::Label::new(Some(tr("Space or Esc closes  ·  ← → previous / next").as_str()));
+        let hint = gtk::Label::new(Some(tr("Space or Esc closes  ·  ← → previous / next  ·  ↑ ↓ pages").as_str()));
         hint.add_css_class("omafile-dim");
         hint.add_css_class("caption");
         hint.set_margin_bottom(8);
@@ -47,12 +48,25 @@ impl QuickLook {
                     q.dialog.close();
                     glib::Propagation::Stop
                 }
-                gdk::Key::Right | gdk::Key::Down | gdk::Key::Page_Down | gdk::Key::j => {
+                gdk::Key::Right => {
                     q.step(1);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Left | gdk::Key::Up | gdk::Key::Page_Up | gdk::Key::k => {
+                gdk::Key::Left => {
                     q.step(-1);
+                    glib::Propagation::Stop
+                }
+                // Pages of a document first; otherwise the next / previous file.
+                gdk::Key::Down | gdk::Key::Page_Down | gdk::Key::j => {
+                    if !q.preview.doc_step(1) {
+                        q.step(1);
+                    }
+                    glib::Propagation::Stop
+                }
+                gdk::Key::Up | gdk::Key::Page_Up | gdk::Key::k => {
+                    if !q.preview.doc_step(-1) {
+                        q.step(-1);
+                    }
                     glib::Propagation::Stop
                 }
                 _ => glib::Propagation::Proceed,

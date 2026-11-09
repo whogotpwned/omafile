@@ -140,12 +140,19 @@ impl ThumbCache {
     }
 }
 
-struct Decoded {
+pub struct Decoded {
     width: i32,
     height: i32,
     stride: i32,
     alpha: bool,
     bytes: glib::Bytes,
+}
+
+impl Decoded {
+    pub fn to_paintable(&self) -> gdk::Paintable {
+        let format = if self.alpha { gdk::MemoryFormat::R8g8b8a8 } else { gdk::MemoryFormat::R8g8b8 };
+        gdk::MemoryTexture::new(self.width, self.height, format, &self.bytes, self.stride as usize).upcast::<gdk::Paintable>()
+    }
 }
 
 fn to_decoded(pixbuf: gtk::gdk_pixbuf::Pixbuf) -> Decoded {
@@ -287,10 +294,20 @@ pub fn pdftoppm_available() -> bool {
 
 /// First page of a PDF rendered by poppler's pdftoppm (Arch package `poppler`).
 fn decode_pdf(path: &std::path::Path, size: i32) -> Option<Decoded> {
+    decode_pdf_page(path, 1, size)
+}
+
+/// One page (1-based) of a PDF, decoded off the main thread; `to_paintable` on the main thread.
+pub fn pdf_page(path: &std::path::Path, page: u32, size: i32) -> Option<Decoded> {
+    decode_pdf_page(path, page, size)
+}
+
+fn decode_pdf_page(path: &std::path::Path, page: u32, size: i32) -> Option<Decoded> {
     // 72 dpi renders an A4 page at ~595 px wide; scale the resolution to the target.
     let dpi = ((size as f32 / 595.0) * 72.0).clamp(12.0, 200.0).round() as i32;
+    let page = page.max(1).to_string();
     let output = std::process::Command::new("pdftoppm")
-        .args(["-png", "-f", "1", "-l", "1", "-singlefile", "-r", &dpi.to_string()])
+        .args(["-png", "-f", &page, "-l", &page, "-singlefile", "-r", &dpi.to_string()])
         .arg(path)
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

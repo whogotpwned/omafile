@@ -2,6 +2,11 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.11.0 — 2026-11-09
+
+### Added
+- **Page turning for PDFs** in the preview pane and in Quick Look: a `‹ 2 / 3 ›` turner under the page, the wheel over the page, `↑` / `↓` (and `PgUp` / `PgDn`, `j` / `k`) in Quick Look, `Alt+PgUp` / `Alt+PgDn` in the preview pane. Pages are rendered on demand by poppler off the main thread.
+
 ## 0.10.0 — 2026-11-09
 
 ### Added

@@ -517,6 +517,10 @@ impl Pane {
                 if crate::vimkeys::handle(&p, &w, key, state) {
                     return glib::Propagation::Stop;
                 }
+                if state.contains(gdk::ModifierType::ALT_MASK) && matches!(key, gdk::Key::Page_Down | gdk::Key::Page_Up) && w.preview.root.is_mapped() {
+                    w.preview.doc_step(if key == gdk::Key::Page_Down { 1 } else { -1 });
+                    return glib::Propagation::Stop;
+                }
                 match key {
                     gdk::Key::Return | gdk::Key::KP_Enter if plain && !state.contains(gdk::ModifierType::SHIFT_MASK) && w.prefs.get_bool("mac-keys", false) => {
                         // macOS habit: Enter renames, Ctrl+O / Ctrl+↓ opens.

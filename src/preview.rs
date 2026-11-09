@@ -30,6 +30,11 @@ pub struct PreviewPane {
     media: RefCell<Option<gtk::MediaFile>>,
     /// Pixel size requested for images and PDF pages.
     image_size: i32,
+    /// Page turner under a multi-page document.
+    pager: gtk::Box,
+    page_label: gtk::Label,
+    /// (path, current page, page count) of the document on show.
+    doc: RefCell<Option<(std::path::PathBuf, u32, u32)>>,
 }
 
 impl PreviewPane {
@@ -63,6 +68,18 @@ impl PreviewPane {
         picture_box.set_margin_start(12);
         picture_box.set_margin_end(12);
         picture_box.append(&picture);
+        // Page turner: ‹ 3 / 12 ›, shown for documents with more than one page.
+        let pager = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        pager.set_halign(gtk::Align::Center);
+        pager.set_margin_top(6);
+        pager.set_visible(false);
+        let prev = gtk::Button::builder().icon_name("go-previous-symbolic").tooltip_text(tr("Previous page")).css_classes(["flat", "circular"]).build();
+        let next = gtk::Button::builder().icon_name("go-next-symbolic").tooltip_text(tr("Next page")).css_classes(["flat", "circular"]).build();
+        let page_label = gtk::Label::builder().css_classes(["omafile-dim", "caption", "numeric"]).width_chars(9).build();
+        pager.append(&prev);
+        pager.append(&page_label);
+        pager.append(&next);
+        picture_box.append(&pager);
 
         let text = gtk::TextView::builder()
             .editable(false)
@@ -142,7 +159,54 @@ impl PreviewPane {
         root.append(&stack);
         root.append(&info);
 
-        Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None) })
+        let this = Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None), pager, page_label, doc: RefCell::new(None) });
+        let weak = Rc::downgrade(&this);
+        prev.connect_clicked(move |_| { if let Some(p) = weak.upgrade() { p.doc_step(-1); } });
+        let weak = Rc::downgrade(&this);
+        next.connect_clicked(move |_| { if let Some(p) = weak.upgrade() { p.doc_step(1); } });
+        // The wheel over the page turns it too.
+        let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE);
+        let weak = Rc::downgrade(&this);
+        scroll.connect_scroll(move |_, _, dy| {
+            match weak.upgrade() {
+                Some(p) if dy != 0.0 && p.doc_step(if dy > 0.0 { 1 } else { -1 }) => glib::Propagation::Stop,
+                _ => glib::Propagation::Proceed,
+            }
+        });
+        picture_box.add_controller(scroll);
+        this
+    }
+
+    /// Turn the page of the document on show. Returns false when there is no
+    /// multi-page document, so callers can fall back to another meaning of the key.
+    pub fn doc_step(self: &Rc<Self>, delta: i64) -> bool {
+        let Some((path, page, pages)) = self.doc.borrow().clone() else { return false };
+        if pages < 2 {
+            return false;
+        }
+        let next = (page as i64 + delta).clamp(1, pages as i64) as u32;
+        if next != page {
+            self.doc.replace(Some((path.clone(), next, pages)));
+            self.show_doc_page(self.generation.get(), path, next, pages);
+        }
+        true
+    }
+
+    fn show_doc_page(self: &Rc<Self>, gen: u64, path: std::path::PathBuf, page: u32, pages: u32) {
+        self.page_label.set_text(&trf!("{page} / {pages}", page = page, pages = pages));
+        self.pager.set_visible(pages > 1);
+        let size = self.image_size;
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let decoded = gio::spawn_blocking(move || crate::thumbs::pdf_page(&path, page, size)).await.ok().flatten();
+            let Some(p) = this.upgrade() else { return };
+            let current = p.doc.borrow().as_ref().map(|d| d.1);
+            if p.generation.get() == gen && current == Some(page) {
+                if let Some(decoded) = decoded {
+                    p.picture.set_paintable(Some(&decoded.to_paintable()));
+                }
+            }
+        });
     }
 
     pub fn show(self: &Rc<Self>, item: Option<&FileItem>, count: usize) {
@@ -155,6 +219,8 @@ impl PreviewPane {
         let gen = self.generation.get() + 1;
         self.generation.set(gen);
         self.stop();
+        self.doc.replace(None);
+        self.pager.set_visible(false);
         if let Some(item) = item.filter(|i| i.is_media()) {
             self.show_media(item);
             return;
@@ -257,11 +323,19 @@ impl PreviewPane {
                 if let Some(path) = item.target_file().path() {
                     let this = Rc::downgrade(self);
                     glib::spawn_future_local(async move {
-                        let pages = gio::spawn_blocking(move || crate::thumbs::pdf_pages(&path)).await.ok().flatten();
+                        let info_path = path.clone();
+                        let pages = gio::spawn_blocking(move || crate::thumbs::pdf_pages(&info_path)).await.ok().flatten();
                         let Some(p) = this.upgrade() else { return };
                         if p.generation.get() == gen {
                             if let Some(n) = pages {
-                                p.hint.set_text(&format!("{n} {}  ·  first page shown", if n == 1 { tr("page") } else { tr("pages") }));
+                                if n > 1 {
+                                    p.doc.replace(Some((path.clone(), 1, n)));
+                                    p.page_label.set_text(&trf!("{page} / {pages}", page = 1, pages = n));
+                                    p.pager.set_visible(true);
+                                    p.hint.set_text(&if p.image_size > 1024 { trf!("{n} pages  ·  ↑ ↓ or the wheel turn the pages", n = n) } else { trf!("{n} pages  ·  Alt+PgUp / Alt+PgDn or the wheel turn the pages", n = n) });
+                                } else {
+                                    p.hint.set_text(&tr("1 page"));
+                                }
                             }
                         }
                     });
