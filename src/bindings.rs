@@ -115,6 +115,7 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Tools", "rules", "", "Folder rules for this folder: move, copy, tag, trash, sort by month, run a command"),
     ("Tools", "shelf-add", "", "Put the selection on the shelf (a floating window that collects files; drag out or copy / move them in one go)"),
     ("Tools", "shelf-show", "", "Show or hide the shelf"),
+    ("Tools", "", "Context menu › eBook", "Open in Reader, Rename from Metadata (Author - Title), Send to eReader, Convert to EPUB / MOBI / AZW3 / PDF (Calibre)"),
     ("Vim keys", "", "h  j  k  l", "Parent folder, down, up, open (Preferences › Keys › Vim keys)"),
     ("Vim keys", "", "gg  G", "First and last item"),
     ("Vim keys", "", "/  :", "Filter this folder, command palette"),

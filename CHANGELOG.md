@@ -2,6 +2,13 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.14.0 — 2026-11-09
+
+### Added
+- **eBooks**: covers of EPUB, CBZ / CBR and FB2 as thumbnails and in the preview; metadata (title, author, series, publisher, year, language, ISBN, chapters) in the preview pane and Properties; the page turner reads chapters (and comic pages) in Quick Look.
+- Context menu › eBook: Open in Reader, Rename from Metadata (undoable), Send to eReader (Kindle, Kobo, Tolino, PocketBook…), Convert to EPUB / MOBI / AZW3 / PDF via Calibre.
+- "eBooks" group in Group by Kind.
+
 ## 0.13.0 — 2026-11-09
 
 ### Changed

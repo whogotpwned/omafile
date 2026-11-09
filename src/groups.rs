@@ -15,25 +15,28 @@ fn kind_rank(item: &FileItem) -> (u8, &'static str) {
     if item.is_pdf() {
         return (2, "PDF documents");
     }
+    if item.is_ebook() {
+        return (3, "eBooks");
+    }
     if item.is_audio() {
-        return (5, "Music");
+        return (6, "Music");
     }
     if item.is_video() {
-        return (6, "Videos");
+        return (7, "Videos");
     }
     if item.is_archive() {
-        return (7, "Archives");
+        return (8, "Archives");
     }
     let ct = item.content_type().unwrap_or_default();
     let name = item.name().to_lowercase();
     let code = ["rs", "py", "js", "ts", "tsx", "jsx", "go", "c", "h", "cpp", "hpp", "java", "kt", "rb", "sh", "fish", "lua", "toml", "yaml", "yml", "json", "css", "html", "qml", "nix", "conf"];
     if code.iter().any(|e| name.ends_with(&format!(".{e}"))) || ct.contains("script") || ct.contains("x-") && item.is_text() {
-        return (4, "Code and config");
+        return (5, "Code and config");
     }
     if item.is_text() || ct.contains("document") || ct.contains("opendocument") || ct.contains("msword") || ct.contains("spreadsheet") || ct.contains("presentation") {
-        return (3, "Documents");
+        return (4, "Documents");
     }
-    (8, "Other")
+    (9, "Other")
 }
 
 fn date_rank(item: &FileItem) -> (u8, &'static str) {

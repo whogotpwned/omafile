@@ -1846,6 +1846,8 @@ pub struct MenuFlags {
     pub py_script: bool,
     /// Every selected item is a PDF (local).
     pub pdfs: usize,
+    /// Every selected item is a local eBook.
+    pub ebooks: usize,
     /// A single local video / audio file.
     pub video: bool,
     pub audio: bool,
@@ -1944,6 +1946,23 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
             pdf.append(Some(tr("Extract Pages…").as_str()), Some("win.pdf-extract"));
         }
         open.append_submenu(Some(tr("PDF").as_str()), &pdf);
+    }
+    if f.ebooks > 0 && !in_trash {
+        let e = gio::Menu::new();
+        if crate::ebook::reader().is_some() {
+            e.append(Some(tr("Open in Reader").as_str()), Some("win.ebook-reader"));
+        }
+        e.append(Some(tr("Rename from Metadata").as_str()), Some("win.ebook-rename"));
+        e.append(Some(tr("Send to eReader").as_str()), Some("win.ebook-send"));
+        if crate::ebook::calibre_available() {
+            let c = gio::Menu::new();
+            c.append(Some("EPUB"), Some("win.ebook-convert::epub"));
+            c.append(Some("MOBI"), Some("win.ebook-convert::mobi"));
+            c.append(Some("AZW3"), Some("win.ebook-convert::azw3"));
+            c.append(Some("PDF"), Some("win.ebook-convert::pdf"));
+            e.append_submenu(Some(tr("Convert to").as_str()), &c);
+        }
+        open.append_submenu(Some(tr("eBook").as_str()), &e);
     }
     if f.video && !in_trash {
         let v = gio::Menu::new();

@@ -55,6 +55,8 @@ mod treemap;
 mod rules;
 mod rulesui;
 mod dupes;
+mod ebook;
+mod ebookui;
 mod window;
 
 use adw::prelude::*;

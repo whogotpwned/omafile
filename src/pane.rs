@@ -2002,6 +2002,7 @@ impl Pane {
                 media: items.len() == 1 && items[0].is_media(),
                 py_script: items.len() == 1 && items[0].name().ends_with(".py") && items[0].target_file().is_native(),
                 pdfs: if !items.is_empty() && items.iter().all(|i| i.is_pdf() && i.target_file().is_native()) { items.len() } else { 0 },
+                ebooks: if !items.is_empty() && items.iter().all(|i| i.is_ebook() && i.target_file().is_native()) { items.len() } else { 0 },
                 video: items.len() == 1 && items[0].is_video() && items[0].target_file().is_native(),
                 audio: items.len() == 1 && items[0].is_audio() && items[0].target_file().is_native(),
                 symlink: items.len() == 1 && items[0].is_symlink(),

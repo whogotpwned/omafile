@@ -35,6 +35,8 @@ enum Source {
     Video,
     /// Cover art embedded in an audio file.
     Audio,
+    /// Cover of an EPUB / comic / FB2 (content type).
+    Ebook(String),
 }
 
 /// Bytes read for a text page, or pixels decoded for the others.
@@ -71,6 +73,8 @@ impl ThumbCache {
             Some(Source::Video)
         } else if item.is_audio() && item.size() < MAX_MEDIA_BYTES && ffmpeg_available() {
             Some(Source::Audio)
+        } else if item.is_readable_ebook() && item.size() < MAX_MEDIA_BYTES {
+            Some(Source::Ebook(item.content_type().unwrap_or_default()))
         } else if item.is_text() && !item.is_secret() {
             Some(Source::Text)
         } else {
@@ -108,11 +112,11 @@ impl ThumbCache {
         }
         let path = match &source {
             Source::Image => item.thumbnail_path().or_else(|| item.target_file().path()),
-            Source::Pdf | Source::Text | Source::Video | Source::Audio => item.target_file().path(),
+            Source::Pdf | Source::Text | Source::Video | Source::Audio | Source::Ebook(_) => item.target_file().path(),
             Source::Folder(p) => Some(p.clone()),
         };
         let Some(path) = path else { return };
-        let disk = item.target_file().is_native() && matches!(source, Source::Image | Source::Pdf | Source::Video | Source::Audio);
+        let disk = item.target_file().is_native() && matches!(source, Source::Image | Source::Pdf | Source::Video | Source::Audio | Source::Ebook(_));
         self.queue.borrow_mut().push(Job { key, source, path, size, uri: item.target_file().uri().to_string(), mtime: item.modified_unix(), disk, widget: picture.clone() });
         self.pump();
     }
@@ -150,6 +154,7 @@ impl ThumbCache {
                             Source::Pdf => decode_pdf(&path, cache_size),
                             Source::Video => decode_video(&path, cache_size),
                             Source::Audio => decode_cover(&path, cache_size),
+                            Source::Ebook(ct) => decode_ebook(&path, &ct, cache_size),
                             _ => None,
                         }?;
                         disk_cache::store(&uri, mtime, cache_size, &full);
@@ -160,6 +165,7 @@ impl ThumbCache {
                         Source::Pdf => decode_pdf(&path, size).map(Loaded::Pixels),
                         Source::Video => decode_video(&path, size).map(Loaded::Pixels),
                         Source::Audio => decode_cover(&path, size).map(Loaded::Pixels),
+                        Source::Ebook(ct) => decode_ebook(&path, &ct, size).map(Loaded::Pixels),
                         Source::Text => read_text_head(&path).map(Loaded::Text),
                     }
                 })
@@ -307,6 +313,27 @@ fn decode_image(path: &std::path::Path, size: i32) -> Option<Decoded> {
     let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true).ok()?;
     let pixbuf = pixbuf.apply_embedded_orientation().unwrap_or(pixbuf);
     Some(to_decoded(pixbuf))
+}
+
+/// Cover of an eBook, decoded from the bytes inside the archive.
+fn decode_ebook(path: &std::path::Path, ct: &str, size: i32) -> Option<Decoded> {
+    let bytes = crate::ebook::cover(path, ct)?;
+    decode_bytes(&bytes, size)
+}
+
+/// Decode an image from memory, fitted into `size`.
+pub fn decode_bytes(bytes: &[u8], size: i32) -> Option<Decoded> {
+    let loader = gtk::gdk_pixbuf::PixbufLoader::new();
+    loader.set_size(size, size);
+    let (s2, l2) = (size, loader.clone());
+    loader.connect_size_prepared(move |_, w, h| {
+        let scale = (s2 as f64 / w.max(h) as f64).min(1.0);
+        l2.set_size(((w as f64) * scale).max(1.0) as i32, ((h as f64) * scale).max(1.0) as i32);
+    });
+    loader.write(bytes).ok()?;
+    loader.close().ok()?;
+    let pixbuf = loader.pixbuf()?;
+    Some(to_decoded(pixbuf.apply_embedded_orientation().unwrap_or(pixbuf)))
 }
 
 pub fn ffmpeg_available() -> bool {

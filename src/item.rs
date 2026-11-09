@@ -225,6 +225,16 @@ impl FileItem {
         self.content_type().as_deref() == Some("application/pdf")
     }
 
+    /// EPUB, comic archive, FictionBook, Kindle formats, DjVu.
+    pub fn is_ebook(&self) -> bool {
+        self.content_type().map(|ct| crate::ebook::is_ebook_type(&ct)).unwrap_or(false)
+    }
+
+    /// An eBook whose cover and chapters we can read (EPUB, CBZ / CBR, FB2).
+    pub fn is_readable_ebook(&self) -> bool {
+        self.content_type().map(|ct| ct == "application/epub+zip" || crate::ebook::is_comic_type(&ct) || ct.contains("fictionbook")).unwrap_or(false)
+    }
+
     pub fn is_text(&self) -> bool {
         self.content_type()
             .map(|ct| ct.starts_with("text/") || gio::content_type_is_a(&ct, "text/plain") || matches!(ct.as_str(), "application/json" | "application/xml" | "application/x-shellscript" | "application/toml" | "application/x-yaml" | "application/javascript"))

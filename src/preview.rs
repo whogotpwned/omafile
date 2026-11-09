@@ -33,8 +33,16 @@ pub struct PreviewPane {
     /// Page turner under a multi-page document.
     pager: gtk::Box,
     page_label: gtk::Label,
-    /// (path, current page, page count) of the document on show.
-    doc: RefCell<Option<(std::path::PathBuf, u32, u32)>>,
+    /// (document, current page, page count) of the document on show.
+    doc: RefCell<Option<(Doc, u32, u32)>>,
+}
+
+/// What the page turner pages through.
+#[derive(Clone)]
+pub enum Doc {
+    Pdf(std::path::PathBuf),
+    /// An eBook: page 1 is the cover, pages 2.. are chapters (or comic pages).
+    Ebook(std::path::PathBuf, String, Rc<crate::ebook::Meta>),
 }
 
 impl PreviewPane {
@@ -180,33 +188,79 @@ impl PreviewPane {
     /// Turn the page of the document on show. Returns false when there is no
     /// multi-page document, so callers can fall back to another meaning of the key.
     pub fn doc_step(self: &Rc<Self>, delta: i64) -> bool {
-        let Some((path, page, pages)) = self.doc.borrow().clone() else { return false };
+        let Some((doc, page, pages)) = self.doc.borrow().clone() else { return false };
         if pages < 2 {
             return false;
         }
         let next = (page as i64 + delta).clamp(1, pages as i64) as u32;
         if next != page {
-            self.doc.replace(Some((path.clone(), next, pages)));
-            self.show_doc_page(self.generation.get(), path, next, pages);
+            self.doc.replace(Some((doc.clone(), next, pages)));
+            self.show_doc_page(self.generation.get(), doc, next, pages);
         }
         true
     }
 
-    fn show_doc_page(self: &Rc<Self>, gen: u64, path: std::path::PathBuf, page: u32, pages: u32) {
+    fn show_doc_page(self: &Rc<Self>, gen: u64, doc: Doc, page: u32, pages: u32) {
         self.page_label.set_text(&trf!("{page} / {pages}", page = page, pages = pages));
         self.pager.set_visible(pages > 1);
         let size = self.image_size;
         let this = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            let decoded = gio::spawn_blocking(move || crate::thumbs::pdf_page(&path, page, size)).await.ok().flatten();
-            let Some(p) = this.upgrade() else { return };
-            let current = p.doc.borrow().as_ref().map(|d| d.1);
-            if p.generation.get() == gen && current == Some(page) {
-                if let Some(decoded) = decoded {
-                    p.picture.set_paintable(Some(&decoded.to_paintable()));
-                }
+        match doc {
+            Doc::Pdf(path) => {
+                glib::spawn_future_local(async move {
+                    let decoded = gio::spawn_blocking(move || crate::thumbs::pdf_page(&path, page, size)).await.ok().flatten();
+                    let Some(p) = this.upgrade() else { return };
+                    let current = p.doc.borrow().as_ref().map(|d| d.1);
+                    if p.generation.get() == gen && current == Some(page) {
+                        if let Some(decoded) = decoded {
+                            p.picture.set_paintable(Some(&decoded.to_paintable()));
+                        }
+                    }
+                });
             }
-        });
+            Doc::Ebook(path, ct, meta) => {
+                if page == 1 {
+                    // Back to the cover.
+                    self.stack.set_visible_child_name("image");
+                    self.hint.set_text(&meta.summary_line(&tr("chapters")));
+                    return;
+                }
+                let index = page as usize - 2;
+                let chapter_title = meta.chapters.get(index).map(|c| c.0.clone()).unwrap_or_default();
+                self.hint.set_text(&chapter_title);
+                let meta2: crate::ebook::Meta = (*meta).clone();
+                glib::spawn_future_local(async move {
+                    let result = gio::spawn_blocking(move || {
+                        let page = crate::ebook::page(&path, &ct, &meta2, index)?;
+                        Some(match page {
+                            crate::ebook::Page::Text(title, text) => Ok((title, text)),
+                            crate::ebook::Page::Image(bytes) => Err(crate::thumbs::decode_bytes(&bytes, size)),
+                        })
+                    })
+                    .await
+                    .ok()
+                    .flatten();
+                    let Some(p) = this.upgrade() else { return };
+                    let current = p.doc.borrow().as_ref().map(|d| d.1);
+                    if p.generation.get() != gen || current != Some(page) {
+                        return;
+                    }
+                    match result {
+                        Some(Ok((title, text))) => {
+                            p.text.set_wrap_mode(gtk::WrapMode::WordChar);
+                            p.text.set_monospace(false);
+                            p.text.buffer().set_text(&if text.starts_with(&title) || title.is_empty() { text } else { format!("{title}\n\n{text}") });
+                            p.stack.set_visible_child_name("text");
+                        }
+                        Some(Err(Some(decoded))) => {
+                            p.picture.set_paintable(Some(&decoded.to_paintable()));
+                            p.stack.set_visible_child_name("image");
+                        }
+                        _ => {}
+                    }
+                });
+            }
+        }
     }
 
     pub fn show(self: &Rc<Self>, item: Option<&FileItem>, count: usize) {
@@ -319,6 +373,33 @@ impl PreviewPane {
         if ThumbCache::can_thumbnail(item) && !item.is_text() {
             self.stack.set_visible_child_name("image");
             self.thumbs.assign(item, &self.picture, self.image_size);
+            if item.is_readable_ebook() {
+                if let (Some(path), Some(ct)) = (item.target_file().path(), item.content_type()) {
+                    let this = Rc::downgrade(self);
+                    glib::spawn_future_local(async move {
+                        let (p2, c2) = (path.clone(), ct.clone());
+                        let meta = gio::spawn_blocking(move || crate::ebook::meta(&p2, &c2)).await.ok().flatten();
+                        let Some(p) = this.upgrade() else { return };
+                        if p.generation.get() != gen {
+                            return;
+                        }
+                        let Some(meta) = meta else { return };
+                        if !meta.title.is_empty() {
+                            p.name.set_text(&meta.title);
+                        }
+                        let pages = meta.chapters.len() as u32 + 1;
+                        p.hint.set_text(&meta.summary_line(&tr("chapters")));
+                        if !meta.description.is_empty() {
+                            p.details.set_text(&format!("{}\n{}", p.details.text(), meta.description.chars().take(220).collect::<String>()));
+                        }
+                        if pages > 1 {
+                            p.doc.replace(Some((Doc::Ebook(path.clone(), ct.clone(), Rc::new(meta)), 1, pages)));
+                            p.page_label.set_text(&trf!("{page} / {pages}", page = 1, pages = pages));
+                            p.pager.set_visible(true);
+                        }
+                    });
+                }
+            }
             if item.is_pdf() {
                 if let Some(path) = item.target_file().path() {
                     let this = Rc::downgrade(self);
@@ -329,7 +410,7 @@ impl PreviewPane {
                         if p.generation.get() == gen {
                             if let Some(n) = pages {
                                 if n > 1 {
-                                    p.doc.replace(Some((path.clone(), 1, n)));
+                                    p.doc.replace(Some((Doc::Pdf(path.clone()), 1, n)));
                                     p.page_label.set_text(&trf!("{page} / {pages}", page = 1, pages = n));
                                     p.pager.set_visible(true);
                                     p.hint.set_text(&if p.image_size > 1024 { trf!("{n} pages  ·  ↑ ↓ or the wheel turn the pages", n = n) } else { trf!("{n} pages  ·  Alt+PgUp / Alt+PgDn or the wheel turn the pages", n = n) });

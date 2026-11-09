@@ -59,6 +59,9 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("rules", "Folder Rules", "emblem-system-symbolic"),
     ("shelf-add", "Add to Shelf", "folder-open-symbolic"),
     ("shelf-show", "Show Shelf", "folder-open-symbolic"),
+    ("ebook-rename", "eBook: Rename from Metadata", "x-office-address-book-symbolic"),
+    ("ebook-send", "eBook: Send to eReader", "send-to-symbolic"),
+    ("ebook-reader", "eBook: Open in Reader", "x-office-address-book-symbolic"),
     ("restore", "Restore from Trash", "edit-undo-symbolic"),
     ("git-commit", "Git: Commit…", "vcs-commit-symbolic"),
     ("git-branch", "Git: Switch Branch…", "vcs-branch-symbolic"),
@@ -312,6 +315,19 @@ impl Window {
             shelf.present();
         }));
         simple("shelf-show", Box::new(|w| w.shelf().toggle()));
+        simple("ebook-reader", Box::new(|w| w.ebook_open_reader()));
+        simple("ebook-rename", Box::new(|w| w.ebook_rename()));
+        simple("ebook-send", Box::new(|w| w.ebook_send()));
+        {
+            let convert = gio::SimpleAction::new("ebook-convert", Some(glib::VariantTy::STRING));
+            let this = Rc::downgrade(self);
+            convert.connect_activate(move |_, param| {
+                if let (Some(w), Some(fmt)) = (this.upgrade(), param.and_then(|p| p.get::<String>())) {
+                    w.ebook_convert(&fmt);
+                }
+            });
+            self.window.add_action(&convert);
+        }
         simple("retry", Box::new(|w| {
             let retry = w.retry.borrow_mut().take();
             if let Some(f) = retry {
@@ -1275,6 +1291,27 @@ impl Window {
             group.add(&row("Note", &note));
         }
         page.add(&group);
+        if item.is_readable_ebook() {
+            if let (Some(path), Some(ct)) = (item.target_file().path(), item.content_type()) {
+                if let Some(meta) = crate::ebook::meta(&path, &ct) {
+                    let book = adw::PreferencesGroup::builder().title(tr("eBook")).build();
+                    let add = |title: &str, value: &str| {
+                        if !value.is_empty() {
+                            book.add(&row(title, value));
+                        }
+                    };
+                    add("Title", &meta.title);
+                    add("Author", &meta.authors.join(", "));
+                    add("Series", &if meta.series_index.is_empty() { meta.series.clone() } else { format!("{} #{}", meta.series, meta.series_index) });
+                    add("Publisher", &meta.publisher);
+                    add("Published", &meta.date);
+                    add("Language", &meta.language);
+                    add("ISBN", &meta.isbn);
+                    add("Chapters", &if meta.chapters.is_empty() { String::new() } else { meta.chapters.len().to_string() });
+                    page.add(&book);
+                }
+            }
+        }
         if let Some(venv) = item.target_file().path().filter(|p| item.is_dir() && crate::pyenv::is_venv_dir(p)).and_then(|p| crate::pyenv::read(&p)) {
             let py = adw::PreferencesGroup::builder().title(tr("Python virtual environment")).build();
             py.add(&row("Python", if venv.version.is_empty() { "unknown" } else { &venv.version }));
