@@ -2,6 +2,18 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.13.0 — 2026-11-09
+
+### Changed
+- Folders stream in while listing; skeleton rows for slow folders; a real crossfade between folders (the old view fades out over the new one).
+- Thumbnails use the freedesktop cache (`~/.cache/thumbnails`, shared with Nautilus and Loupe); visible rows decode first, at most four at a time, recycled cells are skipped; the gallery pre-decodes its neighbours.
+- Local subfolders are prefetched and recently listed folders (incl. remote) show instantly from a cache while the fresh listing arrives; a dropped SFTP share is remounted and retried automatically.
+- Touchpad: two-finger swipe for back / forward, pinch to zoom the grid, kinetic scrolling.
+- Per-folder view memory (`~/.config/omafile/views`, switch in Preferences): view, sort, grouping, icon size.
+- Drag & drop: auto-scroll near list edges, spring-loaded tabs and breadcrumbs that accept drops, count badge on multi-item drags.
+- Toasts of one kind merge; error toasts have Retry; the window title shows the transfer percentage.
+- Hyprland snippets for the Shelf (float, pin, size, position) and opening on the monitor under the cursor.
+
 ## 0.12.0 — 2026-11-09
 
 ### Added

@@ -49,6 +49,9 @@ pub struct WinState {
     pub places: Vec<Place>,
 }
 
+/// What the Retry button of an error toast runs.
+pub type RetryFn = Box<dyn Fn(&Rc<Window>)>;
+
 pub struct Window {
     pub window: adw::ApplicationWindow,
     pub toast: adw::ToastOverlay,
@@ -85,6 +88,13 @@ pub struct Window {
     pub tags: Rc<TagIndex>,
     pub notes: Rc<Notes>,
     pub shelf: RefCell<Option<Rc<crate::shelf::Shelf>>>,
+    /// Recently listed folders: uri → (when, items). Prefetched neighbours and
+    /// remote folders show instantly from here while the fresh listing streams in.
+    pub dir_cache: RefCell<std::collections::HashMap<String, (std::time::Instant, Vec<FileItem>)>>,
+    /// The last toast per key, so repeated messages update instead of stacking.
+    pub last_toast: RefCell<Option<(String, adw::Toast, std::time::Instant)>>,
+    /// What the Retry button of the last error toast does.
+    pub retry: RefCell<Option<RetryFn>>,
     pub rule_monitors: RefCell<Vec<gio::FileMonitor>>,
     /// Mounts already warned about for low disk space.
     pub low_space_warned: RefCell<Vec<String>>,
@@ -165,11 +175,15 @@ impl Window {
         // ---- tabs -----------------------------------------------------------
         let mut tab_views = Vec::new();
         let mut split_boxes = Vec::new();
+        let mut tab_bars: Vec<adw::TabBar> = Vec::new();
         for _ in 0..2 {
             let tab_view = adw::TabView::new();
             tab_view.set_vexpand(true);
             let tab_bar = adw::TabBar::builder().view(&tab_view).autohide(true).expand_tabs(false).build();
             tab_bar.add_css_class("omafile-tabs");
+            // Files dropped on a tab land in that tab's folder; hovering switches to it (libadwaita's extra drag).
+            tab_bar.setup_extra_drop_target(gdk::DragAction::COPY | gdk::DragAction::MOVE, &[gdk::FileList::static_type()]);
+            tab_bars.push(tab_bar.clone());
             let b = gtk::Box::new(gtk::Orientation::Vertical, 0);
             b.append(&tab_bar);
             b.append(&tab_view);
@@ -245,6 +259,9 @@ impl Window {
         let this = Rc::new(Window {
             window,
             shelf: RefCell::new(None),
+            dir_cache: RefCell::new(std::collections::HashMap::new()),
+            last_toast: RefCell::new(None),
+            retry: RefCell::new(None),
             rule_monitors: RefCell::new(Vec::new()),
             toast,
             split,
@@ -309,6 +326,15 @@ impl Window {
         this.refresh_trash_summary();
         crate::trashauto::run_auto_empty(&this);
         crate::rules::watch(&this);
+        for tab_bar in &tab_bars {
+            let weak = Rc::downgrade(&this);
+            tab_bar.connect_extra_drag_drop(move |_, page, value| {
+                let (Some(w), Ok(list)) = (weak.upgrade(), value.get::<gdk::FileList>()) else { return false };
+                let Some(pane) = w.pane_for_page(page) else { return false };
+                pane.receive_files(list.files(), pane.cwd());
+                true
+            });
+        }
         {
             let weak = Rc::downgrade(&this);
             glib::spawn_future_local(async move {
@@ -867,6 +893,42 @@ impl Window {
                     w.navigate(target.clone());
                 }
             });
+            // Drop files on an ancestor crumb to move / copy them there (spring-loaded after a moment).
+            if i != last {
+                let drop = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY | gdk::DragAction::MOVE);
+                let this = Rc::downgrade(self);
+                let dest = file.clone();
+                drop.connect_drop(move |_, value, _, _| {
+                    let (Some(w), Ok(list)) = (this.upgrade(), value.get::<gdk::FileList>()) else { return false };
+                    if let Some(p) = w.active_pane() {
+                        p.receive_files(list.files(), dest.clone());
+                    }
+                    true
+                });
+                let this = Rc::downgrade(self);
+                let dest = file.clone();
+                let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+                let pending2 = pending.clone();
+                drop.connect_enter(move |_, _, _| {
+                    let (this, dest) = (this.clone(), dest.clone());
+                    let p3 = pending2.clone();
+                    let id = glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || {
+                        p3.borrow_mut().take();
+                        if let Some(w) = this.upgrade() {
+                            w.navigate(dest.clone());
+                        }
+                    });
+                    pending2.borrow_mut().replace(id);
+                    gdk::DragAction::MOVE
+                });
+                let pending2 = pending.clone();
+                drop.connect_leave(move |_| {
+                    if let Some(id) = pending2.borrow_mut().take() {
+                        id.remove();
+                    }
+                });
+                button.add_controller(drop);
+            }
             self.pathbar.append(&button);
         }
     }
@@ -1513,6 +1575,82 @@ impl Window {
 
     pub fn toast(&self, text: &str) {
         self.toast.add_toast(adw::Toast::builder().title(text).timeout(3).build());
+    }
+
+    /// A toast that replaces the previous one with the same key when it is
+    /// still fresh, so a burst of rule runs or transfers does not stack up.
+    pub fn toast_keyed(&self, key: &str, text: &str) {
+        let now = std::time::Instant::now();
+        if let Some((k, toast, at)) = self.last_toast.borrow().as_ref() {
+            if k == key && now.duration_since(*at) < std::time::Duration::from_secs(4) {
+                toast.set_title(text);
+                return;
+            }
+        }
+        let toast = adw::Toast::builder().title(text).timeout(3).build();
+        self.toast.add_toast(toast.clone());
+        self.last_toast.replace(Some((key.to_string(), toast, now)));
+    }
+
+    /// An error toast with a Retry button.
+    pub fn toast_retry(&self, text: &str, retry: RetryFn) {
+        self.retry.replace(Some(retry));
+        let toast = adw::Toast::builder().title(text).timeout(8).button_label(tr("Retry")).action_name("win.retry").build();
+        self.toast.add_toast(toast);
+    }
+
+    // ----- listing cache and prefetch --------------------------------------------------
+
+    pub fn pane_for_page(&self, page: &adw::TabPage) -> Option<Rc<Pane>> {
+        let child = page.child();
+        self.panes.borrow().iter().find(|p| p.root.upcast_ref::<gtk::Widget>() == &child).cloned()
+    }
+
+    pub fn cached_listing(&self, dir: &gio::File) -> Option<Vec<FileItem>> {
+        let ttl = if dir.is_native() { std::time::Duration::from_secs(20) } else { std::time::Duration::from_secs(90) };
+        self.dir_cache.borrow().get(dir.uri().as_str()).filter(|(at, _)| at.elapsed() < ttl).map(|(_, items)| items.clone())
+    }
+
+    pub fn remember_listing(&self, dir: &gio::File, items: Vec<FileItem>) {
+        let mut cache = self.dir_cache.borrow_mut();
+        if cache.len() > 64 {
+            let oldest = cache.iter().min_by_key(|(_, (at, _))| *at).map(|(k, _)| k.clone());
+            if let Some(k) = oldest {
+                cache.remove(&k);
+            }
+        }
+        cache.insert(dir.uri().to_string(), (std::time::Instant::now(), items));
+    }
+
+    /// List the first folders of the pane in the background so stepping into
+    /// them shows instantly. Local folders only, a handful at a time.
+    pub fn prefetch_children(self: &Rc<Self>, pane: &Rc<Pane>) {
+        let cwd = pane.cwd();
+        if !cwd.is_native() {
+            return;
+        }
+        let dirs: Vec<gio::File> = (0..pane.selection.n_items().min(40))
+            .filter_map(|i| pane.item_at(i))
+            .filter(|i| i.is_dir() && !i.is_symlink())
+            .map(|i| i.target_file())
+            .filter(|d| self.cached_listing(d).is_none())
+            .take(8)
+            .collect();
+        if dirs.is_empty() {
+            return;
+        }
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            for dir in dirs {
+                let Some(w) = this.upgrade() else { return };
+                if w.cached_listing(&dir).is_some() {
+                    continue;
+                }
+                if let Ok(items) = crate::ops::list_dir(&dir).await {
+                    w.remember_listing(&dir, items);
+                }
+            }
+        });
     }
 
     pub fn toast_error(&self, text: &str) {

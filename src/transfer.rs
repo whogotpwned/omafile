@@ -89,6 +89,9 @@ impl Window {
         let Some(req) = self.queue.pending.borrow_mut().pop_front() else {
             self.progress.revealer.set_reveal_child(false);
             crate::status::write(self);
+            if let Some(p) = self.active_pane() {
+                self.window.set_title(Some(&format!("{} - Files", crate::window::display_name(&p.cwd()))));
+            }
             return;
         };
         self.queue.running.set(true);
@@ -115,7 +118,11 @@ impl Window {
     fn show_progress(&self, text: &str, fraction: Option<f64>) {
         self.progress.label.set_text(text);
         match fraction {
-            Some(f) => self.progress.bar.set_fraction(f.clamp(0.0, 1.0)),
+            Some(f) => {
+                self.progress.bar.set_fraction(f.clamp(0.0, 1.0));
+                // The window title (and so the Hyprland title bar / bar widget) shows the percentage.
+                self.window.set_title(Some(&format!("{}%  ·  {text}", (f.clamp(0.0, 1.0) * 100.0).round() as i32)));
+            }
             None => self.progress.bar.pulse(),
         }
         self.progress.revealer.set_reveal_child(true);
@@ -182,7 +189,9 @@ impl Window {
             let this = Rc::downgrade(self);
             let progress_cb: Box<dyn FnMut(i64, i64)> = Box::new(move |done, all| {
                 if let (Some(w), true) = (this.upgrade(), all > 0) {
-                    w.progress.bar.set_fraction((base + share * done as f64 / all as f64).clamp(0.0, 1.0));
+                    let f = (base + share * done as f64 / all as f64).clamp(0.0, 1.0);
+                    w.progress.bar.set_fraction(f);
+                    w.window.set_title(Some(&format!("{}%  ·  {}", (f * 100.0).round() as i32, w.progress.label.text())));
                 }
             });
             let result = match req.mode {
@@ -235,7 +244,7 @@ impl Window {
             };
             self.record(op, &message);
         } else if skipped > 0 || cancel.is_cancelled() {
-            self.toast(&message);
+            self.toast_keyed("transfer", &message);
         }
     }
 

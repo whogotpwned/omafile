@@ -133,6 +133,14 @@ impl Window {
             }
         });
         views.add(&venv);
+        let remember = adw::SwitchRow::builder().title(tr("Remember view per folder")).subtitle(tr("List or grid, sort order, grouping and icon size come back when you return to a folder")).active(self.prefs.get_bool("remember-views", true)).build();
+        let this = Rc::downgrade(self);
+        remember.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("remember-views", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        views.add(&remember);
         page.add(&views);
 
         let keys = adw::PreferencesGroup::builder().title(tr("Keys")).build();

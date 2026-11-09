@@ -403,5 +403,16 @@ impl GalleryView {
             [one] => self.preview.show_git(Some(one), 1, pane.git_info_for(one)),
             other => self.preview.show(None, other.len()),
         }
+        // Decode the neighbours now, so ← → feel instant.
+        if let Some(current) = (0..pane.selection.n_items()).find(|i| pane.selection.is_selected(*i)) {
+            for delta in [1i64, -1, 2] {
+                let i = current as i64 + delta;
+                if i >= 0 {
+                    if let Some(item) = pane.item_at(i as u32).filter(|it| !it.is_dir()) {
+                        pane.thumbs.warm(&item, 1800);
+                    }
+                }
+            }
+        }
     }
 }

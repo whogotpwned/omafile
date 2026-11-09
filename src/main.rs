@@ -49,6 +49,7 @@ mod undo;
 mod vaultui;
 mod views;
 mod vimkeys;
+mod viewmem;
 mod shelf;
 mod treemap;
 mod rules;

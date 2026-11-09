@@ -610,6 +610,15 @@ toast {{
 .omafile-tag-blue {{ background-color: {blue}; }}
 .omafile-tag-purple {{ background-color: {magenta}; }}
 .omafile-tag-gray {{ background-color: {dim}; }}
+@keyframes omafile-pulse {{
+  from {{ opacity: 0.45; }}
+  to {{ opacity: 1.0; }}
+}}
+.omafile-skeleton-bar {{
+  background-color: alpha(currentColor, 0.10);
+  border-radius: 6px;
+  animation: omafile-pulse 900ms ease-in-out infinite alternate;
+}}
 "#,
         name = p.name,
         bg = p.background.hex(),

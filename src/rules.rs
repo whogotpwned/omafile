@@ -320,7 +320,7 @@ pub fn watch(window: &Rc<Window>) {
                 if let Some(w) = weak.upgrade() {
                     glib::spawn_future_local(async move {
                         if let Some(summary) = run(&w, Some(&folder)).await {
-                            w.toast(&summary);
+                            w.toast_keyed("rules", &summary);
                             for p in w.panes.borrow().clone() {
                                 if p.cwd().path().as_deref() == Some(folder.as_path()) {
                                     p.reload();

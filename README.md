@@ -10,12 +10,12 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.12.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.13.0-f7768e)](CHANGELOG.md)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-55%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-56%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-pdf.png" alt="omafile in Tokyo Night: grid view with image and PDF thumbnails and the preview pane" width="900">
@@ -78,6 +78,8 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![thumbnails](docs/screenshot-thumbs.png) | **Previews in the icon**, like Finder and Explorer: text and source files show a page with their first lines, images and SVGs their picture, PDFs their first page, videos a frame (`ffmpegthumbnailer`, else `ffmpeg`), music its cover art, theme folders their `preview.png`. Everything decodes off the main thread and is cached; credential files are never rendered. |
 | ![play badge](docs/screenshot-play-badge.png) | **Play in place**: songs and videos carry a round play badge over their icon; one click starts them. Audio shows cover and transport controls in the preview pane, `Space` (Quick Look) plays right away, `←`/`→` walk the album. GStreamer decodes, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
 | ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview without opening the file. PDFs with page count and **page turning** (`↑`/`↓`, the wheel, or the ‹ › buttons under the page), images, text, folders with item count, git diffs for changed files. `←`/`→` move through the folder, `Space` or `Esc` closes. The **preview pane** (`F3`) is the persistent sidebar version of the same thing; there `Alt+PgUp` / `Alt+PgDn` turn the pages. |
+| ![streaming](docs/screenshot-streaming.png) | **Smooth under load**: folders stream in while they are still being listed (a 30k-file folder shows its first rows at once), skeleton rows stand in for slow listings, and a real crossfade carries you from folder to folder. Thumbnails go through the freedesktop cache in `~/.cache/thumbnails` (shared with Nautilus and Loupe), the rows on screen decode first and recycled cells are skipped. Local subfolders are prefetched, the gallery decodes its neighbours ahead, remote listings are cached and a dropped SFTP share is remounted and retried on its own. |
+| ![view memory](docs/screenshot-view-memory.png) | **Remembered per folder**: list or grid, sort order, grouping and icon size come back when you return to a folder (`~/.config/omafile/views`, Preferences › *Remember view per folder*). **Touchpad**: two-finger swipe goes back and forward, pinch zooms the grid, kinetic scrolling everywhere. **Drag & drop**: the list auto-scrolls near its edges, tabs and breadcrumbs are spring-loaded and accept drops, several items drag as a stack with a count badge. Toasts of the same kind merge instead of stacking, errors carry a *Retry* button, the window title shows the transfer percentage, and every animation obeys the system's reduced-motion setting. |
 | ![shelf](docs/screenshot-shelf.png) | **Shelf** (`Ctrl+Shift+S`, context menu › *Add to Shelf*, or drop files onto it): a small floating window that collects files from any folder, like Dropover or Yoink. Drag them out together, or *Copy Here* / *Move Here* into the folder omafile shows. The shelf survives a restart (`~/.local/state/omafile/shelf`). `Ctrl+Shift+B` shows or hides it; a Hyprland `windowrule = float, title:^(Shelf)$` keeps it floating. |
 | ![treemap](docs/screenshot-treemap.png) | **Disk usage map** (`Ctrl+Alt+U`, menu, or the context menu of a folder): the folder as a squarified treemap, two levels deep, sizes in every box. Click zooms into a folder, `Backspace` goes up, double click opens it in omafile, right click offers *Open*, *Reveal* and *Move to Trash* (undoable). Scanning runs off the main thread and can be cancelled by closing the dialog. |
 | ![rules](docs/screenshot-rules.png) | **Folder rules** (`Ctrl+Alt+R`), Hazel style: for the folder on show, "name matches *.pdf, older than 7 days → move to ~/Documents/Invoices", "*.iso → red tag", "*.tmp → trash", "screenshots → sort into YYYY-MM folders", or "run a command with $FILE". Each rule has a switch; *Run Now* applies them at once. Rules run when omafile starts and a few seconds after something lands in a watched folder; moves, copies, tags and trashing go into the undo journal. Stored in `~/.config/omafile/rules`. |
@@ -175,7 +177,7 @@ Context menu · Connect to Server · custom folder icon · vault menu · a tag l
 
 ### Motion
 
-Panels move the way the rest of Omarchy moves instead of snapping: the terminal panel slides up and down, the split view slides its divider in from the right, a new folder fades in like a Hyprland window, thumbnails cross-fade over their icon, hover and selection colours ease. libadwaita animations with an ease-out-quint curve over about 260 ms; `gtk-enable-animations` (reduce motion) switches every effect off at once.
+Panels move the way the rest of Omarchy moves instead of snapping: the terminal panel slides up and down, the split view slides its divider in from the right, a new folder cross-fades over the old one (the previous view is frozen and fades out), slow listings show pulsing skeleton rows, thumbnails cross-fade over their icon, hover and selection colours ease. libadwaita animations with an ease-out-quint curve over about 260 ms; `gtk-enable-animations` (reduce motion) switches every effect off at once.
 
 ---
 
@@ -425,11 +427,13 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 
 | File | Content |
 |---|---|
-| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `trash-auto-days`) |
+| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `trash-auto-days`) |
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
 | `~/.config/omafile/rules` | Folder rules: folder, glob, older-than-days, action, argument, enabled |
+| `~/.config/omafile/views` | Remembered view per folder: uri, view, sort, order, group, grid |
+| `~/.cache/thumbnails/` | freedesktop thumbnail cache, shared with other apps |
 | `~/.local/state/omafile/shelf` | Files currently on the shelf, one URI per line |
 | `~/.config/omafile/i18n/<code>.json` | Your own translations, override the built-in catalog key by key |
 | `~/.local/state/omafile/session` | Last window layout |
@@ -450,11 +454,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.12.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.13.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 55 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 56 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

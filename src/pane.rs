@@ -59,6 +59,13 @@ pub struct Pane {
     pub content_toggle: gtk::ToggleButton,
     /// Spring-loaded folders: (position hovered during a drag, timer).
     spring: RefCell<Option<(u32, glib::SourceId)>>,
+    /// Auto-scroll while dragging near the top or bottom edge: direction and timer.
+    autoscroll: RefCell<Option<glib::SourceId>>,
+    autoscroll_dir: Cell<i32>,
+    /// Frozen picture of the previous folder, faded out over the new one.
+    ghost: gtk::Picture,
+    /// Set while a remembered per-folder view is being applied.
+    applying_view: Cell<bool>,
     pub term_paned: gtk::Paned,
     pub term: RefCell<Option<Rc<crate::termpanel::TermPanel>>>,
     pub state: RefCell<PaneState>,
@@ -114,6 +121,18 @@ impl Pane {
         view_stack.add_named(&list_scroll, Some("list"));
         view_stack.add_named(&grid_scroll, Some("grid"));
         view_stack.add_named(&empty, Some("empty"));
+        view_stack.add_named(&skeleton_rows(), Some("skeleton"));
+        list_scroll.set_kinetic_scrolling(true);
+        grid_scroll.set_kinetic_scrolling(true);
+        // The previous folder stays as a frozen picture for a moment and fades out (a real crossfade).
+        let ghost = gtk::Picture::new();
+        ghost.set_can_target(false);
+        ghost.set_visible(false);
+        ghost.set_content_fit(gtk::ContentFit::Fill);
+        let view_overlay = gtk::Overlay::new();
+        view_overlay.set_child(Some(&view_stack));
+        view_overlay.add_overlay(&ghost);
+        view_overlay.set_vexpand(true);
 
         let status = gtk::Label::builder()
             .xalign(0.0)
@@ -133,7 +152,7 @@ impl Pane {
         status_row.append(&branch_btn);
         let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
         card.add_css_class("omafile-card");
-        card.append(&view_stack);
+        card.append(&view_overlay);
         card.append(&status_row);
 
         // The terminal panel docks below the file card inside a vertical paned.
@@ -183,6 +202,10 @@ impl Pane {
             grid_size: Cell::new(window.prefs.get("grid-size").and_then(|v| v.parse().ok()).unwrap_or(ICON_GRID)),
             content_toggle,
             spring: RefCell::new(None),
+            autoscroll: RefCell::new(None),
+            autoscroll_dir: Cell::new(0),
+            ghost,
+            applying_view: Cell::new(false),
             term_paned,
             term: RefCell::new(None),
             state: RefCell::new(PaneState {
@@ -393,6 +416,14 @@ impl Pane {
             self.column_view.append_column(col);
         }
         self.column_view.sort_by_column(Some(&columns[0].1), gtk::SortType::Ascending);
+        if let Some(sorter) = self.column_view.sorter() {
+            let this = Rc::downgrade(&self);
+            sorter.connect_changed(move |_, _| {
+                if let Some(p) = this.upgrade() {
+                    p.remember_view();
+                }
+            });
+        }
 
         *self.columns.borrow_mut() = columns;
         self
@@ -503,6 +534,54 @@ impl Pane {
                 }
             });
             self.grid_view.add_controller(scroll);
+        }
+        {
+            // Two-finger swipe on a touchpad: left = back, right = forward.
+            let swipe = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::HORIZONTAL);
+            let acc = Rc::new(Cell::new(0.0f64));
+            let fired = Rc::new(Cell::new(false));
+            let (a2, f2) = (acc.clone(), fired.clone());
+            swipe.connect_scroll_begin(move |_| {
+                a2.set(0.0);
+                f2.set(false);
+            });
+            let this = Rc::downgrade(self);
+            let (a2, f2) = (acc.clone(), fired.clone());
+            swipe.connect_scroll(move |c, dx, _| {
+                let touchpad = c.current_event_device().map(|d| matches!(d.source(), gdk::InputSource::Touchpad | gdk::InputSource::Touchscreen)).unwrap_or(false);
+                if !touchpad || f2.get() {
+                    return glib::Propagation::Proceed;
+                }
+                a2.set(a2.get() + dx);
+                if let Some(p) = this.upgrade() {
+                    if a2.get() > 90.0 {
+                        f2.set(true);
+                        p.go_forward();
+                    } else if a2.get() < -90.0 {
+                        f2.set(true);
+                        p.go_back();
+                    }
+                }
+                glib::Propagation::Proceed
+            });
+            self.view_stack.add_controller(swipe);
+            // Pinch on the grid zooms the icons.
+            let pinch = gtk::GestureZoom::new();
+            let base = Rc::new(Cell::new(ICON_GRID));
+            let this = Rc::downgrade(self);
+            let b2 = base.clone();
+            pinch.connect_begin(move |_, _| { if let Some(p) = this.upgrade() { b2.set(p.grid_size.get()); } });
+            let this = Rc::downgrade(self);
+            pinch.connect_scale_changed(move |_, scale| {
+                if let Some(p) = this.upgrade() {
+                    let target = ((base.get() as f64) * scale).round() as i32;
+                    let step = (target.clamp(40, 200) - p.grid_size.get()) / 8 * 8;
+                    if step != 0 {
+                        p.zoom(step);
+                    }
+                }
+            });
+            self.grid_view.add_controller(pinch);
         }
         for view in [self.column_view.clone().upcast::<gtk::Widget>(), self.grid_view.clone().upcast()] {
             // Keys that mean something else in text fields are handled on the views only.
@@ -674,9 +753,35 @@ impl Pane {
             Some(gdk::ContentProvider::for_value(&gdk::FileList::from_array(&files).to_value()))
         });
         let widget2 = widget.clone();
+        let this2 = Rc::downgrade(self);
         source.connect_drag_begin(move |source, _| {
-            let paintable = gtk::WidgetPaintable::new(Some(&widget2));
-            source.set_icon(Some(&paintable), 16, 16);
+            let n = this2.upgrade().map(|p| p.selected_items().len()).unwrap_or(1);
+            if n > 1 {
+                // Several items: the cell plus a count badge, like Finder's stack.
+                let cell = gtk::WidgetPaintable::new(Some(&widget2)).current_image();
+                let (w, h) = (widget2.width().max(24) as f32, widget2.height().max(24) as f32);
+                let snapshot = gtk::Snapshot::new();
+                cell.snapshot(&snapshot, w as f64, h as f64);
+                let layout = widget2.create_pango_layout(Some(&n.to_string()));
+                let (_, logical) = layout.pixel_extents();
+                let (bw, bh) = ((logical.width() as f32 + 12.0).max(22.0), 20.0f32);
+                let rect = gtk::graphene::Rect::new(w - bw - 2.0, 2.0, bw, bh);
+                let rounded = gtk::gsk::RoundedRect::from_rect(rect, 10.0);
+                snapshot.push_rounded_clip(&rounded);
+                let accent = this2.upgrade().and_then(|p| p.window.upgrade()).map(|w| w.theme.palette().accent.hex()).and_then(|h| gdk::RGBA::parse(&h).ok()).unwrap_or(gdk::RGBA::BLUE);
+                snapshot.append_color(&accent, &rect);
+                snapshot.pop();
+                snapshot.save();
+                snapshot.translate(&gtk::graphene::Point::new(w - bw - 2.0 + (bw - logical.width() as f32) / 2.0, 2.0 + (bh - logical.height() as f32) / 2.0));
+                snapshot.append_layout(&layout, &gdk::RGBA::WHITE);
+                snapshot.restore();
+                if let Some(paintable) = snapshot.to_paintable(Some(&gtk::graphene::Size::new(w, h))) {
+                    source.set_icon(Some(&paintable), 16, 16);
+                }
+            } else {
+                let paintable = gtk::WidgetPaintable::new(Some(&widget2));
+                source.set_icon(Some(&paintable), 16, 16);
+            }
         });
         widget.add_controller(source);
     }
@@ -693,6 +798,7 @@ impl Pane {
                 if std::env::var_os("OMAFILE_TRACE").is_some() {
                     eprintln!("spring motion at {x:.0},{y:.0}: over={over:?} pending={pending:?}");
                 }
+                p.autoscroll_near_edge(&view, y);
                 if over != pending {
                     if let Some((_, id)) = p.spring.borrow_mut().take() {
                         id.remove();
@@ -718,6 +824,7 @@ impl Pane {
                     if let Some((_, id)) = p.spring.borrow_mut().take() {
                         id.remove();
                     }
+                    p.stop_autoscroll();
                 }
             });
             let this = Rc::downgrade(self);
@@ -726,6 +833,7 @@ impl Pane {
                     if let Some((_, id)) = p.spring.borrow_mut().take() {
                         id.remove();
                     }
+                    p.stop_autoscroll();
                 }
                 let (Some(p), Some(view)) = (this.upgrade(), t.widget()) else { return false };
                 let Ok(list) = value.get::<gdk::FileList>() else { return false };
@@ -791,6 +899,8 @@ impl Pane {
         self.watch_cwd();
         self.fade_view();
         self.reload();
+        self.schedule_skeleton();
+        self.apply_remembered_view();
         if let Some(c) = self.columns_view.borrow().clone() {
             c.on_navigate(&file);
         }
@@ -829,8 +939,27 @@ impl Pane {
         glib::spawn_future_local(async move {
             let git_wanted = file.is_native() && crate::git::available();
             let venv_path = file.path();
+            // A cached listing (prefetched or recently shown) appears at once; the fresh one replaces it.
+            let cached = this.upgrade().and_then(|p| p.window.upgrade()).and_then(|w| w.cached_listing(&file));
+            if let (Some(p), Some(items)) = (this.upgrade(), cached) {
+                p.store.remove_all();
+                p.store.extend_from_slice(&items);
+                p.update_empty();
+            }
+            let streamed = std::cell::Cell::new(false);
+            let listing = ops::list_dir_streaming(&file, |batch| {
+                let Some(p) = this.upgrade() else { return };
+                if p.state.borrow().generation != generation {
+                    return;
+                }
+                if !streamed.replace(true) {
+                    p.store.remove_all();
+                }
+                p.store.extend_from_slice(&batch);
+                p.update_empty();
+            });
             let (result, git, venv) = futures_util::future::join3(
-                ops::list_dir(&file),
+                listing,
                 async {
                     if git_wanted {
                         crate::git::status(&file.path().unwrap_or_default()).await
@@ -856,9 +985,20 @@ impl Pane {
             p.check_disk_space(&file);
             let selected: Vec<gio::File> = p.selected_items().iter().map(|i| i.file()).collect();
             match result {
-                Ok(items) => {
-                    p.store.remove_all();
-                    p.store.extend_from_slice(&items);
+                Ok(_) => {
+                    if !streamed.get() {
+                        p.store.remove_all();
+                    }
+                    if p.git.borrow().is_some() {
+                        // Badges are drawn at bind time: refresh the rows now that git knows.
+                        let n = p.store.n_items();
+                        p.store.items_changed(0, n, n);
+                    }
+                    if let Some(w) = p.window.upgrade() {
+                        let items: Vec<FileItem> = (0..p.store.n_items()).filter_map(|i| p.store.item(i).and_downcast::<FileItem>()).collect();
+                        w.remember_listing(&file, items);
+                        w.prefetch_children(&p);
+                    }
                     for f in &selected {
                         p.select_file(f, false);
                     }
@@ -872,10 +1012,29 @@ impl Pane {
                         }
                     }
                 }
+                Err(e) if e.matches(gio::IOErrorEnum::NotMounted) && !file.is_native() => {
+                    // The share went away (sleep, network): mount again and retry once, no dialog unless needed.
+                    if let Some(w) = p.window.upgrade() {
+                        let op = gtk::MountOperation::new(Some(&w.window));
+                        let weak = Rc::downgrade(&p);
+                        glib::spawn_future_local(async move {
+                            let ok = crate::remote::ensure_mounted(&file, &op).await.is_ok();
+                            if let Some(p) = weak.upgrade() {
+                                if ok && p.state.borrow().generation == generation {
+                                    p.reload();
+                                } else if let Some(w) = p.window.upgrade() {
+                                    let p2 = Rc::downgrade(&p);
+                                    w.toast_retry(&trf!("Cannot reach {name}", name = window::display_name(&file)), Box::new(move |_| { if let Some(p) = p2.upgrade() { p.reload(); } }));
+                                }
+                            }
+                        });
+                    }
+                }
                 Err(e) => {
                     p.store.remove_all();
                     if let Some(w) = p.window.upgrade() {
-                        w.toast_error(&format!("Cannot open {}: {}", window::display_name(&file), e.message()));
+                        let p2 = Rc::downgrade(&p);
+                        w.toast_retry(&format!("{}: {}", trf!("Cannot open {name}", name = window::display_name(&file)), e.message()), Box::new(move |_| { if let Some(p) = p2.upgrade() { p.reload(); } }));
                     }
                 }
             }
@@ -899,9 +1058,30 @@ impl Pane {
 
     /// New folder: fade the file view in (the Hyprland window-fade feel).
     fn fade_view(&self) {
-        if crate::motion::animations_enabled(&self.view_stack) {
-            crate::motion::fade_in(&self.view_stack, 0.35, crate::motion::FAST + 60);
+        if !crate::motion::animations_enabled(&self.view_stack) || !self.view_stack.is_mapped() || self.view_stack.width() < 2 {
+            return;
         }
+        let paintable = gtk::WidgetPaintable::new(Some(&self.view_stack));
+        let frozen = paintable.current_image();
+        self.ghost.set_paintable(Some(&frozen));
+        self.ghost.set_visible(true);
+        let ghost = self.ghost.clone();
+        crate::motion::property(&self.ghost, "opacity", 1.0, 0.0, crate::motion::FAST + 60, Some(Box::new(move || {
+            ghost.set_visible(false);
+            ghost.set_opacity(1.0);
+            ghost.set_paintable(None::<&gdk::Paintable>);
+        })));
+    }
+
+    /// Show skeleton rows if the listing is still running after a moment.
+    fn schedule_skeleton(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local_once(std::time::Duration::from_millis(140), move || {
+            let Some(p) = weak.upgrade() else { return };
+            if p.state.borrow().loading && p.store.n_items() == 0 && p.view_mode() != "columns" {
+                p.view_stack.set_visible_child_name("skeleton");
+            }
+        });
     }
 
     /// Ctrl+`: show the terminal below the files, or hide it again.
@@ -1309,6 +1489,107 @@ impl Pane {
         }
     }
 
+    // ----- drag auto-scroll -----------------------------------------------------------
+
+    /// Scroll the list while a drag hovers near its top or bottom edge.
+    fn autoscroll_near_edge(self: &Rc<Self>, view: &gtk::Widget, y: f64) {
+        let height = view.height() as f64;
+        let zone = 36.0;
+        let dir = if y < zone { -1 } else if y > height - zone { 1 } else { 0 };
+        self.autoscroll_dir.set(dir);
+        if dir == 0 {
+            self.stop_autoscroll();
+            return;
+        }
+        if self.autoscroll.borrow().is_some() {
+            return;
+        }
+        let Some(scrolled) = view.ancestor(gtk::ScrolledWindow::static_type()).and_downcast::<gtk::ScrolledWindow>() else { return };
+        let weak = Rc::downgrade(self);
+        let id = glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+            let Some(p) = weak.upgrade() else { return glib::ControlFlow::Break };
+            let dir = p.autoscroll_dir.get();
+            if dir == 0 {
+                return glib::ControlFlow::Break;
+            }
+            let adj = scrolled.vadjustment();
+            adj.set_value((adj.value() + dir as f64 * 9.0).clamp(adj.lower(), adj.upper() - adj.page_size()));
+            glib::ControlFlow::Continue
+        });
+        self.autoscroll.replace(Some(id));
+    }
+
+    fn stop_autoscroll(&self) {
+        self.autoscroll_dir.set(0);
+        if let Some(id) = self.autoscroll.borrow_mut().take() {
+            id.remove();
+        }
+    }
+
+    // ----- per-folder view memory ------------------------------------------------------
+
+    /// The view settings in effect right now.
+    pub fn current_view_prefs(&self) -> crate::viewmem::ViewPrefs {
+        let (sort, descending) = self.current_sort();
+        let group = self.window.upgrade().and_then(|w| w.prefs.get("group")).unwrap_or_else(|| "none".into());
+        crate::viewmem::ViewPrefs { view: self.view_mode(), sort, descending, group, grid: self.grid_size.get() }
+    }
+
+    pub fn current_sort(&self) -> (String, bool) {
+        let sorter = self.column_view.sorter().and_downcast::<gtk::ColumnViewSorter>();
+        let col = sorter.as_ref().and_then(|s| s.primary_sort_column());
+        let id = col.and_then(|c| self.columns.borrow().iter().find(|(_, cc)| cc == &c).map(|(id, _)| id.to_string())).unwrap_or_else(|| "name".into());
+        let descending = sorter.map(|s| s.primary_sort_order() == gtk::SortType::Descending).unwrap_or(false);
+        (id, descending)
+    }
+
+    /// Store the current view for this folder (Preferences › Remember view per folder).
+    pub fn remember_view(&self) {
+        if self.applying_view.get() || self.state.borrow().loading || self.virtual_title().is_some() {
+            return;
+        }
+        let Some(w) = self.window.upgrade() else { return };
+        if !w.prefs.get_bool("remember-views", true) {
+            return;
+        }
+        let defaults = crate::viewmem::ViewPrefs {
+            view: w.prefs.get("view").unwrap_or_else(|| "list".into()),
+            sort: "name".into(),
+            descending: false,
+            group: "none".into(),
+            grid: w.prefs.get("grid-size").and_then(|v| v.parse().ok()).unwrap_or(ICON_GRID),
+        };
+        let _ = crate::viewmem::set(&self.cwd().uri(), self.current_view_prefs(), &defaults);
+    }
+
+    /// Apply what was remembered for the folder on show, if anything.
+    fn apply_remembered_view(self: &Rc<Self>) {
+        let Some(w) = self.window.upgrade() else { return };
+        if !w.prefs.get_bool("remember-views", true) {
+            return;
+        }
+        let Some(prefs) = crate::viewmem::get(&self.cwd().uri()) else { return };
+        self.applying_view.set(true);
+        if prefs.view != self.view_mode() {
+            gio::prelude::ActionGroupExt::activate_action(&w.window, "view", Some(&prefs.view.to_variant()));
+        }
+        let col = self.columns.borrow().iter().find(|(k, _)| *k == prefs.sort).map(|(_, c)| c.clone());
+        if let Some(col) = col {
+            self.column_view.sort_by_column(Some(&col), if prefs.descending { gtk::SortType::Descending } else { gtk::SortType::Ascending });
+        }
+        let current_group = w.prefs.get("group").unwrap_or_else(|| "none".into());
+        if prefs.group != current_group {
+            self.set_group(&prefs.group);
+        }
+        if prefs.grid != self.grid_size.get() {
+            self.grid_size.set(prefs.grid);
+            let factory = gtk::SignalListItemFactory::new();
+            self.setup_grid(&factory);
+            self.grid_view.set_factory(Some(&factory));
+        }
+        self.applying_view.set(false);
+    }
+
     // ----- helpers --------------------------------------------------------------------
 
     pub fn cwd(&self) -> gio::File {
@@ -1399,6 +1680,7 @@ impl Pane {
             }
         }
         self.status.set_text(&trf!("Icon size {size} px", size = size));
+        self.remember_view();
     }
 
     /// Group the listing into sections: none, kind, date, size, tag.
@@ -1892,4 +2174,29 @@ fn apply_item_classes(widget: &impl IsA<gtk::Widget>, item: &FileItem) {
             w.remove_css_class(class);
         }
     }
+}
+
+/// Placeholder rows shown while a slow folder is still listing.
+fn skeleton_rows() -> gtk::Box {
+    let rows = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    rows.add_css_class("omafile-skeleton");
+    rows.set_margin_top(6);
+    for i in 0..9 {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row.set_margin_start(14);
+        row.set_margin_end(14);
+        row.set_margin_top(9);
+        row.set_margin_bottom(9);
+        let icon = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        icon.add_css_class("omafile-skeleton-bar");
+        icon.set_size_request(20, 20);
+        let bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        bar.add_css_class("omafile-skeleton-bar");
+        bar.set_size_request(120 + (i * 37) % 160, 14);
+        bar.set_valign(gtk::Align::Center);
+        row.append(&icon);
+        row.append(&bar);
+        rows.append(&row);
+    }
+    rows
 }

@@ -12,22 +12,31 @@ pub type OpResult = Result<(), glib::Error>;
 const PRIO: glib::Priority = glib::Priority::DEFAULT;
 
 pub async fn list_dir(dir: &gio::File) -> Result<Vec<FileItem>, glib::Error> {
+    let mut items = Vec::new();
+    list_dir_streaming(dir, |batch| items.extend(batch)).await?;
+    Ok(items)
+}
+
+/// List `dir` and hand every batch to `on_batch` as soon as it arrives, so a
+/// folder with 100k entries starts to show after the first few hundred.
+pub async fn list_dir_streaming(dir: &gio::File, mut on_batch: impl FnMut(Vec<FileItem>)) -> Result<usize, glib::Error> {
     let enumerator = dir
         .enumerate_children_future(ATTRIBUTES, gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS, PRIO)
         .await?;
-    let mut items = Vec::new();
+    let mut total = 0;
+    // Bigger batches once the first screenful is on show.
+    let mut batch_size = 250;
     loop {
-        let batch = enumerator.next_files_future(200, PRIO).await?;
+        let batch = enumerator.next_files_future(batch_size, PRIO).await?;
         if batch.is_empty() {
             break;
         }
-        for info in batch {
-            let child = enumerator.child(&info);
-            items.push(FileItem::new(child, info));
-        }
+        total += batch.len();
+        on_batch(batch.into_iter().map(|info| FileItem::new(enumerator.child(&info), info)).collect());
+        batch_size = 1000;
     }
     let _ = enumerator.close_future(PRIO).await;
-    Ok(items)
+    Ok(total)
 }
 
 pub async fn query(file: &gio::File) -> Result<FileItem, glib::Error> {

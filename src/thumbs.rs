@@ -19,6 +19,8 @@ pub struct ThumbCache {
     textures: RefCell<HashMap<String, Option<gdk::Paintable>>>,
     in_flight: RefCell<HashSet<String>>,
     waiting: RefCell<HashMap<String, Vec<(gtk::Picture, String)>>>,
+    queue: RefCell<Vec<Job>>,
+    active: std::cell::Cell<usize>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -47,6 +49,8 @@ impl ThumbCache {
             textures: RefCell::new(HashMap::new()),
             in_flight: RefCell::new(HashSet::new()),
             waiting: RefCell::new(HashMap::new()),
+            queue: RefCell::new(Vec::new()),
+            active: std::cell::Cell::new(0),
         })
     }
 
@@ -80,6 +84,8 @@ impl ThumbCache {
 
     /// Show the thumbnail for `item` in `picture` once it is ready. The picture
     /// is tagged with the key so a recycled cell never shows a stale image.
+    /// Requests queue up and the newest (the rows on screen) decode first; a
+    /// request whose cell was recycled before its turn is dropped.
     pub fn assign(self: &Rc<Self>, item: &FileItem, picture: &gtk::Picture, size: i32) {
         let Some(source) = Self::source_for(item) else {
             picture.set_widget_name("");
@@ -97,7 +103,7 @@ impl ThumbCache {
         }
         picture.set_paintable(None::<&gdk::Paintable>);
         self.waiting.borrow_mut().entry(key.clone()).or_default().push((picture.clone(), key.clone()));
-        if !self.in_flight.borrow_mut().insert(key.clone()) {
+        if self.in_flight.borrow().contains(&key) || self.queue.borrow().iter().any(|j| j.key == key) {
             return;
         }
         let path = match &source {
@@ -106,37 +112,156 @@ impl ThumbCache {
             Source::Folder(p) => Some(p.clone()),
         };
         let Some(path) = path else { return };
-        let this = Rc::downgrade(self);
-        let widget = picture.clone();
-        glib::spawn_future_local(async move {
-            let loaded = gio::spawn_blocking(move || match source {
-                Source::Image | Source::Folder(_) => decode_image(&path, size).map(Loaded::Pixels),
-                Source::Pdf => decode_pdf(&path, size).map(Loaded::Pixels),
-                Source::Video => decode_video(&path, size).map(Loaded::Pixels),
-                Source::Audio => decode_cover(&path, size).map(Loaded::Pixels),
-                Source::Text => read_text_head(&path).map(Loaded::Text),
-            })
-            .await
-            .ok()
-            .flatten();
-            let texture: Option<gdk::Paintable> = match loaded {
-                Some(Loaded::Pixels(d)) => {
-                    let format = if d.alpha { gdk::MemoryFormat::R8g8b8a8 } else { gdk::MemoryFormat::R8g8b8 };
-                    Some(gdk::MemoryTexture::new(d.width, d.height, format, &d.bytes, d.stride as usize).upcast::<gdk::Paintable>())
-                }
-                Some(Loaded::Text(text)) => Some(render_text_page(&widget, &text, size)),
-                None => None,
-            };
-            let Some(cache) = this.upgrade() else { return };
-            cache.textures.borrow_mut().insert(key.clone(), texture.clone());
-            cache.in_flight.borrow_mut().remove(&key);
-            let waiting = cache.waiting.borrow_mut().remove(&key).unwrap_or_default();
-            for (picture, tag) in waiting {
-                if picture.widget_name() == tag {
-                    picture.set_paintable(texture.as_ref());
-                }
+        let disk = item.target_file().is_native() && matches!(source, Source::Image | Source::Pdf | Source::Video | Source::Audio);
+        self.queue.borrow_mut().push(Job { key, source, path, size, uri: item.target_file().uri().to_string(), mtime: item.modified_unix(), disk, widget: picture.clone() });
+        self.pump();
+    }
+
+    /// Decode into the cache without showing it anywhere (the next picture in a gallery).
+    pub fn warm(self: &Rc<Self>, item: &FileItem, size: i32) {
+        self.assign(item, &gtk::Picture::new(), size);
+    }
+
+    fn pump(self: &Rc<Self>) {
+        while self.active.get() < MAX_ACTIVE {
+            let Some(job) = self.queue.borrow_mut().pop() else { return };
+            // Still wanted? Every waiting picture may have been rebound meanwhile.
+            let wanted = self.waiting.borrow().get(&job.key).map(|v| v.iter().any(|(p, tag)| p.widget_name() == *tag)).unwrap_or(false);
+            if !wanted {
+                self.waiting.borrow_mut().remove(&job.key);
+                continue;
             }
-        });
+            self.in_flight.borrow_mut().insert(job.key.clone());
+            self.active.set(self.active.get() + 1);
+            let this = Rc::downgrade(self);
+            glib::spawn_future_local(async move {
+                let key = job.key.clone();
+                let widget = job.widget.clone();
+                let (source, path, size, uri, mtime, disk) = (job.source.clone(), job.path.clone(), job.size, job.uri.clone(), job.mtime, job.disk);
+                let loaded = gio::spawn_blocking(move || {
+                    if disk {
+                        if let Some(d) = disk_cache::load(&uri, mtime, size) {
+                            return Some(Loaded::Pixels(d));
+                        }
+                        // Decode at the XDG size, keep that on disk, show it scaled.
+                        let cache_size = disk_cache::bucket(size);
+                        let full = match source {
+                            Source::Image => decode_image(&path, cache_size),
+                            Source::Pdf => decode_pdf(&path, cache_size),
+                            Source::Video => decode_video(&path, cache_size),
+                            Source::Audio => decode_cover(&path, cache_size),
+                            _ => None,
+                        }?;
+                        disk_cache::store(&uri, mtime, cache_size, &full);
+                        return Some(Loaded::Pixels(full.scaled_to(size)));
+                    }
+                    match source {
+                        Source::Image | Source::Folder(_) => decode_image(&path, size).map(Loaded::Pixels),
+                        Source::Pdf => decode_pdf(&path, size).map(Loaded::Pixels),
+                        Source::Video => decode_video(&path, size).map(Loaded::Pixels),
+                        Source::Audio => decode_cover(&path, size).map(Loaded::Pixels),
+                        Source::Text => read_text_head(&path).map(Loaded::Text),
+                    }
+                })
+                .await
+                .ok()
+                .flatten();
+                let texture: Option<gdk::Paintable> = match loaded {
+                    Some(Loaded::Pixels(d)) => Some(d.to_paintable()),
+                    Some(Loaded::Text(text)) => Some(render_text_page(&widget, &text, size)),
+                    None => None,
+                };
+                let Some(cache) = this.upgrade() else { return };
+                cache.textures.borrow_mut().insert(key.clone(), texture.clone());
+                cache.in_flight.borrow_mut().remove(&key);
+                let waiting = cache.waiting.borrow_mut().remove(&key).unwrap_or_default();
+                for (picture, tag) in waiting {
+                    if picture.widget_name() == tag {
+                        picture.set_paintable(texture.as_ref());
+                    }
+                }
+                cache.active.set(cache.active.get().saturating_sub(1));
+                cache.pump();
+            });
+        }
+    }
+}
+
+/// Decodes running at once; the rest wait in the queue, newest first.
+const MAX_ACTIVE: usize = 4;
+
+struct Job {
+    key: String,
+    source: Source,
+    path: std::path::PathBuf,
+    size: i32,
+    uri: String,
+    mtime: i64,
+    /// Goes through the XDG thumbnail cache on disk.
+    disk: bool,
+    widget: gtk::Picture,
+}
+
+/// The freedesktop thumbnail cache (`~/.cache/thumbnails/<bucket>/<md5(uri)>.png`),
+/// shared with Nautilus, Loupe and friends: thumbnails survive a restart and
+/// are made only once per file on the whole desktop.
+mod disk_cache {
+    use super::Decoded;
+    use gtk::gdk_pixbuf::{Colorspace, Pixbuf};
+    use gtk::glib;
+    use std::path::PathBuf;
+
+    pub fn bucket(size: i32) -> i32 {
+        if size <= 256 {
+            256
+        } else if size <= 512 {
+            512
+        } else {
+            1024
+        }
+    }
+
+    fn dir(bucket: i32) -> PathBuf {
+        glib::user_cache_dir().join("thumbnails").join(match bucket {
+            256 => "large",
+            512 => "x-large",
+            _ => "xx-large",
+        })
+    }
+
+    pub fn path_for(uri: &str, bucket: i32) -> PathBuf {
+        let md5 = glib::compute_checksum_for_string(glib::ChecksumType::Md5, uri).map(|s| s.to_string()).unwrap_or_default();
+        dir(bucket).join(format!("{md5}.png"))
+    }
+
+    pub fn load(uri: &str, mtime: i64, size: i32) -> Option<Decoded> {
+        let path = path_for(uri, bucket(size));
+        let pixbuf = Pixbuf::from_file(&path).ok()?;
+        if pixbuf.option("tEXt::Thumb::MTime").map(|m| m.as_str() != mtime.to_string()).unwrap_or(true) {
+            return None;
+        }
+        Some(super::to_decoded(pixbuf).scaled_to(size))
+    }
+
+    pub fn store(uri: &str, mtime: i64, bucket: i32, decoded: &Decoded) {
+        let target = path_for(uri, bucket);
+        let Some(parent) = target.parent() else { return };
+        if std::fs::create_dir_all(parent).is_err() {
+            return;
+        }
+        let Some(pixbuf) = Pixbuf::from_bytes(&decoded.bytes, Colorspace::Rgb, decoded.alpha, 8, decoded.width, decoded.height, decoded.stride).into() else { return };
+        let tmp = parent.join(format!(".{}-{}.png", std::process::id(), glib::random_int()));
+        let mtime = mtime.to_string();
+        if pixbuf.savev(&tmp, "png", &[("tEXt::Thumb::URI", uri), ("tEXt::Thumb::MTime", mtime.as_str()), ("tEXt::Software", "omafile")]).is_ok() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+            }
+            let _ = std::fs::rename(&tmp, &target);
+        } else {
+            let _ = std::fs::remove_file(&tmp);
+        }
     }
 }
 
@@ -149,6 +274,19 @@ pub struct Decoded {
 }
 
 impl Decoded {
+    /// Fit into `size` × `size` (never upscales).
+    pub fn scaled_to(self, size: i32) -> Decoded {
+        if self.width.max(self.height) <= size {
+            return self;
+        }
+        let Some(pixbuf) = gtk::gdk_pixbuf::Pixbuf::from_bytes(&self.bytes, gtk::gdk_pixbuf::Colorspace::Rgb, self.alpha, 8, self.width, self.height, self.stride).into() else { return self };
+        let scale = size as f64 / self.width.max(self.height) as f64;
+        match pixbuf.scale_simple(((self.width as f64) * scale).max(1.0) as i32, ((self.height as f64) * scale).max(1.0) as i32, gtk::gdk_pixbuf::InterpType::Bilinear) {
+            Some(p) => to_decoded(p),
+            None => self,
+        }
+    }
+
     pub fn to_paintable(&self) -> gdk::Paintable {
         let format = if self.alpha { gdk::MemoryFormat::R8g8b8a8 } else { gdk::MemoryFormat::R8g8b8 };
         gdk::MemoryTexture::new(self.width, self.height, format, &self.bytes, self.stride as usize).upcast::<gdk::Paintable>()

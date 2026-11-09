@@ -312,6 +312,12 @@ impl Window {
             shelf.present();
         }));
         simple("shelf-show", Box::new(|w| w.shelf().toggle()));
+        simple("retry", Box::new(|w| {
+            let retry = w.retry.borrow_mut().take();
+            if let Some(f) = retry {
+                f(w);
+            }
+        }));
         simple("git-stage", Box::new(|w| w.git_stage_selected(false)));
         simple("git-unstage", Box::new(|w| w.git_stage_selected(true)));
         simple("git-discard", Box::new(|w| w.git_discard_selected()));
@@ -361,6 +367,9 @@ impl Window {
                 w.prefs.set("group", Some(&key));
                 for p in w.all_panes() {
                     p.set_group(&key);
+                }
+                if let Some(p) = w.active_pane() {
+                    p.remember_view();
                 }
             });
             self.window.add_action(&group);
@@ -637,6 +646,7 @@ impl Window {
             }
             if let Some(p) = w.active_pane() {
                 p.focus_view();
+                p.remember_view();
             }
         });
         self.window.add_action(&view);
@@ -677,6 +687,7 @@ impl Window {
             let panes: Vec<Rc<Pane>> = w.panes.borrow().clone();
             for p in panes {
                 p.sort_by(&key);
+                p.remember_view();
             }
         });
         self.window.add_action(&sort);

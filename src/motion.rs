@@ -36,12 +36,6 @@ pub fn property(widget: &impl IsA<gtk::Widget>, name: &str, from: f64, to: f64, 
     });
 }
 
-/// Fade a widget in from `from` opacity, e.g. a view that just changed folder.
-pub fn fade_in(widget: &impl IsA<gtk::Widget>, from: f64, ms: u32) {
-    widget.set_opacity(from);
-    property(widget, "opacity", from, 1.0, ms, None);
-}
-
 /// Slide a paned divider to `to` (pixels); `done` runs when it arrives.
 pub fn slide_paned(paned: &gtk::Paned, to: i32, ms: u32, done: Option<Box<dyn FnOnce()>>) {
     let from = paned.position() as f64;
