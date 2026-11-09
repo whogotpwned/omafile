@@ -1,5 +1,6 @@
 //! Main window shell: sidebar, header bar with path bar, tabs, preview pane.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::pane::Pane;
 use crate::prefs::Prefs;
@@ -98,15 +99,15 @@ impl Window {
             .application(app)
             .default_width(1120)
             .default_height(700)
-            .title("Files")
+            .title(tr("Files"))
             .build();
         window.add_css_class("omafile");
         let thumbs = ThumbCache::new();
 
         // ---- header ---------------------------------------------------------
-        let back_btn = nav_button("go-previous-symbolic", "Back (Alt+←)", "win.back");
-        let forward_btn = nav_button("go-next-symbolic", "Forward (Alt+→)", "win.forward");
-        let up_btn = nav_button("go-up-symbolic", "Parent folder (Alt+↑)", "win.up");
+        let back_btn = nav_button("go-previous-symbolic", &tr("Back (Alt+←)"), "win.back");
+        let forward_btn = nav_button("go-next-symbolic", &tr("Forward (Alt+→)"), "win.forward");
+        let up_btn = nav_button("go-up-symbolic", &tr("Parent folder (Alt+↑)"), "win.up");
         let nav_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         nav_box.add_css_class("linked");
         nav_box.append(&back_btn);
@@ -124,7 +125,7 @@ impl Window {
         let pathbar_click = gtk::GestureClick::new();
         pathbar_scroll.add_controller(pathbar_click.clone());
         let path_entry = gtk::Entry::builder()
-            .placeholder_text("Type a path, ~/folder or sftp://host/")
+            .placeholder_text(tr("Type a path, ~/folder or sftp://host/"))
             .primary_icon_name("folder-symbolic")
             .hexpand(true)
             .build();
@@ -138,15 +139,15 @@ impl Window {
         path_stack.set_hexpand(true);
         path_stack.set_halign(gtk::Align::Fill);
 
-        let search_btn = gtk::Button::builder().icon_name("edit-find-symbolic").tooltip_text("Filter (Ctrl+F)").action_name("win.search").build();
-        let view_btn = gtk::Button::builder().icon_name("view-grid-symbolic").tooltip_text("Grid view (Ctrl+2)").action_name("win.toggle-view").build();
-        let preview_btn = gtk::ToggleButton::builder().icon_name("sidebar-show-right-symbolic").tooltip_text("Preview pane (F3)").action_name("win.show-preview").build();
-        let hidden_btn = gtk::ToggleButton::builder().icon_name("view-conceal-symbolic").tooltip_text("Show hidden files (Ctrl+H)").action_name("win.show-hidden").build();
+        let search_btn = gtk::Button::builder().icon_name("edit-find-symbolic").tooltip_text(tr("Filter (Ctrl+F)")).action_name("win.search").build();
+        let view_btn = gtk::Button::builder().icon_name("view-grid-symbolic").tooltip_text(tr("Grid view (Ctrl+2)")).action_name("win.toggle-view").build();
+        let preview_btn = gtk::ToggleButton::builder().icon_name("sidebar-show-right-symbolic").tooltip_text(tr("Preview pane (F3)")).action_name("win.show-preview").build();
+        let hidden_btn = gtk::ToggleButton::builder().icon_name("view-conceal-symbolic").tooltip_text(tr("Show hidden files (Ctrl+H)")).action_name("win.show-hidden").build();
         hidden_btn.connect_active_notify(|b| {
             b.set_icon_name(if b.is_active() { "view-reveal-symbolic" } else { "view-conceal-symbolic" });
-            b.set_tooltip_text(Some(if b.is_active() { "Hide hidden files (Ctrl+H)" } else { "Show hidden files (Ctrl+H)" }));
+            b.set_tooltip_text(Some(&if b.is_active() { tr("Hide hidden files (Ctrl+H)") } else { tr("Show hidden files (Ctrl+H)") }));
         });
-        let menu_button = gtk::MenuButton::builder().icon_name("open-menu-symbolic").tooltip_text("Menu").menu_model(&main_menu()).primary(true).build();
+        let menu_button = gtk::MenuButton::builder().icon_name("open-menu-symbolic").tooltip_text(tr("Menu")).menu_model(&main_menu()).primary(true).build();
 
         let header = adw::HeaderBar::new();
         header.add_css_class("omafile-header");
@@ -210,10 +211,10 @@ impl Window {
         sidebar_header.add_css_class("omafile-header");
         let brand = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         brand.append(&gtk::Image::from_icon_name("folder-symbolic"));
-        brand.append(&gtk::Label::builder().label("Files").css_classes(["title-4"]).build());
+        brand.append(&gtk::Label::builder().label(tr("Files")).css_classes(["title-4"]).build());
         sidebar_header.set_title_widget(Some(&brand));
         sidebar_header.set_show_end_title_buttons(false);
-        let new_tab_btn = gtk::Button::builder().icon_name("tab-new-symbolic").tooltip_text("New tab (Ctrl+T)").action_name("win.new-tab").build();
+        let new_tab_btn = gtk::Button::builder().icon_name("tab-new-symbolic").tooltip_text(tr("New tab (Ctrl+T)")).action_name("win.new-tab").build();
         sidebar_header.pack_end(&new_tab_btn);
         let sidebar = adw::ToolbarView::new();
         sidebar.set_top_bar_style(adw::ToolbarStyle::Flat);
@@ -832,7 +833,7 @@ impl Window {
             let button = gtk::Button::new();
             button.add_css_class("flat");
             if file.equal(&home) {
-                button.set_child(Some(&icon_label("user-home-symbolic", "Home")));
+                button.set_child(Some(&icon_label("user-home-symbolic", &tr("Home"))));
             } else if file.parent().is_none() {
                 let (icon, text) = root_label(&file);
                 button.set_child(Some(&icon_label(icon, &text)));
@@ -1004,11 +1005,11 @@ impl Window {
     }
 
     fn rebuild_places(&self) {
-        let mut places = vec![Place::Header("Places".into())];
+        let mut places = vec![Place::Header(tr("Places"))];
         let home = glib::home_dir();
         let mut add = |name: &str, icon: &str, path: std::path::PathBuf| {
             if path.is_dir() {
-                places.push(Place::Entry { name: name.into(), icon: icon.into(), file: gio::File::for_path(path), kind: PlaceKind::Builtin });
+                places.push(Place::Entry { name: tr(name), icon: icon.into(), file: gio::File::for_path(path), kind: PlaceKind::Builtin });
             }
         };
         add("Home", "user-home-symbolic", home.clone());
@@ -1029,17 +1030,17 @@ impl Window {
         add("Projects", "folder-symbolic", home.join("Projects"));
         add("Code", "folder-symbolic", home.join("Code"));
         if let Some(themes) = crate::omarchy::themes_dir() {
-            places.push(Place::Entry { name: "Omarchy Themes".into(), icon: "applications-graphics-symbolic".into(), file: gio::File::for_path(themes), kind: PlaceKind::Builtin });
+            places.push(Place::Entry { name: tr("Omarchy Themes"), icon: "applications-graphics-symbolic".into(), file: gio::File::for_path(themes), kind: PlaceKind::Builtin });
         }
-        places.push(Place::Entry { name: "Recent".into(), icon: "document-open-recent-symbolic".into(), file: gio::File::for_uri("recent:///"), kind: PlaceKind::Builtin });
+        places.push(Place::Entry { name: tr("Recent"), icon: "document-open-recent-symbolic".into(), file: gio::File::for_uri("recent:///"), kind: PlaceKind::Builtin });
         let trash_name = match *self.trash_summary.borrow() {
-            Some((n, bytes)) if n > 0 => format!("Trash  ·  {n} {}, {}", if n == 1 { "item" } else { "items" }, crate::ops::human_size(bytes)),
-            _ => "Trash".to_string(),
+            Some((n, bytes)) if n > 0 => format!("Trash  ·  {n} {}, {}", if n == 1 { tr("item") } else { tr("items") }, crate::ops::human_size(bytes)),
+            _ => tr("Trash"),
         };
         places.push(Place::Entry { name: trash_name, icon: if self.trash_summary.borrow().map(|(n, _)| n > 0).unwrap_or(false) { "user-trash-full-symbolic".into() } else { "user-trash-symbolic".into() }, file: gio::File::for_uri("trash:///"), kind: PlaceKind::Builtin });
         let smart = crate::smart::load();
         if !smart.is_empty() {
-            places.push(Place::Header("Smart Folders".into()));
+            places.push(Place::Header(tr("Smart Folders")));
             for s in smart {
                 places.push(Place::Entry { name: s.name.clone(), icon: "folder-saved-search-symbolic".into(), file: gio::File::for_uri(&crate::smart::uri(&s)), kind: PlaceKind::Smart(s) });
             }
@@ -1047,7 +1048,7 @@ impl Window {
 
         let bookmarks = remote::bookmarks();
         if !bookmarks.is_empty() {
-            places.push(Place::Header("Bookmarks".into()));
+            places.push(Place::Header(tr("Bookmarks")));
             for b in bookmarks {
                 let icon = if b.file.is_native() { "folder-symbolic" } else { "folder-remote-symbolic" };
                 places.push(Place::Entry { name: b.name, icon: icon.into(), file: b.file, kind: PlaceKind::Bookmark });
@@ -1056,7 +1057,7 @@ impl Window {
 
         let used = self.tags.colors_in_use();
         if !used.is_empty() {
-            places.push(Place::Header("Tags".into()));
+            places.push(Place::Header(tr("Tags")));
             for color in used {
                 places.push(Place::Entry {
                     name: crate::tags::label(&color),
@@ -1066,7 +1067,7 @@ impl Window {
                 });
             }
         }
-        places.push(Place::Header("Remote".into()));
+        places.push(Place::Header(tr("Remote")));
         for host in remote::ssh_hosts() {
             places.push(Place::Entry {
                 name: host.alias.clone(),
@@ -1075,10 +1076,10 @@ impl Window {
                 kind: PlaceKind::Ssh(host.alias),
             });
         }
-        places.push(Place::Action { name: "Connect to Server…".into(), icon: "network-workgroup-symbolic".into(), action: "connect" });
+        places.push(Place::Action { name: tr("Connect to Server…"), icon: "network-workgroup-symbolic".into(), action: "connect" });
 
-        places.push(Place::Header("Devices".into()));
-        places.push(Place::Entry { name: "Computer".into(), icon: "drive-harddisk-symbolic".into(), file: gio::File::for_path("/"), kind: PlaceKind::Builtin });
+        places.push(Place::Header(tr("Devices")));
+        places.push(Place::Entry { name: tr("Computer"), icon: "drive-harddisk-symbolic".into(), file: gio::File::for_path("/"), kind: PlaceKind::Builtin });
         for mount in gio::VolumeMonitor::get().mounts() {
             if mount.is_shadowed() {
                 continue;
@@ -1094,7 +1095,7 @@ impl Window {
 
         let volumes = self.containers.borrow();
         if !volumes.is_empty() {
-            places.push(Place::Header("Containers".into()));
+            places.push(Place::Header(tr("Containers")));
             for v in volumes.iter() {
                 places.push(Place::Entry { name: format!("{} ({})", v.name, v.engine), icon: "package-x-generic-symbolic".into(), file: gio::File::for_path(&v.mountpoint), kind: PlaceKind::Builtin });
             }
@@ -1237,8 +1238,8 @@ impl Window {
             changes.push((item.file(), old, color.clone()));
         }
         let message = match &color {
-            Some(c) => format!("Tagged {} {} {}", items.len(), if items.len() == 1 { "item" } else { "items" }, crate::tags::label(c).to_lowercase()),
-            None => "Tag removed".to_string(),
+            Some(c) => format!("Tagged {} {} {}", items.len(), if items.len() == 1 { tr("item") } else { tr("items") }, crate::tags::label(c).to_lowercase()),
+            None => tr("Tag removed"),
         };
         self.record(Op::Tag(changes), &message);
         for p in self.all_panes() {
@@ -1263,7 +1264,7 @@ impl Window {
         // Actions with their shortcuts.
         for (name, label, icon) in crate::actions::PALETTE_ACTIONS {
             let accel = crate::actions::ACCELS.iter().find(|(a, _)| *a == format!("win.{name}")).and_then(|(_, keys)| keys.first()).map(|k| pretty_accel(k)).unwrap_or_default();
-            entries.push(PaletteEntry { title: label.to_string(), detail: accel, icon, target: PaletteTarget::Action(name.to_string()) });
+            entries.push(PaletteEntry { title: tr(label), detail: accel, icon, target: PaletteTarget::Action(name.to_string()) });
         }
         // Project commands of the current folder.
         if let Some(cwd) = self.active_pane().map(|p| p.cwd()) {
@@ -1277,11 +1278,11 @@ impl Window {
         for place in &self.state.borrow().places {
             if let Place::Entry { name, icon, file, kind } = place {
                 let (detail, target) = match kind {
-                    PlaceKind::Ssh(_) => ("SSH server".to_string(), PaletteTarget::Connect(file.clone())),
+                    PlaceKind::Ssh(_) => (tr("SSH server"), PaletteTarget::Connect(file.clone())),
                     PlaceKind::Tag(_) => continue,
-                    PlaceKind::Smart(_) => ("Smart folder".to_string(), PaletteTarget::Action(format!("smart-open::{name}"))),
-                    PlaceKind::Bookmark => ("Bookmark".to_string(), PaletteTarget::Folder(file.clone())),
-                    PlaceKind::Mount(_) => ("Device".to_string(), PaletteTarget::Folder(file.clone())),
+                    PlaceKind::Smart(_) => (tr("Smart folder"), PaletteTarget::Action(format!("smart-open::{name}"))),
+                    PlaceKind::Bookmark => (tr("Bookmark"), PaletteTarget::Folder(file.clone())),
+                    PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
                 };
                 let icon: &'static str = if icon.starts_with("tag:") { "tag-symbolic" } else { leak_icon(icon) };
@@ -1298,14 +1299,14 @@ impl Window {
                 vec![("py-create", "Python: Create venv here"), ("py-repl", "Python: REPL")]
             };
             for (action, label) in rows {
-                entries.push(PaletteEntry { title: label.into(), detail: "terminal panel".into(), icon: "applications-science-symbolic", target: PaletteTarget::Action(action.into()) });
+                entries.push(PaletteEntry { title: tr(label), detail: tr("terminal panel"), icon: "applications-science-symbolic", target: PaletteTarget::Action(action.into()) });
             }
         }
         for (i, t) in crate::templates::list().iter().enumerate() {
-            entries.push(PaletteEntry { title: format!("New from Template: {}", crate::templates::label(t)), detail: "creates it here".into(), icon: "folder-templates-symbolic", target: PaletteTarget::Action(format!("new-from-template::{i}")) });
+            entries.push(PaletteEntry { title: format!("{} {}", tr("New from Template:"), tr(&crate::templates::label(t))), detail: tr("creates it here"), icon: "folder-templates-symbolic", target: PaletteTarget::Action(format!("new-from-template::{i}")) });
         }
-        entries.push(PaletteEntry { title: "Export Omarchy Theme…".into(), detail: "selected theme folder → ~/Downloads/<name>.tar.gz".into(), icon: "applications-graphics-symbolic", target: PaletteTarget::Action("export-theme".into()) });
-        entries.push(PaletteEntry { title: "Install as Omarchy Theme".into(), detail: "selected archive → ~/.config/omarchy/themes".into(), icon: "applications-graphics-symbolic", target: PaletteTarget::Action("install-theme".into()) });
+        entries.push(PaletteEntry { title: tr("Export Omarchy Theme…"), detail: tr("selected theme folder → ~/Downloads/<name>.tar.gz"), icon: "applications-graphics-symbolic", target: PaletteTarget::Action("export-theme".into()) });
+        entries.push(PaletteEntry { title: tr("Install as Omarchy Theme"), detail: tr("selected archive → ~/.config/omarchy/themes"), icon: "applications-graphics-symbolic", target: PaletteTarget::Action("install-theme".into()) });
         // Notes on files: searchable by their text, open the folder and select the file.
         for (file, note) in self.notes.all() {
             let first = note.lines().next().unwrap_or("").to_string();
@@ -1354,20 +1355,20 @@ impl Window {
     /// Run a shell command in a terminal opened in the active folder.
     pub fn run_in_terminal(self: &Rc<Self>, command: &str) {
         let Some(dir) = self.active_pane().and_then(|p| p.cwd().path()) else {
-            self.toast_error("Commands run in local folders only");
+            self.toast_error(&tr("Commands run in local folders only"));
             return;
         };
         let argv = projects::terminal_argv(&dir, command);
         let args: Vec<&std::path::Path> = argv.iter().map(std::path::Path::new).collect();
         match glib::spawn_async(Some(dir.as_path()), &args, &[], glib::SpawnFlags::SEARCH_PATH | glib::SpawnFlags::STDOUT_TO_DEV_NULL | glib::SpawnFlags::STDERR_TO_DEV_NULL, None) {
-            Ok(_) => self.toast(&format!("Running: {command}")),
+            Ok(_) => self.toast(&trf!("Running: {command}", command = command)),
             Err(e) => self.toast_error(&format!("Cannot open terminal: {}", e.message())),
         }
     }
 
     pub fn open_in_editor(self: &Rc<Self>, target: &gio::File) {
         let Some(path) = target.path() else {
-            self.toast_error("The editor opens local files only");
+            self.toast_error(&tr("The editor opens local files only"));
             return;
         };
         let argv = projects::editor_argv(&path);
@@ -1411,7 +1412,7 @@ impl Window {
 
     pub fn undo(self: &Rc<Self>) {
         let Some(op) = self.journal.pop_undo() else {
-            self.toast("Nothing to undo");
+            self.toast(&tr("Nothing to undo"));
             return;
         };
         self.apply_history(op, true);
@@ -1419,7 +1420,7 @@ impl Window {
 
     pub fn redo(self: &Rc<Self>) {
         let Some(op) = self.journal.pop_redo() else {
-            self.toast("Nothing to redo");
+            self.toast(&tr("Nothing to redo"));
             return;
         };
         self.apply_history(op, false);
@@ -1444,7 +1445,7 @@ impl Window {
                 Err(e) => {
                     // Put it back so the user can retry after fixing the cause.
                     if is_undo { w.journal.push_undo_only(op) } else { w.journal.push_redo(op) }
-                    w.toast_error(&format!("Cannot {}: {}", if is_undo { "undo" } else { "redo" }, e.message()));
+                    w.toast_error(&format!("Cannot {}: {}", if is_undo { tr("undo") } else { tr("redo") }, e.message()));
                 }
             }
             for p in w.all_panes() {
@@ -1531,10 +1532,10 @@ fn menu_of(entries: &[(&str, &str)]) -> gio::Menu {
 
 fn root_label(file: &gio::File) -> (&'static str, String) {
     match file.uri_scheme().as_deref() {
-        Some("trash") => ("user-trash-symbolic", "Trash".into()),
-        Some("recent") => ("document-open-recent-symbolic", "Recent".into()),
+        Some("trash") => ("user-trash-symbolic", tr("Trash")),
+        Some("recent") => ("document-open-recent-symbolic", tr("Recent")),
         Some("archive") => ("package-x-generic-symbolic", archive_name(file)),
-        Some("file") | None => ("drive-harddisk-symbolic", "Computer".into()),
+        Some("file") | None => ("drive-harddisk-symbolic", tr("Computer")),
         Some(_) => {
             // sftp://user@host/ -> host
             let uri = file.uri();
@@ -1582,53 +1583,53 @@ pub fn abbreviate_home(path: &std::path::Path) -> String {
 fn main_menu() -> gio::Menu {
     let menu = gio::Menu::new();
     let s0 = gio::Menu::new();
-    s0.append(Some("Undo"), Some("win.undo"));
-    s0.append(Some("Redo"), Some("win.redo"));
+    s0.append(Some(tr("Undo").as_str()), Some("win.undo"));
+    s0.append(Some(tr("Redo").as_str()), Some("win.redo"));
     menu.append_section(None, &s0);
     let s1 = gio::Menu::new();
-    s1.append(Some("Command Palette…"), Some("win.palette"));
-    s1.append(Some("New Tab"), Some("win.new-tab"));
-    s1.append(Some("New Folder"), Some("win.new-folder"));
-    s1.append(Some("New File"), Some("win.new-file"));
-    s1.append(Some("New Encrypted Folder…"), Some("win.vault-new"));
-    s1.append(Some("Lock All Encrypted Folders"), Some("win.vault-lock-all"));
-    s1.append(Some("Terminal Panel"), Some("win.terminal-panel"));
-    s1.append(Some("Open Terminal Window Here"), Some("win.terminal"));
-    s1.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
-    s1.append(Some("Connect to Server…"), Some("win.connect"));
+    s1.append(Some(tr("Command Palette…").as_str()), Some("win.palette"));
+    s1.append(Some(tr("New Tab").as_str()), Some("win.new-tab"));
+    s1.append(Some(tr("New Folder").as_str()), Some("win.new-folder"));
+    s1.append(Some(tr("New File").as_str()), Some("win.new-file"));
+    s1.append(Some(tr("New Encrypted Folder…").as_str()), Some("win.vault-new"));
+    s1.append(Some(tr("Lock All Encrypted Folders").as_str()), Some("win.vault-lock-all"));
+    s1.append(Some(tr("Terminal Panel").as_str()), Some("win.terminal-panel"));
+    s1.append(Some(tr("Open Terminal Window Here").as_str()), Some("win.terminal"));
+    s1.append(Some(tr("Open in Editor").as_str()), Some("win.open-editor-cwd"));
+    s1.append(Some(tr("Connect to Server…").as_str()), Some("win.connect"));
     menu.append_section(None, &s1);
     let s2 = gio::Menu::new();
-    s2.append(Some("Add Bookmark"), Some("win.bookmark"));
-    s2.append(Some("Show Hidden Files"), Some("win.show-hidden"));
-    s2.append(Some("Show Sidebar"), Some("win.show-sidebar"));
-    s2.append(Some("Show Preview"), Some("win.show-preview"));
-    s2.append(Some("Split View"), Some("win.split-view"));
-    s2.append(Some("Show Folder Sizes"), Some("win.folder-sizes"));
-    s2.append(Some("Save Search as Smart Folder…"), Some("win.save-smart"));
+    s2.append(Some(tr("Add Bookmark").as_str()), Some("win.bookmark"));
+    s2.append(Some(tr("Show Hidden Files").as_str()), Some("win.show-hidden"));
+    s2.append(Some(tr("Show Sidebar").as_str()), Some("win.show-sidebar"));
+    s2.append(Some(tr("Show Preview").as_str()), Some("win.show-preview"));
+    s2.append(Some(tr("Split View").as_str()), Some("win.split-view"));
+    s2.append(Some(tr("Show Folder Sizes").as_str()), Some("win.folder-sizes"));
+    s2.append(Some(tr("Save Search as Smart Folder…").as_str()), Some("win.save-smart"));
     menu.append_section(None, &s2);
     let view = gio::Menu::new();
-    view.append(Some("List"), Some("win.view::list"));
-    view.append(Some("Grid"), Some("win.view::grid"));
-    view.append(Some("Columns"), Some("win.view::columns"));
-    view.append(Some("Gallery"), Some("win.view::gallery"));
-    menu.append_section(Some("View"), &view);
+    view.append(Some(tr("List").as_str()), Some("win.view::list"));
+    view.append(Some(tr("Grid").as_str()), Some("win.view::grid"));
+    view.append(Some(tr("Columns").as_str()), Some("win.view::columns"));
+    view.append(Some(tr("Gallery").as_str()), Some("win.view::gallery"));
+    menu.append_section(Some(tr("View").as_str()), &view);
     let group = gio::Menu::new();
-    group.append(Some("None"), Some("win.group::none"));
-    group.append(Some("Kind"), Some("win.group::kind"));
-    group.append(Some("Date Modified"), Some("win.group::date"));
-    group.append(Some("Size"), Some("win.group::size"));
-    group.append(Some("Tag"), Some("win.group::tag"));
-    menu.append_submenu(Some("Group By"), &group);
+    group.append(Some(tr("None").as_str()), Some("win.group::none"));
+    group.append(Some(tr("Kind").as_str()), Some("win.group::kind"));
+    group.append(Some(tr("Date Modified").as_str()), Some("win.group::date"));
+    group.append(Some(tr("Size").as_str()), Some("win.group::size"));
+    group.append(Some(tr("Tag").as_str()), Some("win.group::tag"));
+    menu.append_submenu(Some(tr("Group By").as_str()), &group);
     let sort = gio::Menu::new();
-    sort.append(Some("Name"), Some("win.sort::name"));
-    sort.append(Some("Size"), Some("win.sort::size"));
-    sort.append(Some("Type"), Some("win.sort::type"));
-    sort.append(Some("Modified"), Some("win.sort::modified"));
-    menu.append_submenu(Some("Sort By"), &sort);
+    sort.append(Some(tr("Name").as_str()), Some("win.sort::name"));
+    sort.append(Some(tr("Size").as_str()), Some("win.sort::size"));
+    sort.append(Some(tr("Type").as_str()), Some("win.sort::type"));
+    sort.append(Some(tr("Modified").as_str()), Some("win.sort::modified"));
+    menu.append_submenu(Some(tr("Sort By").as_str()), &sort);
     let s3 = gio::Menu::new();
-    s3.append(Some("Preferences"), Some("win.preferences"));
-    s3.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
-    s3.append(Some("About Files"), Some("app.about"));
+    s3.append(Some(tr("Preferences").as_str()), Some("win.preferences"));
+    s3.append(Some(tr("Keyboard Shortcuts").as_str()), Some("win.shortcuts"));
+    s3.append(Some(tr("About Files").as_str()), Some("app.about"));
     menu.append_section(None, &s3);
     menu
 }
@@ -1696,163 +1697,163 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     let (single_dir, archive, in_trash, multiple, in_repo) = (f.single_dir, f.archive, f.in_trash, f.multiple, f.in_repo);
     let menu = gio::Menu::new();
     let open = gio::Menu::new();
-    open.append(Some("Open"), Some("win.open"));
+    open.append(Some(tr("Open").as_str()), Some("win.open"));
     if f.media {
-        open.append(Some("Play"), Some("win.play"));
+        open.append(Some(tr("Play").as_str()), Some("win.play"));
     }
-    open.append(Some("Quick Look"), Some("win.quick-look"));
+    open.append(Some(tr("Quick Look").as_str()), Some("win.quick-look"));
     if single_dir {
-        open.append(Some("Open in New Tab"), Some("win.open-new-tab"));
-        open.append(Some("Open in Terminal"), Some("win.terminal-selected"));
+        open.append(Some(tr("Open in New Tab").as_str()), Some("win.open-new-tab"));
+        open.append(Some(tr("Open in Terminal").as_str()), Some("win.terminal-selected"));
     } else {
-        open.append(Some("Open With…"), Some("win.open-with"));
+        open.append(Some(tr("Open With…").as_str()), Some("win.open-with"));
     }
     if !multiple && !in_trash {
-        open.append(Some("Open in Editor"), Some("win.open-editor"));
+        open.append(Some(tr("Open in Editor").as_str()), Some("win.open-editor"));
     }
     if in_repo && !in_trash {
         let g = gio::Menu::new();
-        g.append(Some("Stage"), Some("win.git-stage"));
-        g.append(Some("Unstage"), Some("win.git-unstage"));
-        g.append(Some("Discard Changes…"), Some("win.git-discard"));
-        g.append(Some("Commit…"), Some("win.git-commit"));
+        g.append(Some(tr("Stage").as_str()), Some("win.git-stage"));
+        g.append(Some(tr("Unstage").as_str()), Some("win.git-unstage"));
+        g.append(Some(tr("Discard Changes…").as_str()), Some("win.git-discard"));
+        g.append(Some(tr("Commit…").as_str()), Some("win.git-commit"));
         if !multiple {
-            g.append(Some("Diff in Terminal"), Some("win.git-diff"));
+            g.append(Some(tr("Diff in Terminal").as_str()), Some("win.git-diff"));
         }
-        open.append_submenu(Some("Git"), &g);
+        open.append_submenu(Some(tr("Git").as_str()), &g);
     }
     match vault {
-        VaultState::Locked => open.append(Some("Unlock Encrypted Folder…"), Some("win.vault-unlock")),
-        VaultState::Unlocked => open.append(Some("Lock Encrypted Folder"), Some("win.vault-lock")),
+        VaultState::Locked => open.append(Some(tr("Unlock Encrypted Folder…").as_str()), Some("win.vault-unlock")),
+        VaultState::Unlocked => open.append(Some(tr("Lock Encrypted Folder").as_str()), Some("win.vault-lock")),
         VaultState::None => {}
     }
     if vault != VaultState::None {
-        open.append(Some("Change Vault Password…"), Some("win.vault-passwd"));
+        open.append(Some(tr("Change Vault Password…").as_str()), Some("win.vault-passwd"));
     }
     if archive {
-        open.append(Some("Extract Here"), Some("win.extract"));
+        open.append(Some(tr("Extract Here").as_str()), Some("win.extract"));
     }
     if f.theme && !in_trash {
-        open.append(Some("Apply Omarchy Theme"), Some("win.apply-theme"));
-        open.append(Some("Export Omarchy Theme…"), Some("win.export-theme"));
+        open.append(Some(tr("Apply Omarchy Theme").as_str()), Some("win.apply-theme"));
+        open.append(Some(tr("Export Omarchy Theme…").as_str()), Some("win.export-theme"));
     }
     if f.theme_archive && !in_trash {
-        open.append(Some("Install as Omarchy Theme"), Some("win.install-theme"));
+        open.append(Some(tr("Install as Omarchy Theme").as_str()), Some("win.install-theme"));
     }
     if archive {
-        open.append(Some("Browse Archive"), Some("win.browse-archive"));
+        open.append(Some(tr("Browse Archive").as_str()), Some("win.browse-archive"));
     }
     if f.pair && !in_trash {
-        open.append(Some("Compare…"), Some("win.compare"));
+        open.append(Some(tr("Compare…").as_str()), Some("win.compare"));
     } else if f.split && !multiple && !in_trash {
-        open.append(Some("Compare with Other Pane…"), Some("win.compare"));
+        open.append(Some(tr("Compare with Other Pane…").as_str()), Some("win.compare"));
     }
     if single_dir && !in_trash && crate::hypr::available() {
-        open.append(Some("Open in New Workspace"), Some("win.open-workspace"));
+        open.append(Some(tr("Open in New Workspace").as_str()), Some("win.open-workspace"));
     }
     if f.py_script && !in_trash {
-        open.append(Some("Run in venv (Terminal Panel)"), Some("win.py-run"));
+        open.append(Some(tr("Run in venv (Terminal Panel)").as_str()), Some("win.py-run"));
     }
     if !multiple && !in_trash && !single_dir {
-        open.append(Some("Always Open With…"), Some("win.always-open-with"));
+        open.append(Some(tr("Always Open With…").as_str()), Some("win.always-open-with"));
     }
     if f.symlink && !in_trash {
-        open.append(Some("Show Original"), Some("win.show-original"));
+        open.append(Some(tr("Show Original").as_str()), Some("win.show-original"));
     }
     if f.pdfs > 0 && !in_trash {
         let pdf = gio::Menu::new();
         if f.pdfs >= 2 {
-            pdf.append(Some("Merge into One PDF"), Some("win.pdf-merge"));
+            pdf.append(Some(tr("Merge into One PDF").as_str()), Some("win.pdf-merge"));
         }
         if f.pdfs == 1 {
-            pdf.append(Some("Split into Pages"), Some("win.pdf-split"));
-            pdf.append(Some("Extract Pages…"), Some("win.pdf-extract"));
+            pdf.append(Some(tr("Split into Pages").as_str()), Some("win.pdf-split"));
+            pdf.append(Some(tr("Extract Pages…").as_str()), Some("win.pdf-extract"));
         }
-        open.append_submenu(Some("PDF"), &pdf);
+        open.append_submenu(Some(tr("PDF").as_str()), &pdf);
     }
     if f.video && !in_trash {
         let v = gio::Menu::new();
-        v.append(Some("Trim…"), Some("win.video-trim"));
-        v.append(Some("Make GIF (first 10 s)"), Some("win.video-gif"));
-        v.append(Some("Extract Audio"), Some("win.video-audio"));
-        v.append(Some("Audio to MP3"), Some("win.audio-mp3"));
-        open.append_submenu(Some("Video"), &v);
+        v.append(Some(tr("Trim…").as_str()), Some("win.video-trim"));
+        v.append(Some(tr("Make GIF (first 10 s)").as_str()), Some("win.video-gif"));
+        v.append(Some(tr("Extract Audio").as_str()), Some("win.video-audio"));
+        v.append(Some(tr("Audio to MP3").as_str()), Some("win.audio-mp3"));
+        open.append_submenu(Some(tr("Video").as_str()), &v);
     }
     if f.audio && !in_trash {
         let a = gio::Menu::new();
-        a.append(Some("Trim…"), Some("win.video-trim"));
-        a.append(Some("Convert to MP3"), Some("win.audio-mp3"));
-        a.append(Some("Convert to Opus"), Some("win.audio-opus"));
-        a.append(Some("Convert to FLAC"), Some("win.audio-flac"));
-        open.append_submenu(Some("Audio"), &a);
+        a.append(Some(tr("Trim…").as_str()), Some("win.video-trim"));
+        a.append(Some(tr("Convert to MP3").as_str()), Some("win.audio-mp3"));
+        a.append(Some(tr("Convert to Opus").as_str()), Some("win.audio-opus"));
+        a.append(Some(tr("Convert to FLAC").as_str()), Some("win.audio-flac"));
+        open.append_submenu(Some(tr("Audio").as_str()), &a);
     }
     if f.images && !in_trash {
         let img = gio::Menu::new();
-        img.append(Some("Set as Wallpaper"), Some("win.set-wallpaper"));
-        img.append(Some("Rotate Left"), Some("win.image-rotate::-90"));
-        img.append(Some("Rotate Right"), Some("win.image-rotate::90"));
-        img.append(Some("Resize…"), Some("win.image-resize"));
-        img.append(Some("Create PDF from Images"), Some("win.pdf-from-images"));
+        img.append(Some(tr("Set as Wallpaper").as_str()), Some("win.set-wallpaper"));
+        img.append(Some(tr("Rotate Left").as_str()), Some("win.image-rotate::-90"));
+        img.append(Some(tr("Rotate Right").as_str()), Some("win.image-rotate::90"));
+        img.append(Some(tr("Resize…").as_str()), Some("win.image-resize"));
+        img.append(Some(tr("Create PDF from Images").as_str()), Some("win.pdf-from-images"));
         let conv = gio::Menu::new();
         conv.append(Some("PNG"), Some("win.image-convert::png"));
         conv.append(Some("JPEG"), Some("win.image-convert::jpg"));
         conv.append(Some("WebP"), Some("win.image-convert::webp"));
-        img.append_submenu(Some("Convert to"), &conv);
-        open.append_submenu(Some("Image"), &img);
+        img.append_submenu(Some(tr("Convert to").as_str()), &conv);
+        open.append_submenu(Some(tr("Image").as_str()), &img);
     }
     menu.append_section(None, &open);
     let edit = gio::Menu::new();
     if in_trash {
-        edit.append(Some("Restore"), Some("win.restore"));
+        edit.append(Some(tr("Restore").as_str()), Some("win.restore"));
     } else {
-        edit.append(Some("Cut"), Some("win.cut"));
-        edit.append(Some("Copy"), Some("win.copy"));
-        edit.append(Some("Copy Path"), Some("win.copy-path"));
-        edit.append(Some("Copy To…"), Some("win.copy-to"));
-        edit.append(Some("Move To…"), Some("win.move-to"));
+        edit.append(Some(tr("Cut").as_str()), Some("win.cut"));
+        edit.append(Some(tr("Copy").as_str()), Some("win.copy"));
+        edit.append(Some(tr("Copy Path").as_str()), Some("win.copy-path"));
+        edit.append(Some(tr("Copy To…").as_str()), Some("win.copy-to"));
+        edit.append(Some(tr("Move To…").as_str()), Some("win.move-to"));
         if f.split {
-            edit.append(Some("Copy to Other Pane"), Some("win.copy-other"));
-            edit.append(Some("Move to Other Pane"), Some("win.move-other"));
+            edit.append(Some(tr("Copy to Other Pane").as_str()), Some("win.copy-other"));
+            edit.append(Some(tr("Move to Other Pane").as_str()), Some("win.move-other"));
         }
-        edit.append(Some("Duplicate"), Some("win.duplicate"));
-        edit.append(Some("Make Alias"), Some("win.make-alias"));
-        edit.append(Some(if multiple { "New Folder with Selection" } else { "New Folder with Item" }), Some("win.new-folder-with-selection"));
-        edit.append(Some(if multiple { "Batch Rename…" } else { "Rename…" }), Some("win.rename"));
-        edit.append(Some("Compress…"), Some("win.compress"));
+        edit.append(Some(tr("Duplicate").as_str()), Some("win.duplicate"));
+        edit.append(Some(tr("Make Alias").as_str()), Some("win.make-alias"));
+        edit.append(Some(&if multiple { tr("New Folder with Selection") } else { tr("New Folder with Item") }), Some("win.new-folder-with-selection"));
+        edit.append(Some(&if multiple { tr("Batch Rename…") } else { tr("Rename…") }), Some("win.rename"));
+        edit.append(Some(tr("Compress…").as_str()), Some("win.compress"));
         if !multiple {
-            edit.append(Some("Change Icon…"), Some("win.change-icon"));
+            edit.append(Some(tr("Change Icon…").as_str()), Some("win.change-icon"));
         }
         let tags = gio::Menu::new();
         for (name, _, _) in crate::tags::COLORS {
             tags.append(Some(&crate::tags::label(name)), Some(&format!("win.tag::{name}")));
         }
-        tags.append(Some("No Tag"), Some("win.tag::none"));
-        edit.append_submenu(Some("Tag"), &tags);
+        tags.append(Some(tr("No Tag").as_str()), Some("win.tag::none"));
+        edit.append_submenu(Some(tr("Tag").as_str()), &tags);
         if single_dir {
-            edit.append(Some("Add Bookmark"), Some("win.bookmark-selected"));
+            edit.append(Some(tr("Add Bookmark").as_str()), Some("win.bookmark-selected"));
         }
         if f.local {
             let share = gio::Menu::new();
-            share.append(Some("Copy scp Command"), Some("win.share-scp"));
-            share.append(Some("Share on Local Network…"), Some("win.share-lan"));
-            edit.append_submenu(Some("Share"), &share);
+            share.append(Some(tr("Copy scp Command").as_str()), Some("win.share-scp"));
+            share.append(Some(tr("Share on Local Network…").as_str()), Some("win.share-lan"));
+            edit.append_submenu(Some(tr("Share").as_str()), &share);
         }
     }
     menu.append_section(None, &edit);
     let danger = gio::Menu::new();
     if !in_trash {
-        danger.append(Some("Move to Trash"), Some("win.trash"));
+        danger.append(Some(tr("Move to Trash").as_str()), Some("win.trash"));
     }
-    danger.append(Some("Delete Permanently…"), Some("win.delete"));
+    danger.append(Some(tr("Delete Permanently…").as_str()), Some("win.delete"));
     menu.append_section(None, &danger);
     let info = gio::Menu::new();
     if !multiple && !single_dir && !in_trash {
-        info.append(Some("Verify Checksum"), Some("win.verify-checksum"));
+        info.append(Some(tr("Verify Checksum").as_str()), Some("win.verify-checksum"));
     }
     if !multiple && !in_trash {
-        info.append(Some("Edit Note…"), Some("win.edit-note"));
+        info.append(Some(tr("Edit Note…").as_str()), Some("win.edit-note"));
     }
-    info.append(Some("Properties"), Some("win.properties"));
+    info.append(Some(tr("Properties").as_str()), Some("win.properties"));
     menu.append_section(None, &info);
     menu
 }
@@ -1864,19 +1865,19 @@ pub fn background_menu_model(in_trash: bool, project: Option<&projects::Project>
 pub fn python_menu(py: &crate::pyui::PyMenu) -> gio::Menu {
     let m = gio::Menu::new();
     if py.has_venv {
-        m.append(Some("Activate venv in Terminal Panel"), Some("win.py-activate"));
+        m.append(Some(tr("Activate venv in Terminal Panel").as_str()), Some("win.py-activate"));
         if py.has_requirements {
-            m.append(Some(if crate::pyenv::uv_available() { "Install Requirements (uv)" } else { "Install Requirements (pip)" }), Some("win.py-install"));
+            m.append(Some(&if crate::pyenv::uv_available() { tr("Install Requirements (uv)") } else { tr("Install Requirements (pip)") }), Some("win.py-install"));
         }
-        m.append(Some("Freeze to requirements.txt"), Some("win.py-freeze"));
-        m.append(Some("Python REPL in venv"), Some("win.py-repl"));
+        m.append(Some(tr("Freeze to requirements.txt").as_str()), Some("win.py-freeze"));
+        m.append(Some(tr("Python REPL in venv").as_str()), Some("win.py-repl"));
         if py.gitignore_missing {
-            m.append(Some("Add venv to .gitignore"), Some("win.py-gitignore"));
+            m.append(Some(tr("Add venv to .gitignore").as_str()), Some("win.py-gitignore"));
         }
-        m.append(Some("Recreate venv…"), Some("win.py-recreate"));
+        m.append(Some(tr("Recreate venv…").as_str()), Some("win.py-recreate"));
     } else {
-        m.append(Some(if crate::pyenv::uv_available() { "Create venv here (uv venv .venv)" } else { "Create venv here (python -m venv .venv)" }), Some("win.py-create"));
-        m.append(Some("Python REPL"), Some("win.py-repl"));
+        m.append(Some(&if crate::pyenv::uv_available() { tr("Create venv here (uv venv .venv)") } else { tr("Create venv here (python -m venv .venv)") }), Some("win.py-create"));
+        m.append(Some(tr("Python REPL").as_str()), Some("win.py-repl"));
     }
     m
 }
@@ -1885,62 +1886,62 @@ pub fn background_menu_model_ext(in_trash: bool, project: Option<&projects::Proj
     let menu = gio::Menu::new();
     if in_trash {
         let s = gio::Menu::new();
-        s.append(Some("Empty Trash…"), Some("win.empty-trash"));
-        s.append(Some("Select All"), Some("win.select-all"));
+        s.append(Some(tr("Empty Trash…").as_str()), Some("win.empty-trash"));
+        s.append(Some(tr("Select All").as_str()), Some("win.select-all"));
         menu.append_section(None, &s);
         return menu;
     }
     let s1 = gio::Menu::new();
-    s1.append(Some("New Folder"), Some("win.new-folder"));
-    s1.append(Some("New File"), Some("win.new-file"));
-    s1.append(Some("New Encrypted Folder…"), Some("win.vault-new"));
+    s1.append(Some(tr("New Folder").as_str()), Some("win.new-folder"));
+    s1.append(Some(tr("New File").as_str()), Some("win.new-file"));
+    s1.append(Some(tr("New Encrypted Folder…").as_str()), Some("win.vault-new"));
     let tpl = gio::Menu::new();
     for (i, t) in crate::templates::list().iter().enumerate() {
-        tpl.append(Some(&crate::templates::label(t)), Some(&format!("win.new-from-template::{i}")));
+        tpl.append(Some(&tr(&crate::templates::label(t))), Some(&format!("win.new-from-template::{i}")));
     }
-    tpl.append(Some("Open Templates Folder"), Some("win.open-templates"));
-    s1.append_submenu(Some("New from Template"), &tpl);
+    tpl.append(Some(tr("Open Templates Folder").as_str()), Some("win.open-templates"));
+    s1.append_submenu(Some(tr("New from Template").as_str()), &tpl);
     menu.append_section(None, &s1);
     if let Some(project) = project {
         let sub = gio::Menu::new();
-        sub.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
+        sub.append(Some(tr("Open in Editor").as_str()), Some("win.open-editor-cwd"));
         for (i, action) in project.actions.iter().enumerate() {
-            sub.append(Some(&action.label), Some(&format!("win.project-run::{i}")));
+            sub.append(Some(&tr(&action.label)), Some(&format!("win.project-run::{i}")));
         }
-        menu.append_submenu(Some(&format!("{} project", project.kind)), &sub);
+        menu.append_submenu(Some(&trf!("{kind} project", kind = tr(project.kind))), &sub);
         if let Some(py) = python {
-            menu.append_submenu(Some("Python"), &python_menu(py));
+            menu.append_submenu(Some(tr("Python").as_str()), &python_menu(py));
         }
     } else {
         if let Some(py) = python {
-            menu.append_submenu(Some("Python"), &python_menu(py));
+            menu.append_submenu(Some(tr("Python").as_str()), &python_menu(py));
         }
         let s = gio::Menu::new();
-        s.append(Some("Open in Editor"), Some("win.open-editor-cwd"));
+        s.append(Some(tr("Open in Editor").as_str()), Some("win.open-editor-cwd"));
         menu.append_section(None, &s);
     }
     if in_repo {
         let g = gio::Menu::new();
-        g.append(Some("Commit…"), Some("win.git-commit"));
-        g.append(Some("Switch Branch…"), Some("win.git-branch"));
-        g.append(Some("Git Status in Terminal"), Some("win.git-status"));
-        g.append(Some("Git Diff in Terminal"), Some("win.git-diff-all"));
-        menu.append_submenu(Some("Git"), &g);
+        g.append(Some(tr("Commit…").as_str()), Some("win.git-commit"));
+        g.append(Some(tr("Switch Branch…").as_str()), Some("win.git-branch"));
+        g.append(Some(tr("Git Status in Terminal").as_str()), Some("win.git-status"));
+        g.append(Some(tr("Git Diff in Terminal").as_str()), Some("win.git-diff-all"));
+        menu.append_submenu(Some(tr("Git").as_str()), &g);
     }
     let s2 = gio::Menu::new();
-    s2.append(Some("Paste"), Some("win.paste"));
-    s2.append(Some("Undo"), Some("win.undo"));
-    s2.append(Some("Redo"), Some("win.redo"));
-    s2.append(Some("Select All"), Some("win.select-all"));
+    s2.append(Some(tr("Paste").as_str()), Some("win.paste"));
+    s2.append(Some(tr("Undo").as_str()), Some("win.undo"));
+    s2.append(Some(tr("Redo").as_str()), Some("win.redo"));
+    s2.append(Some(tr("Select All").as_str()), Some("win.select-all"));
     menu.append_section(None, &s2);
     let s3 = gio::Menu::new();
-    s3.append(Some("Show Folder Sizes"), Some("win.folder-sizes"));
-    s3.append(Some("Save Search as Smart Folder…"), Some("win.save-smart"));
-    s3.append(Some("Terminal Panel"), Some("win.terminal-panel"));
-    s3.append(Some("Open Terminal Window Here"), Some("win.terminal"));
-    s3.append(Some("Add Bookmark"), Some("win.bookmark"));
-    s3.append(Some("Copy Path"), Some("win.copy-cwd-path"));
-    s3.append(Some("Properties"), Some("win.cwd-properties"));
+    s3.append(Some(tr("Show Folder Sizes").as_str()), Some("win.folder-sizes"));
+    s3.append(Some(tr("Save Search as Smart Folder…").as_str()), Some("win.save-smart"));
+    s3.append(Some(tr("Terminal Panel").as_str()), Some("win.terminal-panel"));
+    s3.append(Some(tr("Open Terminal Window Here").as_str()), Some("win.terminal"));
+    s3.append(Some(tr("Add Bookmark").as_str()), Some("win.bookmark"));
+    s3.append(Some(tr("Copy Path").as_str()), Some("win.copy-cwd-path"));
+    s3.append(Some(tr("Properties").as_str()), Some("win.cwd-properties"));
     menu.append_section(None, &s3);
     menu
 }

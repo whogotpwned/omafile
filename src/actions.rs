@@ -1,5 +1,6 @@
 //! Window actions: navigation, tabs, clipboard, file operations and dialogs.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::ops;
 use crate::pane::Pane;
@@ -361,7 +362,7 @@ impl Window {
             if let Some(p) = w.active_pane() {
                 p.reload();
             }
-            if n == 0 { w.toast("All encrypted folders locked") } else { w.toast_error("Some encrypted folders are still in use") }
+            if n == 0 { w.toast(&tr("All encrypted folders locked")) } else { w.toast_error(&tr("Some encrypted folders are still in use")) }
         }));
         {
             let rotate = gio::SimpleAction::new("image-rotate", Some(glib::VariantTy::STRING));
@@ -462,7 +463,7 @@ impl Window {
         simple("copy-cwd-path", Box::new(move |w| {
             if let Some(p) = pane(w) {
                 w.window.clipboard().set_text(&crate::window::location_text(&p.cwd()));
-                w.toast("Path copied");
+                w.toast(&tr("Path copied"));
             }
         }));
         simple("properties", Box::new(|w| {
@@ -503,7 +504,7 @@ impl Window {
         simple("sidebar-remove-bookmark", Box::new(|w| {
             if let Some((file, PlaceKind::Bookmark)) = w.sidebar_target_place() {
                 if let Err(e) = remote::remove_bookmark(&file) {
-                    w.toast_error(&format!("Cannot update bookmarks: {e}"));
+                    w.toast_error(&trf!("Cannot update bookmarks: {e}", e = e));
                 }
                 w.refresh_sidebar();
             }
@@ -577,13 +578,13 @@ impl Window {
             w.state.borrow_mut().view_mode = mode.clone();
             // The header button shows the *next* view in the cycle list → grid → columns → gallery.
             let (icon, tip) = match mode.as_str() {
-                "list" => ("view-grid-symbolic", "Grid view (Ctrl+2)"),
-                "grid" => ("view-dual-symbolic", "Column view (Ctrl+3)"),
-                "columns" => ("view-paged-symbolic", "Gallery view (Ctrl+4)"),
-                _ => ("view-list-symbolic", "List view (Ctrl+1)"),
+                "list" => ("view-grid-symbolic", tr("Grid view (Ctrl+2)")),
+                "grid" => ("view-dual-symbolic", tr("Column view (Ctrl+3)")),
+                "columns" => ("view-paged-symbolic", tr("Gallery view (Ctrl+4)")),
+                _ => ("view-list-symbolic", tr("List view (Ctrl+1)")),
             };
             w.view_btn.set_icon_name(icon);
-            w.view_btn.set_tooltip_text(Some(tip));
+            w.view_btn.set_tooltip_text(Some(&tip));
             let panes: Vec<Rc<Pane>> = w.panes.borrow().clone();
             for p in panes {
                 p.apply_view_mode();
@@ -686,13 +687,13 @@ impl Window {
 
     fn toggle_bookmark(self: &Rc<Self>, file: &gio::File) {
         let result = if remote::is_bookmarked(file) {
-            remote::remove_bookmark(file).map(|_| "Bookmark removed")
+            remote::remove_bookmark(file).map(|_| tr("Bookmark removed"))
         } else {
-            remote::add_bookmark(file).map(|added| if added { "Bookmark added" } else { "Already bookmarked" })
+            remote::add_bookmark(file).map(|added| if added { tr("Bookmark added") } else { tr("Already bookmarked") })
         };
         match result {
-            Ok(msg) => self.toast(msg),
-            Err(e) => self.toast_error(&format!("Cannot update bookmarks: {e}")),
+            Ok(msg) => self.toast(&msg),
+            Err(e) => self.toast_error(&trf!("Cannot update bookmarks: {e}", e = e)),
         }
         self.refresh_sidebar();
     }
@@ -704,8 +705,8 @@ impl Window {
         let secrets: Vec<String> = items.iter().filter(|i| i.is_secret()).map(|i| i.display_name()).collect();
         if !secrets.is_empty() && !cut {
             let body = format!("{} looks like a credential file. Copying it puts the secret on the clipboard and wherever you paste it.", secrets.join(", "));
-            let dialog = adw::AlertDialog::new(Some("Copy secrets?"), Some(&body));
-            dialog.add_responses(&[("cancel", "Cancel"), ("copy", "Copy Anyway")]);
+            let dialog = adw::AlertDialog::new(Some(tr("Copy secrets?").as_str()), Some(&body));
+            dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("copy", tr("Copy Anyway").as_str())]);
             dialog.set_response_appearance("copy", adw::ResponseAppearance::Destructive);
             dialog.set_default_response(Some("cancel"));
             dialog.set_close_response("cancel");
@@ -735,7 +736,7 @@ impl Window {
         ]);
         let _ = self.window.clipboard().set_content(Some(&provider));
         self.state.borrow_mut().clipboard = Some(Clipboard { files, cut });
-        self.toast(&format!("{} {n} {}", if cut { "Cut" } else { "Copied" }, if n == 1 { "item" } else { "items" }));
+        self.toast(&format!("{} {n} {}", if cut { "Cut" } else { "Copied" }, if n == 1 { tr("item") } else { tr("items") }));
     }
 
     fn paste(self: &Rc<Self>) {
@@ -756,7 +757,7 @@ impl Window {
                 (files, cut)
             };
             if files.is_empty() {
-                w.toast("Nothing to paste");
+                w.toast(&tr("Nothing to paste"));
                 return;
             }
             if cut {
@@ -812,7 +813,7 @@ impl Window {
                 w.tags.removed(&item.file());
             }
             pane.reload();
-            let message = format!("Moved {done} {} to trash", if done == 1 { "item" } else { "items" });
+            let message = format!("Moved {done} {} to trash", if done == 1 { tr("item") } else { tr("items") });
             match error {
                 Some(e) => w.toast_error(&e),
                 None => w.record(Op::Trash(items.iter().take(done).map(|i| i.file()).collect()), &message),
@@ -845,15 +846,15 @@ impl Window {
             pane.reload();
             match error {
                 Some(e) => w.toast_error(&e),
-                None => w.toast(&format!("Restored {done} {}", if done == 1 { "item" } else { "items" })),
+                None => w.toast(&format!("Restored {done} {}", if done == 1 { tr("item") } else { tr("items") })),
             }
         });
     }
 
     fn empty_trash(self: &Rc<Self>) {
         let Some(pane) = self.active_pane() else { return };
-        let dialog = adw::AlertDialog::new(Some("Empty the trash?"), Some("All items in the trash will be permanently deleted."));
-        dialog.add_responses(&[("cancel", "Cancel"), ("empty", "Empty Trash")]);
+        let dialog = adw::AlertDialog::new(Some(tr("Empty the trash?").as_str()), Some(tr("All items in the trash will be permanently deleted.").as_str()));
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("empty", tr("Empty Trash").as_str())]);
         dialog.set_response_appearance("empty", adw::ResponseAppearance::Destructive);
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
@@ -876,7 +877,7 @@ impl Window {
                 pane.reload();
                 match error {
                     Some(e) => w.toast_error(&e),
-                    None => w.toast(&format!("Trash emptied ({done} items)")),
+                    None => w.toast(&trf!("Trash emptied ({done} items)", done = done)),
                 }
             });
         });
@@ -891,9 +892,9 @@ impl Window {
         let what = if items.len() == 1 { format!("“{}”", items[0].display_name()) } else { format!("{} items", items.len()) };
         let dialog = adw::AlertDialog::new(
             Some(&format!("Permanently delete {what}?")),
-            Some("This cannot be undone. The files will not go to the trash."),
+            Some(tr("This cannot be undone. The files will not go to the trash.").as_str()),
         );
-        dialog.add_responses(&[("cancel", "Cancel"), ("delete", "Delete")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("delete", tr("Delete").as_str())]);
         dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
@@ -918,7 +919,7 @@ impl Window {
                 pane.reload();
                 match error {
                     Some(e) => w.toast_error(&e),
-                    None => w.toast(&format!("Deleted {done} {}", if done == 1 { "item" } else { "items" })),
+                    None => w.toast(&format!("Deleted {done} {}", if done == 1 { tr("item") } else { tr("items") })),
                 }
             });
         });
@@ -930,18 +931,18 @@ impl Window {
         let Some(pane) = self.active_pane() else { return };
         let Some(item) = pane.selected_items().into_iter().find(|i| i.is_archive()) else { return };
         let (Some(archive), Some(into)) = (item.target_file().path(), pane.cwd().path()) else {
-            self.toast_error("Archives can only be extracted on local file systems");
+            self.toast_error(&tr("Archives can only be extracted on local file systems"));
             return;
         };
         let this = Rc::downgrade(self);
         let name = item.display_name();
-        self.toast(&format!("Extracting {name}…"));
+        self.toast(&trf!("Extracting {name}…", name = name));
         glib::spawn_future_local(async move {
             let result = ops::extract(&archive, &into).await;
             let Some(w) = this.upgrade() else { return };
             pane.reload();
             match result {
-                Ok(()) => w.toast(&format!("Extracted {name}")),
+                Ok(()) => w.toast(&trf!("Extracted {name}", name = name)),
                 Err(e) => w.toast_error(&format!("Cannot extract {name}: {}", e.message())),
             }
         });
@@ -951,7 +952,7 @@ impl Window {
         let Some(pane) = self.active_pane() else { return };
         let items = pane.selected_items();
         let Some(cwd) = pane.cwd().path() else {
-            self.toast_error("Archives can only be created on local file systems");
+            self.toast_error(&tr("Archives can only be created on local file systems"));
             return;
         };
         if items.is_empty() {
@@ -960,12 +961,12 @@ impl Window {
         let default = if items.len() == 1 {
             format!("{}.tar.zst", items[0].display_name().trim_end_matches('/'))
         } else {
-            "Archive.tar.zst".to_string()
+            tr("Archive.tar.zst")
         };
         let entry = gtk::Entry::builder().text(&default).activates_default(true).build();
-        let dialog = adw::AlertDialog::new(Some("Compress"), Some("The extension picks the format: .zip, .tar.gz, .tar.xz, .tar.zst, .7z"));
+        let dialog = adw::AlertDialog::new(Some(tr("Compress").as_str()), Some(tr("The extension picks the format: .zip, .tar.gz, .tar.xz, .tar.zst, .7z").as_str()));
         dialog.set_extra_child(Some(&entry));
-        dialog.add_responses(&[("cancel", "Cancel"), ("create", "Create")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("create", tr("Create").as_str())]);
         dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("create"));
         dialog.set_close_response("cancel");
@@ -984,20 +985,20 @@ impl Window {
             }
             let archive = entry2.text().trim().to_string();
             if archive.is_empty() || archive.contains('/') {
-                w.toast_error("Invalid archive name");
+                w.toast_error(&tr("Invalid archive name"));
                 return;
             }
             let names: Vec<String> = items.iter().map(|i| i.name()).collect();
             let this = Rc::downgrade(&w);
             let target = pane.cwd().child(&archive);
-            w.toast(&format!("Creating {archive}…"));
+            w.toast(&trf!("Creating {archive}…", archive = archive));
             glib::spawn_future_local(async move {
                 let result = ops::compress(&cwd, &archive, &names).await;
                 let Some(w) = this.upgrade() else { return };
                 pane.reload();
                 match result {
                     Ok(()) => {
-                        w.toast(&format!("Created {archive}"));
+                        w.toast(&trf!("Created {archive}", archive = archive));
                         pane.select_file_later(target);
                     }
                     Err(e) => w.toast_error(&format!("Cannot create {archive}: {}", e.message())),
@@ -1013,16 +1014,16 @@ impl Window {
     // ----- dialogs ------------------------------------------------------------------------
 
     fn prompt_connect(self: &Rc<Self>) {
-        let entry = gtk::Entry::builder().placeholder_text("user@host[:port][/path]  or  sftp://host/").activates_default(true).build();
+        let entry = gtk::Entry::builder().placeholder_text(tr("user@host[:port][/path]  or  sftp://host/")).activates_default(true).build();
         let hosts = remote::ssh_hosts();
         let body = if hosts.is_empty() {
-            "Connect over SSH (SFTP). Hosts from ~/.ssh/config appear under Remote in the sidebar.".to_string()
+            tr("Connect over SSH (SFTP). Hosts from ~/.ssh/config appear under Remote in the sidebar.")
         } else {
             format!("Connect over SSH (SFTP). Known hosts: {}", hosts.iter().map(|h| h.alias.as_str()).collect::<Vec<_>>().join(", "))
         };
-        let dialog = adw::AlertDialog::new(Some("Connect to Server"), Some(&body));
+        let dialog = adw::AlertDialog::new(Some(tr("Connect to Server").as_str()), Some(&body));
         dialog.set_extra_child(Some(&entry));
-        dialog.add_responses(&[("cancel", "Cancel"), ("connect", "Connect")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("connect", tr("Connect").as_str())]);
         dialog.set_response_appearance("connect", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("connect"));
         dialog.set_close_response("cancel");
@@ -1048,7 +1049,7 @@ impl Window {
                 .or_else(|| remote::parse_server(&text));
             match uri {
                 Some(uri) => w.connect_to(gio::File::for_uri(&uri), true),
-                None => w.toast_error("Enter a host to connect to"),
+                None => w.toast_error(&tr("Enter a host to connect to")),
             }
         });
         entry.grab_focus();
@@ -1057,10 +1058,10 @@ impl Window {
     fn prompt_create(self: &Rc<Self>, folder: bool) {
         let Some(pane) = self.active_pane() else { return };
         let heading = if folder { "New Folder" } else { "New File" };
-        let entry = gtk::Entry::builder().text(if folder { "Untitled Folder" } else { "Untitled.txt" }).activates_default(true).build();
+        let entry = gtk::Entry::builder().text(if folder { tr("Untitled Folder") } else { tr("Untitled.txt") }).activates_default(true).build();
         let dialog = adw::AlertDialog::new(Some(heading), None);
         dialog.set_extra_child(Some(&entry));
-        dialog.add_responses(&[("cancel", "Cancel"), ("create", "Create")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("create", tr("Create").as_str())]);
         dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("create"));
         dialog.set_close_response("cancel");
@@ -1079,7 +1080,7 @@ impl Window {
             }
             let name = entry2.text().trim().to_string();
             if name.is_empty() || name.contains('/') {
-                w.toast_error("Invalid name");
+                w.toast_error(&tr("Invalid name"));
                 return;
             }
             let target = pane.cwd().child(&name);
@@ -1091,7 +1092,7 @@ impl Window {
                     Ok(()) => {
                         pane.reload();
                         pane.select_file_later(target.clone());
-                        w.record(Op::Create(vec![(target, folder)]), &format!("Created {name}"));
+                        w.record(Op::Create(vec![(target, folder)]), &trf!("Created {name}", name = name));
                     }
                     Err(e) => w.toast_error(&format!("Cannot create {name}: {}", e.message())),
                 }
@@ -1117,7 +1118,7 @@ impl Window {
                     w.tags.moved(&item.file(), &new_file);
                     pane.reload();
                     pane.select_file_later(new_file.clone());
-                    w.record(Op::Move(vec![(item.file(), new_file)]), &format!("Renamed to {name}"));
+                    w.record(Op::Move(vec![(item.file(), new_file)]), &trf!("Renamed to {name}", name = name));
                 }
                 Err(e) => w.toast_error(&format!("Cannot rename: {}", e.message())),
             }
@@ -1130,9 +1131,9 @@ impl Window {
         let old = item.display_name();
         let stem_end = if item.is_dir() { None } else { old.rfind('.').filter(|&i| i > 0) };
         let entry = gtk::Entry::builder().text(&old).activates_default(true).build();
-        let dialog = adw::AlertDialog::new(Some("Rename"), None);
+        let dialog = adw::AlertDialog::new(Some(tr("Rename").as_str()), None);
         dialog.set_extra_child(Some(&entry));
-        dialog.add_responses(&[("cancel", "Cancel"), ("rename", "Rename")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("rename", tr("Rename").as_str())]);
         dialog.set_response_appearance("rename", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("rename"));
         dialog.set_close_response("cancel");
@@ -1159,7 +1160,7 @@ impl Window {
         let page = adw::PreferencesPage::new();
         let group = adw::PreferencesGroup::new();
         let row = |title: &str, subtitle: &str| {
-            let r = adw::ActionRow::builder().title(title).subtitle(subtitle).build();
+            let r = adw::ActionRow::builder().title(tr(title)).subtitle(subtitle).build();
             r.add_css_class("property");
             r.set_subtitle_selectable(true);
             r
@@ -1167,20 +1168,20 @@ impl Window {
         group.add(&row("Name", &item.display_name()));
         group.add(&row("Type", &item.type_description()));
         if item.is_dir() {
-            let size_row = row("Size", "Calculating…");
+            let size_row = row("Size", &tr("Calculating…"));
             group.add(&size_row);
             let file = item.target_file();
             let item2 = item.clone();
             glib::spawn_future_local(async move {
                 let bytes = ops::dir_size(&file).await;
                 item2.set_dir_size(Some(bytes));
-                size_row.set_subtitle(&format!("{} ({bytes} bytes)", ops::human_size(bytes)));
+                size_row.set_subtitle(&trf!("{human} ({bytes} bytes)", human = ops::human_size(bytes), bytes = bytes));
             });
         } else {
-            group.add(&row("Size", &format!("{} ({} bytes)", ops::human_size(item.size()), item.size())));
+            group.add(&row("Size", &trf!("{human} ({bytes} bytes)", human = ops::human_size(item.size()), bytes = item.size())));
         }
         if item.is_secret() {
-            group.add(&row("Security", "Looks like a credential file: preview masked, copying asks first"));
+            group.add(&row("Security", &tr("Looks like a credential file: preview masked, copying asks first")));
         }
         match item.target_file().parent() {
             Some(parent) => group.add(&row("Location", &crate::window::location_text(&parent))),
@@ -1194,18 +1195,18 @@ impl Window {
         }
 
         if !item.is_dir() && item.target_file().is_native() {
-            let hash_row = row("SHA-256", "Calculating…");
+            let hash_row = row("SHA-256", &tr("Calculating…"));
             let copy = gtk::Button::from_icon_name("edit-copy-symbolic");
             copy.add_css_class("flat");
             copy.set_valign(gtk::Align::Center);
-            copy.set_tooltip_text(Some("Copy hash"));
+            copy.set_tooltip_text(Some(tr("Copy hash").as_str()));
             copy.set_sensitive(false);
             hash_row.add_suffix(&copy);
             group.add(&hash_row);
             if let Some(path) = item.target_file().path() {
                 let clip = self.window.clipboard();
                 glib::spawn_future_local(async move {
-                    let hash = crate::checksum::sha256(path).await.unwrap_or_else(|| "sha256sum not available".into());
+                    let hash = crate::checksum::sha256(path).await.unwrap_or_else(|| tr("sha256sum not available"));
                     hash_row.set_subtitle(&hash);
                     copy.set_sensitive(true);
                     let hash2 = hash.clone();
@@ -1218,7 +1219,7 @@ impl Window {
         }
         page.add(&group);
         if let Some(venv) = item.target_file().path().filter(|p| item.is_dir() && crate::pyenv::is_venv_dir(p)).and_then(|p| crate::pyenv::read(&p)) {
-            let py = adw::PreferencesGroup::builder().title("Python virtual environment").build();
+            let py = adw::PreferencesGroup::builder().title(tr("Python virtual environment")).build();
             py.add(&row("Python", if venv.version.is_empty() { "unknown" } else { &venv.version }));
             py.add(&row("Base interpreter", &venv.base));
             py.add(&row("Created with", &venv.tool));
@@ -1244,7 +1245,7 @@ impl Window {
         page.set_vexpand(true);
         vbox.append(&page);
         content.set_content(Some(&vbox));
-        let dialog = adw::Dialog::builder().title("Properties").content_width(520).content_height(780).child(&content).build();
+        let dialog = adw::Dialog::builder().title(tr("Properties")).content_width(520).content_height(780).child(&content).build();
         self.present_dialog(&dialog);
     }
 

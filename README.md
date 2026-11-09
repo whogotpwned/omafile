@@ -340,6 +340,7 @@ The button shows `⇅` while a copy or move runs and a lock glyph while encrypte
 - **Icons.** The theme's `icons.theme` names the icon set (Yaru variants); omafile applies it itself, Preferences can override it.
 - **Live.** A `GFileMonitor` on the `current` directory catches the symlink swap `omarchy-theme-set` performs and re-skins open windows.
 - **Launching.** Windows through `uwsm-app`, terminals through `uwsm app -- $TERMINAL`, files through the desktop portal, the editor through `omarchy-launch-editor`.
+- **Language.** `~/.config/omarchy/language` (*Setup › Language*) picks the UI language of the app and the bar widget; see [Languages](#languages).
 - **Shell plugin.** Built like the first-party `omarchy.menu` widget: `BarIconButton` in a `BarWidget`, `bar.run` for commands, `whogotpwned.*` namespace, `schemaVersion: 1`, `bar-widget` kind, `defaultSection`. `omarchy plugin validate .` passes.
 
 ### Publishing as an Omarchy plugin
@@ -383,6 +384,32 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 - **Handling.** Unlocking mounts for your user only (FUSE, no root). Lock from the menu or the bar button, or it stays unlocked until logout. The password is piped to gocryptfs, never written to disk or a command line.
 - **Scope.** Local file systems only.
 
+## Languages
+
+<p align="center"><img src="docs/screenshot-lang-de.png" alt="omafile in German" width="720"></p>
+
+omafile speaks the language Omarchy is set to. *Setup › Language* writes a registry code to `~/.config/omarchy/language`; omafile reads it at start and translates every menu, dialog, toast and the shortcuts overlay. Without Omarchy it falls back to `LC_ALL` / `LC_MESSAGES` / `LANG` (`de_DE.UTF-8` → `de`, `pt_BR.UTF-8` → `pt-BR`). `OMAFILE_LANG=fr omafile` forces a language for one run.
+
+| Code | Language | Catalog |
+|---|---|---|
+| `en` | English | source strings |
+| `de` | Deutsch | complete |
+| `es` | Español | complete |
+| `fr` | Français | complete |
+| `it` | Italiano | complete |
+| `pt`, `pt-BR` | Português | complete |
+| `nl` | Nederlands | complete |
+
+<details><summary>More screenshots</summary>
+<p><img src="docs/screenshot-lang-de-bindings.png" alt="bindings overlay in German" width="720"><br><img src="docs/screenshot-lang-de-permissions.png" alt="permissions in German" width="720"><br><img src="docs/screenshot-lang-fr.png" alt="properties in French" width="720"></p>
+</details>
+
+Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English string, compiled into the binary. A regional code layers on its base language (`pt-BR` reads `pt.json`, then `pt-BR.json`), and any string missing from a catalog stays English, so a partial translation is never a broken one. Dates, numbers and sizes follow the system locale through GTK.
+
+**Your own language or wording.** Drop `~/.config/omafile/i18n/<code>.json` next to the config; it overrides the built-in catalog key by key. To start a new language, copy `data/i18n/en.json`, translate the values and open a pull request. Placeholders in braces (`{n}`, `{name}`) stay as they are. The bar widget has its own small catalogs in `plugin/i18n/` and follows the same Omarchy setting through the shell's `Commons.Translations`; the desktop entry carries translated names, so the app menu shows *Dateien*, *Fichiers*, … as well.
+
+---
+
 ## Configuration files
 
 | File | Content |
@@ -391,6 +418,7 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
+| `~/.config/omafile/i18n/<code>.json` | Your own translations, override the built-in catalog key by key |
 | `~/.local/state/omafile/session` | Last window layout |
 | `~/.local/state/omafile/recent` | Recent folders for `--print-recent` |
 | `~/.local/state/omafile/status` | `busy` / `vaults` for the bar widget |

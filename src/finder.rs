@@ -1,6 +1,7 @@
 //! Small Finder habits: New Folder with Selection, aliases and Show Original,
 //! Always Open With…, Properties for several items.
 
+use crate::i18n::tr;
 use crate::ops;
 use crate::undo::Op;
 use crate::window::Window;
@@ -17,10 +18,10 @@ impl Window {
             return;
         }
         let n = items.len();
-        let entry = gtk::Entry::builder().text(format!("New Folder With {n} {}", if n == 1 { "Item" } else { "Items" })).activates_default(true).build();
-        let dialog = adw::AlertDialog::new(Some("New folder with selection"), Some("The selected items move into the new folder."));
+        let entry = gtk::Entry::builder().text(if n == 1 { tr("New Folder With 1 Item") } else { trf!("New Folder With {n} Items", n = n) }).activates_default(true).build();
+        let dialog = adw::AlertDialog::new(Some(tr("New folder with selection").as_str()), Some(tr("The selected items move into the new folder.").as_str()));
         dialog.set_extra_child(Some(&entry));
-        dialog.add_responses(&[("cancel", "Cancel"), ("create", "Create")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("create", tr("Create").as_str())]);
         dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("create"));
         dialog.set_close_response("cancel");
@@ -72,7 +73,7 @@ impl Window {
             match std::os::unix::fs::symlink(&target, &link_path) {
                 Ok(()) => created.push(link),
                 Err(e) => {
-                    self.toast_error(&format!("Cannot create alias: {e}"));
+                    self.toast_error(&trf!("Cannot create alias: {e}", e = e));
                     break;
                 }
             }
@@ -83,20 +84,20 @@ impl Window {
             if let Some(last) = created.last() {
                 pane.select_file_later(last.clone());
             }
-            self.record(Op::Derive(created), &format!("Created {n} {}", if n == 1 { "alias" } else { "aliases" }));
+            self.record(Op::Derive(created), &format!("Created {n} {}", if n == 1 { tr("alias") } else { tr("aliases") }));
         }
     }
 
     /// For a symlink: go to the folder of its target and select it.
     pub fn show_original(self: &Rc<Self>) {
         let Some(item) = self.selected_items().into_iter().find(|i| i.is_symlink()) else {
-            self.toast("Select an alias (symbolic link) first");
+            self.toast(&tr("Select an alias (symbolic link) first"));
             return;
         };
         let Some(path) = item.file().path() else { return };
         match std::fs::canonicalize(&path) {
             Ok(real) => self.reveal(gio::File::for_path(real)),
-            Err(e) => self.toast_error(&format!("The original is gone: {e}")),
+            Err(e) => self.toast_error(&trf!("The original is gone: {e}", e = e)),
         }
     }
 
@@ -117,14 +118,14 @@ impl Window {
             }
         }
         let description = gio::content_type_get_description(&ct);
-        let dialog = adw::Dialog::builder().title("Always Open With").content_width(420).content_height(560).build();
-        let remember = gtk::CheckButton::with_label(&format!("Always use it for {description}"));
+        let dialog = adw::Dialog::builder().title(tr("Always Open With")).content_width(420).content_height(560).build();
+        let remember = gtk::CheckButton::with_label(&trf!("Always use it for {description}", description = description));
         remember.set_active(true);
         remember.set_margin_start(12);
         remember.set_margin_bottom(6);
         for (i, app) in shown.iter().enumerate() {
             if i == apps.len() && i > 0 {
-                let sep = adw::ActionRow::builder().title("Other applications").build();
+                let sep = adw::ActionRow::builder().title(tr("Other applications")).build();
                 sep.add_css_class("dim-label");
                 sep.set_activatable(false);
                 list.append(&sep);
@@ -134,7 +135,7 @@ impl Window {
                 row.add_prefix(&gtk::Image::from_gicon(&icon));
             }
             if default.as_ref().map(|d| d.id() == app.id()).unwrap_or(false) {
-                row.set_subtitle("current default");
+                row.set_subtitle(&tr("current default"));
             }
             let (app, ct, this, dialog, remember, file) = (app.clone(), ct.clone(), Rc::downgrade(self), dialog.clone(), remember.clone(), item.target_file());
             row.connect_activated(move |_| {
@@ -158,7 +159,7 @@ impl Window {
         scroll.set_margin_end(12);
         scroll.set_margin_bottom(6);
         let header = adw::HeaderBar::new();
-        header.set_title_widget(Some(&adw::WindowTitle::new("Open With", &item.display_name())));
+        header.set_title_widget(Some(&adw::WindowTitle::new(&tr("Open With"), &item.display_name())));
         let content = adw::ToolbarView::new();
         content.add_top_bar(&header);
         content.set_content(Some(&scroll));
@@ -179,8 +180,8 @@ impl Window {
             r.add_css_class("property");
             r
         };
-        group.add(&row("Selection", &format!("{n} items: {folders} {}, {files} {}", if folders == 1 { "folder" } else { "folders" }, if files == 1 { "file" } else { "files" })));
-        let size_row = row("Total size", "Calculating…");
+        group.add(&row("Selection", &format!("{n} items: {folders} {}, {files} {}", if folders == 1 { tr("folder") } else { tr("folders") }, if files == 1 { tr("file") } else { tr("files") })));
+        let size_row = row("Total size", &tr("Calculating…"));
         group.add(&size_row);
         let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
         for i in &items {

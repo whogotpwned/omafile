@@ -2,6 +2,7 @@
 //! (PDF), the image, or the text; Space or Escape closes it, the arrow keys
 //! walk through the folder while it stays open.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::pane::Pane;
 use crate::preview::PreviewPane;
@@ -21,10 +22,10 @@ pub struct QuickLook {
 impl QuickLook {
     pub fn new(thumbs: Rc<ThumbCache>, window: &adw::ApplicationWindow) -> Rc<Self> {
         let preview = PreviewPane::new_large(thumbs);
-        let title = adw::WindowTitle::new("Quick Look", "");
+        let title = adw::WindowTitle::new(&tr("Quick Look"), "");
         let header = adw::HeaderBar::new();
         header.set_title_widget(Some(&title));
-        let hint = gtk::Label::new(Some("Space or Esc closes  ·  ← → previous / next"));
+        let hint = gtk::Label::new(Some(tr("Space or Esc closes  ·  ← → previous / next").as_str()));
         hint.add_css_class("omafile-dim");
         hint.add_css_class("caption");
         hint.set_margin_bottom(8);
@@ -32,7 +33,7 @@ impl QuickLook {
         view.add_top_bar(&header);
         view.set_content(Some(&preview.root));
         view.add_bottom_bar(&hint);
-        let dialog = adw::Dialog::builder().title("Quick Look").child(&view).content_width(960).content_height(720).build();
+        let dialog = adw::Dialog::builder().title(tr("Quick Look")).child(&view).content_width(960).content_height(720).build();
         dialog.add_css_class("omafile-quicklook");
         let this = Rc::new(QuickLook { dialog, preview, title, pane: RefCell::new(None) });
 

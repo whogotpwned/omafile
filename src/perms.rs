@@ -2,6 +2,7 @@
 //! and run, shown as check boxes, a sentence, `rwxr-xr-x` and the octal
 //! number; owner and group as names. Changes apply at once and can be undone.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::undo::Op;
 use crate::window::Window;
@@ -57,39 +58,39 @@ pub fn sentence(mode: u32, is_dir: bool) -> String {
         let bits = (mode >> shift) & 0o7;
         let mut parts = Vec::new();
         if bits & 4 != 0 {
-            parts.push(if is_dir { "list" } else { "read" });
+            parts.push(if is_dir { tr("list") } else { tr("read") });
         }
         if bits & 2 != 0 {
-            parts.push(if is_dir { "add and delete" } else { "write" });
+            parts.push(if is_dir { tr("add and delete") } else { tr("write") });
         }
         if bits & 1 != 0 {
-            parts.push(if is_dir { "enter" } else { "run" });
+            parts.push(if is_dir { tr("enter") } else { tr("run") });
         }
         match parts.len() {
-            0 => "do nothing".into(),
-            1 => parts[0].into(),
-            n => format!("{} and {}", parts[..n - 1].join(", "), parts[n - 1]),
+            0 => tr("do nothing"),
+            1 => parts[0].clone(),
+            n => trf!("{a} and {b}", a = parts[..n - 1].join(", "), b = parts[n - 1]),
         }
     };
     let (u, g, o) = (who(6), who(3), who(0));
-    let mut out = format!("Owner can {u}");
+    let mut out = trf!("Owner can {u}", u = u);
     if g == o {
-        out.push_str(&format!(", group and others can {g}."));
+        out.push_str(&trf!(", group and others can {g}.", g = g));
     } else {
-        out.push_str(&format!(", group can {g}, others can {o}."));
+        out.push_str(&trf!(", group can {g}, others can {o}.", g = g, o = o));
     }
     let mut special = Vec::new();
     if mode & 0o4000 != 0 {
-        special.push("set-UID");
+        special.push(tr("set-UID"));
     }
     if mode & 0o2000 != 0 {
-        special.push(if is_dir { "set-GID (new files inherit the group)" } else { "set-GID" });
+        special.push(if is_dir { tr("set-GID (new files inherit the group)") } else { tr("set-GID") });
     }
     if mode & 0o1000 != 0 {
-        special.push("sticky (only owners delete)");
+        special.push(tr("sticky (only owners delete)"));
     }
     if !special.is_empty() {
-        out.push_str(&format!(" Special: {}.", special.join(", ")));
+        out.push_str(&trf!(" Special: {list}.", list = special.join(", ")));
     }
     out
 }
@@ -101,13 +102,13 @@ pub fn octal(mode: u32) -> String {
 impl Window {
     /// The Permissions group for the Properties dialog.
     pub fn permissions_group(self: &Rc<Self>, item: &FileItem) -> adw::PreferencesGroup {
-        let group = adw::PreferencesGroup::builder().title("Permissions").build();
+        let group = adw::PreferencesGroup::builder().title(tr("Permissions")).build();
         let file = item.target_file();
         let is_dir = item.is_dir();
         let native = file.is_native();
         let mode0 = item.mode();
         if mode0 == 0 {
-            group.add(&adw::ActionRow::builder().title("Not available for this location").build());
+            group.add(&adw::ActionRow::builder().title(tr("Not available for this location")).build());
             return group;
         }
         let summary = adw::ActionRow::builder().title(sentence(mode0, is_dir)).subtitle(format!("{}  ·  {}", crate::ops::perm_string(mode0, is_dir, item.is_symlink()), octal(mode0))).build();
@@ -117,8 +118,8 @@ impl Window {
 
         // Grid of check boxes: rows owner / group / others, columns read / write / execute.
         let grid = gtk::Grid::builder().row_spacing(6).column_spacing(18).margin_top(10).margin_bottom(10).margin_start(14).margin_end(14).build();
-        for (col, title) in [(1, if is_dir { "List" } else { "Read" }), (2, "Write"), (3, if is_dir { "Enter" } else { "Run" })] {
-            let l = gtk::Label::new(Some(title));
+        for (col, title) in [(1, if is_dir { tr("List folder") } else { tr("Read") }), (2, tr("Write")), (3, if is_dir { tr("Enter folder") } else { tr("Run") })] {
+            let l = gtk::Label::new(Some(&title));
             l.add_css_class("caption-heading");
             l.add_css_class("omafile-dim");
             grid.attach(&l, col, 0, 1, 1);
@@ -152,7 +153,7 @@ impl Window {
             })
         };
         for (row, (label, shift)) in [("Owner", 6u32), ("Group", 3), ("Others", 0)].iter().enumerate() {
-            let l = gtk::Label::builder().label(*label).xalign(0.0).build();
+            let l = gtk::Label::builder().label(tr(label)).xalign(0.0).build();
             grid.attach(&l, 0, row as i32 + 1, 1, 1);
             for (col, bit) in [(1, 4u32), (2, 2), (3, 1)] {
                 let mask = bit << shift;
@@ -180,7 +181,7 @@ impl Window {
         group.add(&grid_row);
 
         // Octal entry for people who think in numbers.
-        let octal_row = adw::EntryRow::builder().title("Octal (e.g. 755)").text(octal(mode0)).show_apply_button(true).build();
+        let octal_row = adw::EntryRow::builder().title(tr("Octal (e.g. 755)")).text(octal(mode0)).show_apply_button(true).build();
         octal_row.set_sensitive(native);
         {
             let (apply, checks, mode) = (apply.clone(), checks.clone(), mode.clone());
@@ -196,8 +197,8 @@ impl Window {
         group.add(&octal_row);
 
         // Special bits in an expander, out of the way.
-        let special = adw::ExpanderRow::builder().title("Special bits").subtitle("set-UID, set-GID, sticky").build();
-        for (label, mask, hint) in [("Set-UID", 0o4000u32, "runs as the owner"), ("Set-GID", 0o2000, "runs as the group / new files inherit the group"), ("Sticky", 0o1000, "only owners may delete inside")] {
+        let special = adw::ExpanderRow::builder().title(tr("Special bits")).subtitle(tr("set-UID, set-GID, sticky")).build();
+        for (label, mask, hint) in [("Set-UID", 0o4000u32, tr("runs as the owner")), ("Set-GID", 0o2000, tr("runs as the group / new files inherit the group")), ("Sticky", 0o1000, tr("only owners may delete inside"))] {
             let row = adw::SwitchRow::builder().title(label).subtitle(hint).active(mode0 & mask != 0).build();
             row.set_sensitive(native);
             let (apply, mode) = (apply.clone(), mode.clone());
@@ -214,7 +215,7 @@ impl Window {
         let uid = info.attribute_uint32("unix::uid");
         let gid = info.attribute_uint32("unix::gid");
         let owner_name = users().into_iter().find(|u| u.id == uid).map(|u| u.name).unwrap_or_else(|| uid.to_string());
-        let owner_row = adw::ActionRow::builder().title("Owner").subtitle(format!("{owner_name} (uid {uid})")).build();
+        let owner_row = adw::ActionRow::builder().title(tr("Owner")).subtitle(format!("{owner_name} (uid {uid})")).build();
         owner_row.add_css_class("property");
         if libc_getuid() == 0 && native {
             // Only root can give files away; offer the list then.
@@ -242,7 +243,7 @@ impl Window {
         group.add(&owner_row);
 
         let group_name = groups().into_iter().find(|g| g.id == gid).map(|g| g.name).unwrap_or_else(|| gid.to_string());
-        let group_row = adw::ActionRow::builder().title("Group").subtitle(format!("{group_name} (gid {gid})")).build();
+        let group_row = adw::ActionRow::builder().title(tr("Group")).subtitle(format!("{group_name} (gid {gid})")).build();
         group_row.add_css_class("property");
         let mine = my_groups();
         if native && mine.len() > 1 {
@@ -269,27 +270,27 @@ impl Window {
                 }
             });
             group_row.add_suffix(&drop);
-            group_row.set_subtitle("groups you belong to");
+            group_row.set_subtitle(&tr("groups you belong to"));
         }
         group.add(&group_row);
 
         // What *you* can do, from the access attributes GIO already queried.
         let mut you = Vec::new();
         if info.boolean("access::can-read") {
-            you.push(if is_dir { "list it" } else { "read it" });
+            you.push(if is_dir { tr("list it") } else { tr("read it") });
         }
         if info.boolean("access::can-write") {
-            you.push(if is_dir { "add and delete inside" } else { "change it" });
+            you.push(if is_dir { tr("add and delete inside") } else { tr("change it") });
         }
         if info.boolean("access::can-execute") {
-            you.push(if is_dir { "enter it" } else { "run it" });
+            you.push(if is_dir { tr("enter it") } else { tr("run it") });
         }
-        let you_row = adw::ActionRow::builder().title("You can").subtitle(if you.is_empty() { "nothing (no access)".to_string() } else { you.join(", ") }).build();
+        let you_row = adw::ActionRow::builder().title(tr("You can")).subtitle(if you.is_empty() { tr("nothing (no access)") } else { you.join(", ") }).build();
         you_row.add_css_class("property");
         group.add(&you_row);
 
         if is_dir && native {
-            let recurse = gtk::Button::with_label("Apply to Enclosed Files…");
+            let recurse = gtk::Button::with_label(&tr("Apply to Enclosed Files…"));
             recurse.set_halign(gtk::Align::Start);
             recurse.set_margin_top(6);
             recurse.set_margin_start(14);
@@ -309,8 +310,8 @@ impl Window {
     /// Give every file below `dir` the folder's read/write bits; folders also
     /// get the execute (enter) bits. Asks first, undoable.
     fn apply_mode_recursively(self: &Rc<Self>, dir: gio::File, mode: u32) {
-        let dialog = adw::AlertDialog::new(Some("Apply to enclosed files?"), Some(&format!("Files inside get {} (without execute), folders get {}. This walks the whole tree.", octal(mode & !0o111), octal(mode))));
-        dialog.add_responses(&[("cancel", "Cancel"), ("apply", "Apply")]);
+        let dialog = adw::AlertDialog::new(Some(tr("Apply to enclosed files?").as_str()), Some(&format!("Files inside get {} (without execute), folders get {}. This walks the whole tree.", octal(mode & !0o111), octal(mode))));
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("apply", tr("Apply").as_str())]);
         dialog.set_response_appearance("apply", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("apply"));
         dialog.set_close_response("cancel");
@@ -351,9 +352,9 @@ impl Window {
                 let Some(w) = this.upgrade() else { return };
                 let n = changes.len();
                 if n > 0 {
-                    w.record(Op::Mode(changes), &format!("Permissions applied to {n} {}", if n == 1 { "item" } else { "items" }));
+                    w.record(Op::Mode(changes), &format!("Permissions applied to {n} {}", if n == 1 { tr("item") } else { tr("items") }));
                 } else {
-                    w.toast("Nothing to change");
+                    w.toast(&tr("Nothing to change"));
                 }
                 if let Some(p) = w.active_pane() {
                     p.reload();

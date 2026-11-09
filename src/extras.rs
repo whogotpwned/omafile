@@ -1,5 +1,6 @@
 //! Preferences, custom icons and batch rename.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::ops;
 use crate::pane::Pane;
@@ -47,16 +48,16 @@ impl Window {
 
     pub fn show_preferences(self: &Rc<Self>) {
         let dialog = adw::PreferencesDialog::new();
-        dialog.set_title("Preferences");
+        dialog.set_title(&tr("Preferences"));
         let page = adw::PreferencesPage::new();
 
         // Icons
-        let icons = adw::PreferencesGroup::builder().title("Icons").description("Omarchy picks a Yaru variant per theme through icons.theme. Override it here if you prefer another icon set.").build();
+        let icons = adw::PreferencesGroup::builder().title(tr("Icons")).description(tr("Omarchy picks a Yaru variant per theme through icons.theme. Override it here if you prefer another icon set.")).build();
         let themes = prefs::installed_icon_themes();
-        let mut names: Vec<String> = vec![format!("Follow Omarchy theme ({})", self.theme.palette().icon_theme.unwrap_or_else(|| "system default".into()))];
+        let mut names: Vec<String> = vec![format!("Follow Omarchy theme ({})", self.theme.palette().icon_theme.unwrap_or_else(|| tr("system default")))];
         names.extend(themes.iter().cloned());
         let model = gtk::StringList::new(&names.iter().map(String::as_str).collect::<Vec<_>>());
-        let row = adw::ComboRow::builder().title("Icon theme").model(&model).build();
+        let row = adw::ComboRow::builder().title(tr("Icon theme")).model(&model).build();
         let current = self.prefs.get("icon-theme");
         if let Some(cur) = &current {
             if let Some(i) = themes.iter().position(|t| t == cur) {
@@ -75,8 +76,8 @@ impl Window {
         page.add(&icons);
 
         // Views
-        let views = adw::PreferencesGroup::builder().title("Views").build();
-        let thumbs = adw::SwitchRow::builder().title("Thumbnails").subtitle("Preview images and PDFs in the list and grid").active(self.prefs.get_bool("thumbnails", true)).build();
+        let views = adw::PreferencesGroup::builder().title(tr("Views")).build();
+        let thumbs = adw::SwitchRow::builder().title(tr("Thumbnails")).subtitle(tr("Preview images and PDFs in the list and grid")).active(self.prefs.get_bool("thumbnails", true)).build();
         let this = Rc::downgrade(self);
         thumbs.connect_active_notify(move |row| {
             if let Some(w) = this.upgrade() {
@@ -88,7 +89,7 @@ impl Window {
             }
         });
         views.add(&thumbs);
-        let default_view = adw::ComboRow::builder().title("Default view").model(&gtk::StringList::new(&["List", "Grid"])).build();
+        let default_view = adw::ComboRow::builder().title(tr("Default view")).model(&gtk::StringList::new(&[tr("List").as_str(), tr("Grid").as_str()])).build();
         default_view.set_selected(if self.prefs.get("view").as_deref() == Some("grid") { 1 } else { 0 });
         let this = Rc::downgrade(self);
         default_view.connect_selected_notify(move |row| {
@@ -97,7 +98,7 @@ impl Window {
             }
         });
         views.add(&default_view);
-        let hidden = adw::SwitchRow::builder().title("Show hidden files at start").active(self.prefs.get_bool("show-hidden", false)).build();
+        let hidden = adw::SwitchRow::builder().title(tr("Show hidden files at start")).active(self.prefs.get_bool("show-hidden", false)).build();
         let this = Rc::downgrade(self);
         hidden.connect_active_notify(move |row| {
             if let Some(w) = this.upgrade() {
@@ -105,7 +106,7 @@ impl Window {
             }
         });
         views.add(&hidden);
-        let session = adw::SwitchRow::builder().title("Restore tabs on start").subtitle("Reopen the last tabs, split view and terminal panels").active(self.prefs.get_bool("restore-session", true)).build();
+        let session = adw::SwitchRow::builder().title(tr("Restore tabs on start")).subtitle(tr("Reopen the last tabs, split view and terminal panels")).active(self.prefs.get_bool("restore-session", true)).build();
         let this = Rc::downgrade(self);
         session.connect_active_notify(move |row| {
             if let Some(w) = this.upgrade() {
@@ -116,7 +117,7 @@ impl Window {
             }
         });
         views.add(&session);
-        let archives = adw::SwitchRow::builder().title("Open archives in place").subtitle("Enter on a .zip / .tar browses inside it instead of launching an app").active(self.prefs.get_bool("browse-archives", true)).build();
+        let archives = adw::SwitchRow::builder().title(tr("Open archives in place")).subtitle(tr("Enter on a .zip / .tar browses inside it instead of launching an app")).active(self.prefs.get_bool("browse-archives", true)).build();
         let this = Rc::downgrade(self);
         archives.connect_active_notify(move |row| {
             if let Some(w) = this.upgrade() {
@@ -124,7 +125,7 @@ impl Window {
             }
         });
         views.add(&archives);
-        let venv = adw::SwitchRow::builder().title("Activate Python venvs in the terminal panel").subtitle("Entering a project with a .venv sources it, leaving runs deactivate").active(self.prefs.get_bool("venv-auto-activate", true)).build();
+        let venv = adw::SwitchRow::builder().title(tr("Activate Python venvs in the terminal panel")).subtitle(tr("Entering a project with a .venv sources it, leaving runs deactivate")).active(self.prefs.get_bool("venv-auto-activate", true)).build();
         let this = Rc::downgrade(self);
         venv.connect_active_notify(move |row| {
             if let Some(w) = this.upgrade() {
@@ -132,7 +133,7 @@ impl Window {
             }
         });
         views.add(&venv);
-        let mac = adw::SwitchRow::builder().title("macOS keys").subtitle("Enter renames, Ctrl+O or Ctrl+↓ opens, Ctrl+↑ goes up").active(self.prefs.get_bool("mac-keys", false)).build();
+        let mac = adw::SwitchRow::builder().title(tr("macOS keys")).subtitle(tr("Enter renames, Ctrl+O or Ctrl+↓ opens, Ctrl+↑ goes up")).active(self.prefs.get_bool("mac-keys", false)).build();
         let this = Rc::downgrade(self);
         mac.connect_active_notify(move |row| {
             if let Some(w) = this.upgrade() {
@@ -142,10 +143,10 @@ impl Window {
         views.add(&mac);
         page.add(&views);
 
-        let trash = adw::PreferencesGroup::builder().title("Trash").build();
+        let trash = adw::PreferencesGroup::builder().title(tr("Trash")).build();
         let auto = adw::SpinRow::with_range(0.0, 365.0, 1.0);
-        auto.set_title("Delete trashed items after … days");
-        auto.set_subtitle("0 keeps everything until you empty the trash; runs when omafile starts");
+        auto.set_title(&tr("Delete trashed items after … days"));
+        auto.set_subtitle(&tr("0 keeps everything until you empty the trash; runs when omafile starts"));
         auto.set_value(self.prefs.get("trash-auto-days").and_then(|v| v.parse().ok()).unwrap_or(0.0));
         let this = Rc::downgrade(self);
         auto.connect_value_notify(move |row| {
@@ -165,7 +166,7 @@ impl Window {
     pub fn show_icon_chooser(self: &Rc<Self>, item: &FileItem) {
         let file = item.target_file();
         if !file.is_native() {
-            self.toast_error("Custom icons work on local files only");
+            self.toast_error(&tr("Custom icons work on local files only"));
             return;
         }
         let flow = gtk::FlowBox::builder()
@@ -186,13 +187,13 @@ impl Window {
             flow.insert(&child, -1);
         }
         let hint = gtk::Label::builder()
-            .label("Pick an icon from the current icon theme or use your own image. Nautilus shows the same icon, it is stored as file metadata.")
+            .label(tr("Pick an icon from the current icon theme or use your own image. Nautilus shows the same icon, it is stored as file metadata."))
             .wrap(true)
             .xalign(0.0)
             .css_classes(["omafile-dim", "caption"])
             .build();
-        let image_btn = gtk::Button::with_label("Choose Image…");
-        let reset_btn = gtk::Button::with_label("Reset to Default");
+        let image_btn = gtk::Button::with_label(&tr("Choose Image…"));
+        let reset_btn = gtk::Button::with_label(&tr("Reset to Default"));
         let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         buttons.set_halign(gtk::Align::End);
         buttons.append(&reset_btn);
@@ -236,10 +237,10 @@ impl Window {
             let Some(w) = this.upgrade() else { return };
             let filter = gtk::FileFilter::new();
             filter.add_mime_type("image/*");
-            filter.set_name(Some("Images"));
+            filter.set_name(Some(tr("Images").as_str()));
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
-            let chooser = gtk::FileDialog::builder().title("Choose an icon image").modal(true).filters(&filters).build();
+            let chooser = gtk::FileDialog::builder().title(tr("Choose an icon image")).modal(true).filters(&filters).build();
             let this = Rc::downgrade(&w);
             let file2 = file2.clone();
             let dialog2 = dialog2.clone();
@@ -263,7 +264,7 @@ impl Window {
         };
         match result {
             Ok(()) => {
-                self.toast(if value.is_some() { "Icon changed" } else { "Icon reset" });
+                self.toast(&if value.is_some() { tr("Icon changed") } else { tr("Icon reset") });
                 for p in self.all_panes() {
                     p.reload();
                 }
@@ -276,12 +277,12 @@ impl Window {
     // ----- batch rename ---------------------------------------------------------------
 
     pub fn show_batch_rename(self: &Rc<Self>, pane: Rc<Pane>, items: Vec<FileItem>) {
-        let pattern = adw::EntryRow::builder().title("Name pattern").text("[name]").build();
-        let find = adw::EntryRow::builder().title("Find").build();
-        let replace = adw::EntryRow::builder().title("Replace with").build();
-        let regex = adw::SwitchRow::builder().title("Find is a regular expression").subtitle("Capture groups: $1, $2 … in Replace").build();
+        let pattern = adw::EntryRow::builder().title(tr("Name pattern")).text("[name]").build();
+        let find = adw::EntryRow::builder().title(tr("Find")).build();
+        let replace = adw::EntryRow::builder().title(tr("Replace with")).build();
+        let regex = adw::SwitchRow::builder().title(tr("Find is a regular expression")).subtitle(tr("Capture groups: $1, $2 … in Replace")).build();
         let start = adw::SpinRow::with_range(0.0, 99_999.0, 1.0);
-        start.set_title("First number");
+        start.set_title(&tr("First number"));
         start.set_value(1.0);
         let group = adw::PreferencesGroup::builder()
             .title(format!("Rename {} items", items.len()))
@@ -296,7 +297,7 @@ impl Window {
         let preview_list = gtk::ListBox::new();
         preview_list.add_css_class("boxed-list");
         preview_list.set_selection_mode(gtk::SelectionMode::None);
-        let preview_group = adw::PreferencesGroup::builder().title("Preview").build();
+        let preview_group = adw::PreferencesGroup::builder().title(tr("Preview")).build();
         preview_group.add(&preview_list);
 
         let page = adw::PreferencesPage::new();
@@ -310,7 +311,7 @@ impl Window {
         let view = adw::ToolbarView::new();
         view.add_top_bar(&header);
         view.set_content(Some(&page));
-        let dialog = adw::Dialog::builder().title("Batch Rename").content_width(560).content_height(640).child(&view).build();
+        let dialog = adw::Dialog::builder().title(tr("Batch Rename")).content_width(560).content_height(640).child(&view).build();
 
         let items = Rc::new(items);
         let compute = {
@@ -418,8 +419,8 @@ impl Window {
                 let Some(w) = this.upgrade() else { return };
                 pane.reload();
                 match error {
-                    Some(e) => w.toast_error(&format!("Rename failed: {e}")),
-                    None => w.record(crate::undo::Op::Move(pairs), &format!("Renamed {renamed} items")),
+                    Some(e) => w.toast_error(&trf!("Rename failed: {e}", e = e)),
+                    None => w.record(crate::undo::Op::Move(pairs), &trf!("Renamed {renamed} items", renamed = renamed)),
                 }
             });
         });

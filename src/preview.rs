@@ -1,5 +1,6 @@
 //! Preview pane: image, text or icon plus key details for the selected item.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::ops;
 use crate::thumbs::ThumbCache;
@@ -48,8 +49,8 @@ impl PreviewPane {
 
         let placeholder = adw::StatusPage::builder()
             .icon_name("view-reveal-symbolic")
-            .title("Preview")
-            .description("Select a file to preview it here")
+            .title(tr("Preview"))
+            .description(tr("Select a file to preview it here"))
             .build();
         placeholder.add_css_class("compact");
 
@@ -162,7 +163,7 @@ impl PreviewPane {
             if let Some(path) = item.target_file().path() {
                 if item.is_dir() && crate::pyenv::is_venv_dir(&path) {
                     if let Some(v) = crate::pyenv::read(&path) {
-                        self.show_python(item, &format!("Python {}  ·  {}  ·  {} packages", v.version, v.tool, v.packages.len()), v.packages.iter().map(|(n, ver)| (format!("{n} {ver}"), Some(()))).collect(), "Virtual environment  ·  Python › Activate puts it into the terminal panel");
+                        self.show_python(item, &trf!("Python {version}  ·  {tool}  ·  {n} packages", version = v.version, tool = v.tool, n = v.packages.len()), v.packages.iter().map(|(n, ver)| (format!("{n} {ver}"), Some(()))).collect(), "Virtual environment  ·  Python › Activate puts it into the terminal panel");
                         return;
                     }
                 }
@@ -177,7 +178,7 @@ impl PreviewPane {
                             let rows: Vec<(String, Option<()>)> = checked.iter().map(|(n, v)| (match v { Some(ver) => format!("{n} {ver}"), None => n.clone() }, v.as_ref().map(|_| ()))).collect();
                             let hint = match &venv {
                                 Some(v) => format!("{}  ·  {} of {} installed{}", crate::pyenv::summary(v), reqs.len() - missing, reqs.len(), if missing > 0 { "  ·  Python › Install Requirements" } else { "" }),
-                                None => "No venv found  ·  Python › Create venv here".into(),
+                                None => tr("No venv found  ·  Python › Create venv here"),
                             };
                             self.show_python(item, &format!("{}  ·  {} requirements", item.type_description(), reqs.len()), rows, &hint);
                             return;
@@ -192,8 +193,8 @@ impl PreviewPane {
                     self.icon.set_from_gicon(&icon);
                 }
                 self.stack.set_visible_child_name("text");
-                self.text.buffer().set_text("••••••••••••••••••••\n\nLooks like a credential file.\nContents are not shown here.\nOpen it in the editor if\nyou really need to see it.");
-                self.hint.set_text("Secret file: preview masked");
+                self.text.buffer().set_text(&tr("••••••••••••••••••••\n\nLooks like a credential file.\nContents are not shown here.\nOpen it in the editor if\nyou really need to see it."));
+                self.hint.set_text(&tr("Secret file: preview masked"));
                 return;
             }
             if let (Some((root, status)), Some(path)) = (git.as_ref(), item.target_file().path()) {
@@ -206,7 +207,7 @@ impl PreviewPane {
                     }
                     self.stack.set_visible_child_name("text");
                     self.text.buffer().set_text("");
-                    self.hint.set_text("Loading diff…");
+                    self.hint.set_text(&tr("Loading diff…"));
                     let this = Rc::downgrade(self);
                     glib::spawn_future_local(async move {
                         let diff = crate::git::diff(&root, &path, &status).await;
@@ -215,11 +216,11 @@ impl PreviewPane {
                             return;
                         }
                         if diff.trim().is_empty() {
-                            p.hint.set_text("No textual changes (binary or identical)");
+                            p.hint.set_text(&tr("No textual changes (binary or identical)"));
                             p.show_plain_text(&gio::File::for_path(&path), gen);
                         } else {
                             let (adds, dels) = p.render_diff(&diff);
-                            p.hint.set_text(&format!("git diff  ·  +{adds} −{dels}"));
+                            p.hint.set_text(&trf!("git diff  ·  +{adds} −{dels}", adds = adds, dels = dels));
                         }
                     });
                     return;
@@ -228,8 +229,8 @@ impl PreviewPane {
         }
         let Some(item) = item else {
             self.stack.set_visible_child_name("none");
-            self.name.set_text(if count > 1 { "Multiple items" } else { "" });
-            let details = if count > 1 { format!("{count} items selected") } else { String::new() };
+            self.name.set_text(&if count > 1 { tr("Multiple items") } else { String::new() });
+            let details = if count > 1 { trf!("{count} items selected", count = count) } else { String::new() };
             self.details.set_text(&details);
             self.hint.set_text("");
             return;
@@ -260,7 +261,7 @@ impl PreviewPane {
                         let Some(p) = this.upgrade() else { return };
                         if p.generation.get() == gen {
                             if let Some(n) = pages {
-                                p.hint.set_text(&format!("{n} {}  ·  first page shown", if n == 1 { "page" } else { "pages" }));
+                                p.hint.set_text(&format!("{n} {}  ·  first page shown", if n == 1 { tr("page") } else { tr("pages") }));
                             }
                         }
                     });
@@ -277,7 +278,7 @@ impl PreviewPane {
                 let Some(p) = this.upgrade() else { return };
                 if p.generation.get() == gen {
                     if let Some(n) = count {
-                        p.hint.set_text(&format!("{n} {}", if n == 1 { "item" } else { "items" }));
+                        p.hint.set_text(&format!("{n} {}", if n == 1 { tr("item") } else { tr("items") }));
                     }
                 }
             });
@@ -300,7 +301,7 @@ impl PreviewPane {
                     match png.and_then(|b| gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok()) {
                         Some(t) => {
                             p.picture.set_paintable(Some(&t));
-                            p.hint.set_text("Font specimen (ImageMagick)");
+                            p.hint.set_text(&tr("Font specimen (ImageMagick)"));
                         }
                         None => p.stack.set_visible_child_name("icon"),
                     }
@@ -341,7 +342,7 @@ impl PreviewPane {
                     match (kind, rendered, head) {
                         ("markdown", _, Some(text)) => {
                             p.render_spans(crate::render::markdown(&text));
-                            p.hint.set_text("Markdown");
+                            p.hint.set_text(&tr("Markdown"));
                         }
                         ("csv", _, Some(text)) => {
                             let rows = crate::render::csv_rows(&text, 200);
@@ -350,11 +351,11 @@ impl PreviewPane {
                         }
                         ("json", Some(Rendered::Code(pretty)), _) => {
                             p.text.buffer().set_text(&pretty);
-                            p.hint.set_text("JSON, formatted with jq");
+                            p.hint.set_text(&tr("JSON, formatted with jq"));
                         }
                         ("code", Some(Rendered::Ansi(ansi)), _) => {
                             p.render_ansi(&ansi);
-                            p.hint.set_text("Syntax highlighting by bat");
+                            p.hint.set_text(&tr("Syntax highlighting by bat"));
                         }
                         (_, _, Some(text)) => p.text.buffer().set_text(&text),
                         _ => p.stack.set_visible_child_name("icon"),
@@ -412,7 +413,7 @@ impl PreviewPane {
                 return;
             }
             // The player already shows the duration; everything else goes on the hint line.
-            let line: Vec<String> = facts.iter().filter(|(k, _)| k != "Duration").map(|(k, v)| if k == "Dimensions" || k == "Video" || k == "Audio" { v.clone() } else { format!("{k}: {v}") }).collect();
+            let line: Vec<String> = facts.iter().filter(|(k, _)| k != "Duration").map(|(k, v)| if k == "Dimensions" || k == "Video" || k == "Audio" { v.clone() } else { format!("{}: {v}", tr(k)) }).collect();
             let existing = p.hint.text().to_string();
             let joined = line.join("  ·  ");
             p.hint.set_text(&if existing.is_empty() { joined } else { format!("{joined}\n{existing}") });
@@ -609,7 +610,7 @@ impl PreviewPane {
                 } else {
                     msg.lines().next().unwrap_or("unknown error").to_string()
                 };
-                hint.set_text(&format!("Cannot play: {short}"));
+                hint.set_text(&trf!("Cannot play: {short}", short = short));
             }
         });
         let hint2 = self.hint.clone();

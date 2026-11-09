@@ -182,7 +182,7 @@ pub async fn apply(op: &Op, tags: &crate::tags::TagIndex) -> Result<usize, glib:
         Op::Restore(files) => {
             for f in files {
                 let Some(trashed) = find_in_trash(f).await else {
-                    return Err(glib::Error::new(gio::IOErrorEnum::NotFound, "The item is no longer in the trash"));
+                    return Err(glib::Error::new(gio::IOErrorEnum::NotFound, &crate::i18n::tr("The item is no longer in the trash")));
                 };
                 if let Some(parent) = f.parent() {
                     if !parent.query_exists(gio::Cancellable::NONE) {
@@ -207,7 +207,7 @@ pub async fn apply(op: &Op, tags: &crate::tags::TagIndex) -> Result<usize, glib:
                 } else {
                     let info = f.query_info_future("standard::size", gio::FileQueryInfoFlags::NONE, glib::Priority::DEFAULT).await?;
                     if info.size() > 0 {
-                        return Err(glib::Error::new(gio::IOErrorEnum::NotEmpty, "The file has content now"));
+                        return Err(glib::Error::new(gio::IOErrorEnum::NotEmpty, &crate::i18n::tr("The file has content now")));
                     }
                     f.delete_future(glib::Priority::DEFAULT).await?;
                 }

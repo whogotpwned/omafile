@@ -1,6 +1,7 @@
 //! Embedded terminal below the file view (Ctrl+`): VTE running the user's
 //! shell in the current folder, coloured like every other Omarchy terminal.
 
+use crate::i18n::tr;
 use crate::pane::Pane;
 use crate::theme::{Palette, Rgb};
 use crate::window::Window;
@@ -54,11 +55,11 @@ impl TermPanel {
         terminal.add_css_class("omafile-terminal");
 
         let title = gtk::Label::builder().xalign(0.0).ellipsize(pango::EllipsizeMode::Middle).hexpand(true).css_classes(["caption", "omafile-dim"]).build();
-        let follow = gtk::ToggleButton::builder().icon_name("folder-symbolic").active(true).tooltip_text("Follow the folder shown above (sends cd)").build();
+        let follow = gtk::ToggleButton::builder().icon_name("folder-symbolic").active(true).tooltip_text(tr("Follow the folder shown above (sends cd)")).build();
         follow.add_css_class("flat");
-        let clear = gtk::Button::builder().icon_name("edit-clear-all-symbolic").tooltip_text("Clear").build();
+        let clear = gtk::Button::builder().icon_name("edit-clear-all-symbolic").tooltip_text(tr("Clear")).build();
         clear.add_css_class("flat");
-        let close = gtk::Button::builder().icon_name("window-close-symbolic").tooltip_text("Hide terminal (Ctrl+`)").action_name("win.terminal-panel").build();
+        let close = gtk::Button::builder().icon_name("window-close-symbolic").tooltip_text(tr("Hide terminal (Ctrl+`)")).action_name("win.terminal-panel").build();
         close.add_css_class("flat");
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         header.add_css_class("omafile-terminal-header");

@@ -1,3 +1,5 @@
+#[macro_use]
+mod i18n;
 mod actions;
 mod bindings;
 mod bulk;
@@ -63,6 +65,7 @@ const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --version";
 
 fn main() -> glib::ExitCode {
+    i18n::export_language();
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("--toggle") => return glib::ExitCode::from(hypr::toggle().min(1) as u8),
@@ -95,6 +98,9 @@ fn main() -> glib::ExitCode {
     let theme2 = theme.clone();
     let prefs2 = prefs.clone();
     app.connect_startup(move |app| {
+        if std::env::var_os("OMAFILE_TRACE").is_some() {
+            eprintln!("language: {}", i18n::language());
+        }
         gtk::Window::set_default_icon_name("io.github.whogotpwned.Omafile");
         *theme2.borrow_mut() = Some(theme::ThemeManager::install(prefs2.get("icon-theme")));
         let quit = gio::SimpleAction::new("quit", None);

@@ -1,6 +1,7 @@
 //! Command palette (Ctrl+K): fuzzy search over actions, places, recent folders,
 //! project commands and bookmarks; `>` runs a shell command in a terminal here.
 
+use crate::i18n::tr;
 use crate::window::Window;
 use adw::prelude::*;
 use gtk::{gdk, gio, glib, pango};
@@ -70,7 +71,7 @@ pub struct Palette {
 
 impl Palette {
     pub fn new(window: &Rc<Window>) -> Rc<Self> {
-        let entry = gtk::Entry::builder().placeholder_text("Type an action, a folder, a project command, or > a shell command").hexpand(true).build();
+        let entry = gtk::Entry::builder().placeholder_text(tr("Type an action, a folder, a project command, or > a shell command")).hexpand(true).build();
         entry.add_css_class("omafile-palette-entry");
         let list = gtk::ListBox::new();
         list.add_css_class("omafile-palette-list");
@@ -84,7 +85,7 @@ impl Palette {
         vbox.set_margin_end(12);
         vbox.append(&entry);
         vbox.append(&scroll);
-        let dialog = adw::Dialog::builder().title("Command Palette").child(&vbox).content_width(640).content_height(480).build();
+        let dialog = adw::Dialog::builder().title(tr("Command Palette")).child(&vbox).content_width(640).content_height(480).build();
         dialog.add_css_class("omafile-palette");
         let this = Rc::new(Palette { dialog, entry: entry.clone(), list: list.clone(), entries: RefCell::new(Vec::new()), shown: RefCell::new(Vec::new()), window: Rc::downgrade(window) });
 
@@ -144,7 +145,7 @@ impl Palette {
         if let Some(cmd) = query.strip_prefix('>') {
             let cmd = cmd.trim();
             if !cmd.is_empty() {
-                shown.push((0, Entry { title: format!("Run in terminal: {cmd}"), detail: "Opens a terminal in this folder".into(), icon: "utilities-terminal-symbolic", target: Target::Command(cmd.into()) }));
+                shown.push((0, Entry { title: trf!("Run in terminal: {cmd}", cmd = cmd), detail: tr("Opens a terminal in this folder"), icon: "utilities-terminal-symbolic", target: Target::Command(cmd.into()) }));
             }
         } else if let Some((title, detail)) = self.window.upgrade().and_then(|w| w.bulk_preview(&query)) {
             shown.push((0, Entry { title, detail, icon: "edit-find-replace-symbolic", target: Target::Bulk(query.clone()) }));

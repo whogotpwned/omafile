@@ -20,6 +20,10 @@ BarWidget {
   implicitHeight: button.implicitHeight
 
   property bool menuOpen: false
+
+  // Strings follow the Omarchy language (~/.config/omarchy/language); the
+  // catalogs live in plugin/i18n/<code>.json, English is the fallback.
+  Commons.Translations { id: i18n; directory: Qt.resolvedUrl("i18n") }
   readonly property string folder: setting("path", "~")
   readonly property string windowClass: "io.github.whogotpwned.Omafile"
 
@@ -73,14 +77,14 @@ BarWidget {
   }
 
   readonly property var places: [
-    { label: "Home", target: "~" },
-    { label: "Downloads", target: "~/Downloads" },
-    { label: "Documents", target: "~/Documents" },
-    { label: "Pictures", target: "~/Pictures" },
-    { label: "Projects", target: "~/Projects" },
-    { label: "Trash", target: "trash:///" },
-    { label: "Folder of the active terminal", target: "\"$(omarchy-cmd-terminal-cwd)\"" },
-    { label: "New window", target: root.folder }
+    { label: i18n.t("Home"), target: "~" },
+    { label: i18n.t("Downloads"), target: "~/Downloads" },
+    { label: i18n.t("Documents"), target: "~/Documents" },
+    { label: i18n.t("Pictures"), target: "~/Pictures" },
+    { label: i18n.t("Projects"), target: "~/Projects" },
+    { label: i18n.t("Trash"), target: "trash:///" },
+    { label: i18n.t("Folder of the active terminal"), target: "\"$(omarchy-cmd-terminal-cwd)\"" },
+    { label: i18n.t("New window"), target: root.folder }
   ]
 
   BarIconButton {
@@ -116,7 +120,7 @@ BarWidget {
       spacing: Style.space(2)
 
       Text {
-        text: "Files"
+        text: i18n.t("Files")
         textFormat: Text.PlainText
         color: Commons.Color.popups.text
         font.family: Style.font.family
@@ -139,7 +143,7 @@ BarWidget {
 
       PopupMenuRow {
         visible: root.vaults > 0
-        text: "Lock all encrypted folders (" + root.vaults + ")"
+        text: i18n.t("Lock all encrypted folders") + " (" + root.vaults + ")"
         onTriggered: {
           root.menuOpen = false
           root.lockAll()
@@ -148,7 +152,7 @@ BarWidget {
 
       Text {
         visible: root.busy
-        text: "Copying…"
+        text: i18n.t("Copying…")
         textFormat: Text.PlainText
         color: Commons.Color.popups.text
         opacity: 0.7

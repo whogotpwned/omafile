@@ -1,5 +1,6 @@
 //! One tab: a directory with its list/grid views, filter, selection and monitor.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::ops;
 use crate::thumbs::ThumbCache;
@@ -85,14 +86,14 @@ impl Pane {
         grid_view.set_enable_rubberband(true);
         grid_view.add_css_class("omafile-files");
 
-        let search_entry = gtk::SearchEntry::builder().placeholder_text("Filter this folder").hexpand(true).build();
+        let search_entry = gtk::SearchEntry::builder().placeholder_text(tr("Filter this folder")).hexpand(true).build();
         let deep_toggle = gtk::ToggleButton::builder()
             .icon_name("folder-saved-search-symbolic")
-            .tooltip_text("Search subfolders too (Ctrl+Shift+F)")
+            .tooltip_text(tr("Search subfolders too (Ctrl+Shift+F)"))
             .build();
         let content_toggle = gtk::ToggleButton::builder()
             .icon_name("edit-find-replace-symbolic")
-            .tooltip_text("Search file contents (ripgrep)")
+            .tooltip_text(tr("Search file contents (ripgrep)"))
             .visible(crate::search::rg_available())
             .build();
         let search_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -108,7 +109,7 @@ impl Pane {
         view_stack.set_transition_type(gtk::StackTransitionType::Crossfade);
         let list_scroll = gtk::ScrolledWindow::builder().child(&column_view).vexpand(true).build();
         let grid_scroll = gtk::ScrolledWindow::builder().child(&grid_view).vexpand(true).build();
-        let empty = adw::StatusPage::builder().icon_name("folder-open-symbolic").title("Empty Folder").build();
+        let empty = adw::StatusPage::builder().icon_name("folder-open-symbolic").title(tr("Empty Folder")).build();
         empty.add_css_class("compact");
         view_stack.add_named(&list_scroll, Some("list"));
         view_stack.add_named(&grid_scroll, Some("grid"));
@@ -124,7 +125,7 @@ impl Pane {
             .css_classes(["caption", "omafile-dim"])
             .build();
 
-        let branch_btn = gtk::Button::builder().valign(gtk::Align::Center).margin_end(8).tooltip_text("Switch branch (Ctrl+Alt+B)").visible(false).build();
+        let branch_btn = gtk::Button::builder().valign(gtk::Align::Center).margin_end(8).tooltip_text(tr("Switch branch (Ctrl+Alt+B)")).visible(false).build();
         branch_btn.add_css_class("flat");
         branch_btn.add_css_class("omafile-branch");
         let status_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -318,22 +319,22 @@ impl Pane {
                     lock.set_icon_name(Some("applications-science-symbolic"));
                     lock.add_css_class("omafile-venv");
                     let v = p.venv.borrow();
-                    let info = v.as_ref().filter(|v| Some(&v.root) == path.as_ref()).map(crate::pyenv::summary).unwrap_or_else(|| "Python virtual environment".into());
+                    let info = v.as_ref().filter(|v| Some(&v.root) == path.as_ref()).map(crate::pyenv::summary).unwrap_or_else(|| tr("Python virtual environment"));
                     lock.set_tooltip_text(Some(&info));
                 } else if secret {
                     lock.set_icon_name(Some("dialog-password-symbolic"));
                     lock.add_css_class("omafile-secret");
-                    lock.set_tooltip_text(Some("Looks like a secret: preview is masked, copying asks first"));
+                    lock.set_tooltip_text(Some(tr("Looks like a secret: preview is masked, copying asks first").as_str()));
                 } else {
                     lock.remove_css_class("omafile-secret");
                     lock.set_icon_name(Some(if is_open_mount { "changes-allow-symbolic" } else { "changes-prevent-symbolic" }));
-                    lock.set_tooltip_text(Some(if is_open_mount { "Encrypted folder, unlocked" } else { "Encrypted folder (gocryptfs), locked" }));
+                    lock.set_tooltip_text(Some(&if is_open_mount { tr("Encrypted folder, unlocked") } else { tr("Encrypted folder (gocryptfs), locked") }));
                 }
             }
             label.set_text(&item.display_label());
             apply_item_classes(&hbox, &item);
         });
-        let name_col = gtk::ColumnViewColumn::new(Some("Name"), Some(name_factory));
+        let name_col = gtk::ColumnViewColumn::new(Some(tr("Name").as_str()), Some(name_factory));
         name_col.set_expand(true);
         name_col.set_resizable(true);
         name_col.set_sorter(Some(&gtk::CustomSorter::new(|a, b| {
@@ -418,7 +419,7 @@ impl Pane {
             let label = list_item.child().and_downcast::<gtk::Label>().unwrap();
             label.set_text(&text(&item));
         });
-        let col = gtk::ColumnViewColumn::new(Some(title), Some(factory));
+        let col = gtk::ColumnViewColumn::new(Some(tr(title).as_str()), Some(factory));
         col.set_resizable(true);
         col
     }
@@ -604,7 +605,7 @@ impl Pane {
             let Some(p) = this.upgrade() else { return };
             if toggle.is_active() {
                 p.deep_toggle.set_active(true);
-                p.search_entry.set_placeholder_text(Some("Search inside files below this folder"));
+                p.search_entry.set_placeholder_text(Some(tr("Search inside files below this folder").as_str()));
             }
             if p.deep_toggle.is_active() {
                 p.schedule_deep_search();
@@ -616,7 +617,7 @@ impl Pane {
             if !toggle.is_active() {
                 p.content_toggle.set_active(false);
             }
-            p.search_entry.set_placeholder_text(Some(if toggle.is_active() { "Search this folder and everything below" } else { "Filter this folder" }));
+            p.search_entry.set_placeholder_text(Some(&if toggle.is_active() { tr("Search this folder and everything below") } else { tr("Filter this folder") }));
             if toggle.is_active() {
                 p.schedule_deep_search();
             } else if p.state.borrow().deep_results {
@@ -1017,7 +1018,7 @@ impl Pane {
         };
         self.search_bar.set_search_mode(false);
         self.store.remove_all();
-        self.status.set_text("Searching…");
+        self.status.set_text(&tr("Searching…"));
         self.update_empty();
         let root = gio::File::for_path(&spec.root);
         let spec = spec.clone();
@@ -1235,7 +1236,7 @@ impl Pane {
             });
         } else {
             let filtering = !self.state.borrow().search.is_empty() || self.state.borrow().deep_results;
-            self.empty.set_title(if filtering { "No Matches" } else { "Empty Folder" });
+            self.empty.set_title(&if filtering { tr("No Matches") } else { tr("Empty Folder") });
             self.empty.set_icon_name(Some(if filtering { "edit-find-symbolic" } else { "folder-open-symbolic" }));
             self.view_stack.set_visible_child_name("empty");
         }
@@ -1390,7 +1391,7 @@ impl Pane {
                 p.grid_view.set_factory(Some(&factory));
             }
         }
-        self.status.set_text(&format!("Icon size {size} px"));
+        self.status.set_text(&trf!("Icon size {size} px", size = size));
     }
 
     /// Group the listing into sections: none, kind, date, size, tag.
@@ -1429,7 +1430,7 @@ impl Pane {
                 let tags = this.upgrade().and_then(|p| p.window.upgrade()).map(|w| w.tags.clone());
                 let n = header.n_items();
                 if let Some(label) = header.child().and_downcast::<gtk::Label>() {
-                    label.set_text(&format!("{}  ·  {n}", crate::groups::label(&k, &item, tags.as_deref())));
+                    label.set_text(&format!("{}  ·  {n}", tr(&crate::groups::label(&k, &item, tags.as_deref()))));
                 }
             });
             self.column_view.set_header_factory(Some(&factory));
@@ -1615,15 +1616,15 @@ impl Pane {
         let virtual_view = self.state.borrow().virtual_title.is_some();
         let smart_view = self.state.borrow().virtual_title.as_deref().map(|t| t.starts_with("Smart: ")).unwrap_or(false);
         let mut text = if smart_view {
-            format!("{total} {} in this smart folder", if total == 1 { "match" } else { "matches" })
+            format!("{total} {} in this smart folder", if total == 1 { tr("match") } else { tr("matches") })
         } else if virtual_view {
-            format!("{total} tagged {}", if total == 1 { "item" } else { "items" })
+            format!("{total} tagged {}", if total == 1 { tr("item") } else { tr("items") })
         } else if deep && self.content_toggle.is_active() {
-            format!("{total} {} contain the text", if total == 1 { "file" } else { "files" })
+            format!("{total} {} contain the text", if total == 1 { tr("file") } else { tr("files") })
         } else if deep {
-            format!("{total} {} found", if total == 1 { "match" } else { "matches" })
+            format!("{total} {} found", if total == 1 { tr("match") } else { tr("matches") })
         } else {
-            format!("{total} {}", if total == 1 { "item" } else { "items" })
+            format!("{total} {}", if total == 1 { tr("item") } else { tr("items") })
         };
         let show_hidden = self.window.upgrade().map(|w| w.state.borrow().show_hidden).unwrap_or(true);
         if !show_hidden && !deep && !virtual_view {
@@ -1634,7 +1635,7 @@ impl Pane {
         }
         if !selected.is_empty() {
             let size: u64 = selected.iter().filter(|i| !i.is_dir()).map(|i| i.size()).sum();
-            text.push_str(&format!(", {} selected", selected.len()));
+            text.push_str(&trf!(", {n} selected", n = selected.len()));
             if size > 0 {
                 text.push_str(&format!(" ({})", ops::human_size(size)));
             }
@@ -1752,7 +1753,7 @@ pub fn make_thumb(size: i32, pane: Weak<Pane>) -> gtk::Overlay {
     let play = gtk::Button::from_icon_name("media-playback-start-symbolic");
     play.add_css_class("omafile-play-badge");
     play.add_css_class(if size >= 48 { "omafile-play-badge-large" } else { "omafile-play-badge-small" });
-    play.set_tooltip_text(Some("Play"));
+    play.set_tooltip_text(Some(tr("Play").as_str()));
     play.set_can_focus(false);
     play.set_visible(false);
     if size >= 48 {
@@ -1864,7 +1865,7 @@ fn bind_git_badge(badge: &gtk::Label, status: Option<crate::git::Status>, staged
             if staged {
                 badge.add_css_class("omafile-git-staged");
             }
-            badge.set_tooltip_text(Some(&format!("git: {}{}  ·  click to {}", s.label(), if staged { " (staged)" } else { "" }, if staged { "unstage" } else { "stage" })));
+            badge.set_tooltip_text(Some(&format!("git: {}{}  ·  click to {}", s.label(), if staged { " (staged)" } else { "" }, if staged { tr("unstage") } else { tr("stage") })));
             badge.set_visible(true);
         }
         None => badge.set_visible(false),

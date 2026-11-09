@@ -31,10 +31,11 @@ pub fn is_color(name: &str) -> bool {
 
 pub fn label(name: &str) -> String {
     let mut c = name.chars();
-    match c.next() {
+    let cap = match c.next() {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
         None => String::new(),
-    }
+    };
+    crate::i18n::tr(&cap)
 }
 
 fn index_path() -> PathBuf {

@@ -2,6 +2,7 @@
 //! freeze, REPL, run a script, .gitignore, recreate. Commands run in the
 //! embedded terminal so their output stays visible.
 
+use crate::i18n::tr;
 use crate::pyenv;
 use crate::window::Window;
 use adw::prelude::*;
@@ -63,7 +64,7 @@ impl Window {
     pub fn py_activate(self: &Rc<Self>) {
         let Some(dir) = self.py_dir() else { return };
         let Some(venv) = pyenv::find(&dir) else {
-            self.toast("No virtual environment here (Python › Create venv)");
+            self.toast(&tr("No virtual environment here (Python › Create venv)"));
             return;
         };
         let Some(pane) = self.active_pane() else { return };
@@ -81,7 +82,7 @@ impl Window {
         let Some(dir) = self.py_dir() else { return };
         let root = pyenv::project_root(&dir);
         let Some(venv) = pyenv::find(&dir) else {
-            self.toast("Create a venv first (Python › Create venv)");
+            self.toast(&tr("Create a venv first (Python › Create venv)"));
             return;
         };
         let cd = if root != dir { format!("cd '{}' && ", root.to_string_lossy()) } else { String::new() };
@@ -91,7 +92,7 @@ impl Window {
     pub fn py_freeze(self: &Rc<Self>) {
         let Some(dir) = self.py_dir() else { return };
         let Some(venv) = pyenv::find(&dir) else {
-            self.toast("No virtual environment here");
+            self.toast(&tr("No virtual environment here"));
             return;
         };
         self.run_in_panel(&pyenv::freeze_command(&venv));
@@ -125,12 +126,12 @@ impl Window {
         text.push_str(&format!("{name}/\n"));
         match std::fs::write(&path, text) {
             Ok(()) => {
-                self.toast(&format!("Added {name}/ to .gitignore"));
+                self.toast(&trf!("Added {name}/ to .gitignore", name = name));
                 if let Some(p) = self.active_pane() {
                     p.reload();
                 }
             }
-            Err(e) => self.toast_error(&format!("Cannot write .gitignore: {e}")),
+            Err(e) => self.toast_error(&trf!("Cannot write .gitignore: {e}", e = e)),
         }
     }
 
@@ -139,8 +140,8 @@ impl Window {
         let Some(venv) = pyenv::find(&dir) else { return };
         let name = venv.root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let body = format!("{} is deleted and created again with {}. Installed packages are gone until you run Install again.", crate::window::abbreviate_home(&venv.root), if pyenv::uv_available() { "uv" } else { "python -m venv" });
-        let dialog = adw::AlertDialog::new(Some(&format!("Recreate {name}?")), Some(&body));
-        dialog.add_responses(&[("cancel", "Cancel"), ("recreate", "Recreate")]);
+        let dialog = adw::AlertDialog::new(Some(&trf!("Recreate {name}?", name = name)), Some(&body));
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("recreate", tr("Recreate").as_str())]);
         dialog.set_response_appearance("recreate", adw::ResponseAppearance::Destructive);
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");

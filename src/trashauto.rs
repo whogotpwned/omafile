@@ -1,6 +1,7 @@
 //! Trash automation: size summary for the sidebar and "empty items older
 //! than N days" (preference `trash-auto-days`, 0 = off), run at startup.
 
+use crate::i18n::tr;
 use crate::window::Window;
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -58,7 +59,7 @@ pub fn run_auto_empty(window: &Rc<Window>) {
         }
         let Some(w) = this.upgrade() else { return };
         if removed > 0 {
-            w.toast(&format!("Trash: removed {removed} {} older than {days} days", if removed == 1 { "item" } else { "items" }));
+            w.toast(&format!("Trash: removed {removed} {} older than {days} days", if removed == 1 { tr("item") } else { tr("items") }));
             w.refresh_trash_summary();
         }
     });

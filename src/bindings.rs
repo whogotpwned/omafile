@@ -3,6 +3,7 @@
 //! Keys for actions come from `actions::ACCELS`, so the overlay cannot drift
 //! from what the window actually reacts to.
 
+use crate::i18n::tr;
 use crate::actions::ACCELS;
 use crate::window::Window;
 use adw::prelude::*;
@@ -115,9 +116,9 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
 
 #[derive(Clone, Debug)]
 pub struct Binding {
-    pub group: &'static str,
+    pub group: String,
     pub keys: String,
-    pub what: &'static str,
+    pub what: String,
 }
 
 /// Human-readable shortcut, e.g. `Ctrl+Shift+N`.
@@ -132,9 +133,9 @@ pub fn pretty(accel: &str) -> String {
         "comma" => ",".to_string(),
         "question" => "?".to_string(),
         "grave" => "`".to_string(),
-        "Return" => "Enter".to_string(),
-        "Page_Down" => "PgDn".to_string(),
-        "Page_Up" => "PgUp".to_string(),
+        "Return" => tr("Enter"),
+        "Page_Down" => tr("PgDn"),
+        "Page_Up" => tr("PgUp"),
         "Left" => "←".to_string(),
         "Right" => "→".to_string(),
         "Up" => "↑".to_string(),
@@ -157,12 +158,13 @@ pub fn all() -> Vec<Binding> {
     let mut list: Vec<Binding> = TABLE
         .iter()
         .map(|(group, action, keys, what)| {
-            let keys = if action.is_empty() { keys.to_string() } else { accels_for(action).join("  /  ") };
-            Binding { group, keys, what }
+            // Key names stay as they are; gestures and menu paths are sentences and get translated.
+            let keys = if action.is_empty() { if keys.contains(' ') { tr(keys) } else { keys.to_string() } } else { accels_for(action).join("  /  ") };
+            Binding { group: tr(group), keys, what: tr(what) }
         })
         .collect();
     if let Some(launch) = omarchy_launch_binding() {
-        list.insert(0, Binding { group: "Omarchy", keys: launch, what: "Open omafile (from your Hyprland bindings)" });
+        list.insert(0, Binding { group: tr("Omarchy"), keys: launch, what: tr("Open omafile (from your Hyprland bindings)") });
     }
     list
 }
@@ -235,7 +237,7 @@ impl Window {
             hbox.set_margin_bottom(7);
             hbox.set_margin_start(12);
             hbox.set_margin_end(12);
-            let what = gtk::Label::builder().label(b.what).xalign(0.0).hexpand(true).wrap(true).build();
+            let what = gtk::Label::builder().label(&b.what).xalign(0.0).hexpand(true).wrap(true).build();
             hbox.append(&what);
             let keys = gtk::Box::new(gtk::Orientation::Horizontal, 6);
             keys.set_valign(gtk::Align::Center);
@@ -251,7 +253,7 @@ impl Window {
             row.set_child(Some(&hbox));
             // Searchable text and group live on the row for the filter and header functions.
             unsafe {
-                row.set_data("group", b.group);
+                row.set_data("group", Box::leak(b.group.clone().into_boxed_str()) as &'static str);
                 row.set_data("haystack", format!("{} {} {}", b.group, b.keys, b.what).to_lowercase());
             }
             list.append(&row);
@@ -268,7 +270,7 @@ impl Window {
                 row.set_header(Some(&label));
             }
         });
-        let search = gtk::SearchEntry::builder().placeholder_text("Filter bindings…").hexpand(true).build();
+        let search = gtk::SearchEntry::builder().placeholder_text(tr("Filter bindings…")).hexpand(true).build();
         let list2 = list.clone();
         search.connect_search_changed(move |e| {
             let needle = e.text().to_lowercase();
@@ -288,7 +290,7 @@ impl Window {
         scroll.set_margin_bottom(12);
         let header = adw::HeaderBar::new();
         header.set_title_widget(Some(&search));
-        let hint = gtk::Label::new(Some("Type to filter  ·  Esc closes  ·  omafile --print-bindings prints this list"));
+        let hint = gtk::Label::new(Some(tr("Type to filter  ·  Esc closes  ·  omafile --print-bindings prints this list").as_str()));
         hint.add_css_class("omafile-dim");
         hint.add_css_class("caption");
         hint.set_margin_bottom(8);
@@ -296,7 +298,7 @@ impl Window {
         content.add_top_bar(&header);
         content.set_content(Some(&scroll));
         content.add_bottom_bar(&hint);
-        let dialog = adw::Dialog::builder().title("Keyboard Shortcuts").content_width(680).content_height(720).child(&content).build();
+        let dialog = adw::Dialog::builder().title(tr("Keyboard Shortcuts")).content_width(680).content_height(720).child(&content).build();
         dialog.add_css_class("omafile-bindings-dialog");
         search.set_key_capture_widget(Some(&dialog));
         // Esc in the search entry ends the search; a second Esc (or an empty field) closes.

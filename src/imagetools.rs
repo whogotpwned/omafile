@@ -1,6 +1,7 @@
 //! Image tools on the context menu: rotate, convert, resize (ImageMagick),
 //! and "Set as Wallpaper" through omarchy-theme-bg-set.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::ops;
 use crate::undo::Op;
@@ -37,7 +38,7 @@ impl Window {
     fn run_magick(self: &Rc<Self>, jobs: Vec<(Vec<String>, PathBuf)>, verb: &'static str, in_place: bool) {
         let Some(pane) = self.active_pane() else { return };
         let Some(tool) = magick() else {
-            self.toast_error("ImageMagick (magick) is not installed");
+            self.toast_error(&tr("ImageMagick (magick) is not installed"));
             return;
         };
         let this = Rc::downgrade(self);
@@ -58,15 +59,15 @@ impl Window {
             let Some(w) = this.upgrade() else { return };
             pane.reload();
             if let Some(e) = error {
-                w.toast_error(&format!("{verb} failed: {e}"));
+                w.toast_error(&trf!("{verb} failed: {e}", verb = tr(verb), e = e));
             } else if in_place {
-                w.toast(&format!("{verb} done"));
+                w.toast(&trf!("{verb} done", verb = tr(verb)));
             } else {
                 if let Some(last) = created.last() {
                     pane.select_file_later(last.clone());
                 }
                 let n = created.len();
-                w.record(Op::Derive(created), &format!("{verb}: {n} {}", if n == 1 { "file" } else { "files" }));
+                w.record(Op::Derive(created), &format!("{}: {n} {}", tr(verb), if n == 1 { tr("file") } else { tr("files") }));
             }
         });
     }
@@ -106,7 +107,7 @@ impl Window {
             })
             .collect();
         if jobs.is_empty() {
-            self.toast("Already in that format");
+            self.toast(&tr("Already in that format"));
             return;
         }
         self.run_magick(jobs, "Convert", false);
@@ -119,8 +120,8 @@ impl Window {
             return;
         }
         let entry = gtk::Entry::builder().text("1920").activates_default(true).build();
-        let mode = gtk::DropDown::from_strings(&["Width in pixels", "Height in pixels", "Percent"]);
-        let hint = gtk::Label::builder().label("Aspect ratio is kept. Originals stay untouched; a copy is written next to each one.").wrap(true).xalign(0.0).build();
+        let mode = gtk::DropDown::from_strings(&[tr("Width in pixels").as_str(), tr("Height in pixels").as_str(), tr("Percent").as_str()]);
+        let hint = gtk::Label::builder().label(tr("Aspect ratio is kept. Originals stay untouched; a copy is written next to each one.")).wrap(true).xalign(0.0).build();
         hint.add_css_class("omafile-dim");
         hint.add_css_class("caption");
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -129,9 +130,9 @@ impl Window {
         row.append(&mode);
         vbox.append(&row);
         vbox.append(&hint);
-        let dialog = adw::AlertDialog::new(Some("Resize images"), None);
+        let dialog = adw::AlertDialog::new(Some(tr("Resize images").as_str()), None);
         dialog.set_extra_child(Some(&vbox));
-        dialog.add_responses(&[("cancel", "Cancel"), ("resize", "Resize")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("resize", tr("Resize").as_str())]);
         dialog.set_response_appearance("resize", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("resize"));
         dialog.set_close_response("cancel");
@@ -144,7 +145,7 @@ impl Window {
                 return;
             }
             let Ok(value) = entry2.text().trim().parse::<u32>() else {
-                w.toast_error("Enter a whole number");
+                w.toast_error(&tr("Enter a whole number"));
                 return;
             };
             let (geometry, suffix) = match mode.selected() {
@@ -168,7 +169,7 @@ impl Window {
     pub fn set_wallpaper(self: &Rc<Self>) {
         let Some(path) = self.image_targets().into_iter().next() else { return };
         if !crate::omarchy::bg_set_available() {
-            self.toast_error("omarchy-theme-bg-set not found (not on Omarchy?)");
+            self.toast_error(&tr("omarchy-theme-bg-set not found (not on Omarchy?)"));
             return;
         }
         let argv = crate::omarchy::set_wallpaper_argv(&path);
@@ -188,11 +189,11 @@ impl Window {
         let Some(item) = self.selected_items().into_iter().find(|i| i.is_dir()) else { return };
         let Some(dir) = item.target_file().path() else { return };
         if !crate::omarchy::is_theme_dir(&dir) {
-            self.toast_error("Not an Omarchy theme folder");
+            self.toast_error(&tr("Not an Omarchy theme folder"));
             return;
         }
         if !crate::omarchy::theme_set_available() {
-            self.toast_error("omarchy-theme-set not found (not on Omarchy?)");
+            self.toast_error(&tr("omarchy-theme-set not found (not on Omarchy?)"));
             return;
         }
         let Some(argv) = crate::omarchy::apply_theme_argv(&dir) else { return };

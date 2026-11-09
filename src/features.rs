@@ -2,6 +2,7 @@
 //! bulk palette commands, checksums, notes, templates, theme export/install,
 //! archive browsing and Hyprland workspaces.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::ops;
 use crate::pane::Pane;
@@ -19,18 +20,18 @@ impl Window {
         let Some(pane) = self.active_pane() else { return };
         let query = pane.search_entry.text().to_string();
         let root = pane.cwd().path().unwrap_or_else(glib::home_dir);
-        let name = adw::EntryRow::builder().title("Name").text(if query.is_empty() { "New smart folder".to_string() } else { format!("{query} in {}", root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()) }).build();
-        let term = adw::EntryRow::builder().title("Name contains").text(&query).build();
-        let glob = adw::EntryRow::builder().title("Name matches (glob, e.g. *.pdf)").build();
+        let name = adw::EntryRow::builder().title(tr("Name")).text(if query.is_empty() { tr("New smart folder") } else { format!("{query} in {}", root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()) }).build();
+        let term = adw::EntryRow::builder().title(tr("Name contains")).text(&query).build();
+        let glob = adw::EntryRow::builder().title(tr("Name matches (glob, e.g. *.pdf)")).build();
         let age = adw::SpinRow::with_range(0.0, 3650.0, 1.0);
-        age.set_title("Modified within the last … days (0 = any)");
-        let root_row = adw::ActionRow::builder().title("Search below").subtitle(crate::window::abbreviate_home(&root)).build();
+        age.set_title(&tr("Modified within the last … days (0 = any)"));
+        let root_row = adw::ActionRow::builder().title(tr("Search below")).subtitle(crate::window::abbreviate_home(&root)).build();
         root_row.add_css_class("property");
-        let group = adw::PreferencesGroup::builder().title("Smart folder").description("A saved search that lives in the sidebar and lists its matches whenever you open it.").build();
+        let group = adw::PreferencesGroup::builder().title(tr("Smart folder")).description(tr("A saved search that lives in the sidebar and lists its matches whenever you open it.")).build();
         for r in [name.clone().upcast::<gtk::Widget>(), term.clone().upcast(), glob.clone().upcast(), age.clone().upcast(), root_row.upcast()] {
             group.add(&r);
         }
-        let existing = adw::PreferencesGroup::builder().title("Existing smart folders").build();
+        let existing = adw::PreferencesGroup::builder().title(tr("Existing smart folders")).build();
         let list = crate::smart::load();
         if list.is_empty() {
             existing.set_visible(false);
@@ -63,14 +64,14 @@ impl Window {
         let view = adw::ToolbarView::new();
         view.add_top_bar(&header);
         view.set_content(Some(&page));
-        let dialog = adw::Dialog::builder().title("Smart Folder").content_width(520).content_height(560).child(&view).build();
+        let dialog = adw::Dialog::builder().title(tr("Smart Folder")).content_width(520).content_height(560).child(&view).build();
         let this = Rc::downgrade(self);
         let d2 = dialog.clone();
         save.connect_clicked(move |_| {
             let Some(w) = this.upgrade() else { return };
             let spec = crate::smart::SmartFolder { name: name.text().trim().to_string(), root: root.clone(), query: term.text().trim().to_string(), max_age_days: age.value() as u32, glob: glob.text().trim().to_string() };
             if spec.name.is_empty() || (spec.query.is_empty() && spec.glob.is_empty() && spec.max_age_days == 0) {
-                w.toast_error("Give it a name and at least one condition");
+                w.toast_error(&tr("Give it a name and at least one condition"));
                 return;
             }
             match crate::smart::add(spec.clone()) {
@@ -82,7 +83,7 @@ impl Window {
                         p.show_smart(&spec);
                     }
                 }
-                Err(e) => w.toast_error(&format!("Cannot save: {e}")),
+                Err(e) => w.toast_error(&trf!("Cannot save: {e}", e = e)),
             }
         });
         self.present_dialog(&dialog);
@@ -98,7 +99,7 @@ impl Window {
 
     pub fn transfer_to_other_pane(self: &Rc<Self>, mode: crate::transfer::Mode) {
         let (Some(pane), Some(other)) = (self.active_pane(), self.other_pane()) else {
-            self.toast("Split the view first (F6)");
+            self.toast(&tr("Split the view first (F6)"));
             return;
         };
         let files: Vec<gio::File> = pane.selected_items().iter().map(|i| i.target_file()).collect();
@@ -118,21 +119,21 @@ impl Window {
             [a] => match self.other_pane().and_then(|o| o.selected_items().into_iter().next()) {
                 Some(b) => (a.target_file(), b.target_file()),
                 None => {
-                    self.toast("Select two items, or one on each side of the split");
+                    self.toast(&tr("Select two items, or one on each side of the split"));
                     return;
                 }
             },
             _ => {
-                self.toast("Select two items to compare");
+                self.toast(&tr("Select two items to compare"));
                 return;
             }
         };
         let (Some(pa), Some(pb)) = (a.path(), b.path()) else {
-            self.toast_error("Compare works on local files");
+            self.toast_error(&tr("Compare works on local files"));
             return;
         };
         if !crate::compare::available() {
-            self.toast_error("diff (diffutils) is not installed");
+            self.toast_error(&tr("diff (diffutils) is not installed"));
             return;
         }
         let this = Rc::downgrade(self);
@@ -142,7 +143,7 @@ impl Window {
                 let Some(d) = crate::compare::dirs(&pa, &pb).await else { return };
                 w.show_dir_compare(&pa, &pb, d);
             } else if pa.is_dir() || pb.is_dir() {
-                w.toast_error("Compare two files or two folders, not a mix");
+                w.toast_error(&tr("Compare two files or two folders, not a mix"));
             } else {
                 let Some(diff) = crate::compare::files(&pa, &pb).await else { return };
                 w.show_file_compare(&pa, &pb, &diff);
@@ -156,7 +157,7 @@ impl Window {
         let view = adw::ToolbarView::new();
         view.add_top_bar(&header);
         view.set_content(Some(body));
-        let dialog = adw::Dialog::builder().title("Compare").content_width(900).content_height(680).child(&view).build();
+        let dialog = adw::Dialog::builder().title(tr("Compare")).content_width(900).content_height(680).child(&view).build();
         self.present_dialog(&dialog);
     }
 
@@ -171,7 +172,7 @@ impl Window {
         scroll.set_margin_bottom(12);
         let subtitle = if diff.trim().is_empty() { "identical".to_string() } else { format!("+{adds} −{dels}") };
         if diff.trim().is_empty() {
-            text.buffer().set_text("The files are identical.");
+            text.buffer().set_text(&tr("The files are identical."));
         }
         self.compare_dialog(&format!("{}  ↔  {}", name_of(a), name_of(b)), &subtitle, scroll.upcast_ref());
     }
@@ -200,7 +201,7 @@ impl Window {
         section(format!("Only in {} ({})", name_of(b), d.only_right.len()), &d.only_right, "list-add-symbolic", "omafile-git-added");
         section(format!("Different ({})", d.differ.len()), &d.differ, "view-refresh-symbolic", "omafile-git-modified");
         if total == 0 {
-            let status = adw::StatusPage::builder().icon_name("object-select-symbolic").title("Identical").description("Both folders have the same files with the same contents.").build();
+            let status = adw::StatusPage::builder().icon_name("object-select-symbolic").title(tr("Identical")).description(tr("Both folders have the same files with the same contents.")).build();
             self.compare_dialog(&format!("{}  ↔  {}", name_of(a), name_of(b)), "identical", status.upcast_ref());
             return;
         }
@@ -219,14 +220,14 @@ impl Window {
             crate::bulk::Bulk::Rename(p, r) => {
                 let plan = crate::bulk::rename_plan(&scope, p, r);
                 if plan.is_empty() {
-                    return Some((format!("Rename {p} → {r}: nothing matches here"), "Patterns use * as a wildcard".into()));
+                    return Some((format!("Rename {p} → {r}: nothing matches here"), tr("Patterns use * as a wildcard")));
                 }
                 let sample: Vec<(String, String)> = plan.iter().take(2).map(|(i, n)| (i.display_name(), n.clone())).collect();
                 Some(crate::bulk::describe(&bulk, plan.len(), &sample))
             }
             crate::bulk::Bulk::Chmod(_) => {
                 if pane.selected_items().is_empty() {
-                    return Some(("chmod: select the files first".into(), String::new()));
+                    return Some((tr("chmod: select the files first"), String::new()));
                 }
                 Some(crate::bulk::describe(&bulk, pane.selected_items().len(), &[]))
             }
@@ -264,10 +265,10 @@ impl Window {
                     pane.reload();
                     let n = pairs.len();
                     if n > 0 {
-                        w.record(Op::Move(pairs), &format!("Renamed {n} {}", if n == 1 { "item" } else { "items" }));
+                        w.record(Op::Move(pairs), &format!("Renamed {n} {}", if n == 1 { tr("item") } else { tr("items") }));
                     }
                     if let Some(e) = error {
-                        w.toast_error(&format!("Rename stopped: {e}"));
+                        w.toast_error(&trf!("Rename stopped: {e}", e = e));
                     }
                 }
                 crate::bulk::Bulk::Chmod(mode) => {
@@ -275,7 +276,7 @@ impl Window {
                     for item in &selected {
                         let old = item.mode();
                         let Some(new) = crate::bulk::apply_mode(old, &mode) else {
-                            w.toast_error(&format!("Cannot parse mode {mode}"));
+                            w.toast_error(&trf!("Cannot parse mode {mode}", mode = mode));
                             return;
                         };
                         if new == old {
@@ -290,7 +291,7 @@ impl Window {
                     pane.reload();
                     let n = changes.len();
                     if n > 0 {
-                        w.record(Op::Mode(changes), &format!("Changed mode on {n} {}", if n == 1 { "item" } else { "items" }));
+                        w.record(Op::Mode(changes), &format!("Changed mode on {n} {}", if n == 1 { tr("item") } else { tr("items") }));
                     }
                 }
                 crate::bulk::Bulk::Touch(names) | crate::bulk::Bulk::Mkdir(names) => {
@@ -313,7 +314,7 @@ impl Window {
                     }
                     let n = created.len();
                     if n > 0 {
-                        w.record(Op::Create(created), &format!("Created {n} {}", if dirs { if n == 1 { "folder" } else { "folders" } } else if n == 1 { "file" } else { "files" }));
+                        w.record(Op::Create(created), &format!("Created {n} {}", if dirs { if n == 1 { tr("folder") } else { tr("folders") } } else if n == 1 { tr("file") } else { tr("files") }));
                     }
                 }
             }
@@ -331,7 +332,7 @@ impl Window {
             w.toast(&format!("Hashing {}…", item.display_name()));
             let Some(actual) = crate::checksum::sha256(path.clone()).await else {
                 if let Some(w) = this.upgrade() {
-                    w.toast_error("sha256sum failed");
+                    w.toast_error(&tr("sha256sum failed"));
                 }
                 return;
             };
@@ -365,7 +366,7 @@ impl Window {
             None => (format!("SHA-256 of {name}"), format!("{actual}\n\nNo .sha256 file beside it and no hash on the clipboard to compare with.")),
         };
         let dialog = adw::AlertDialog::new(Some(&title), Some(&body));
-        dialog.add_responses(&[("copy", "Copy Hash"), ("ok", "Close")]);
+        dialog.add_responses(&[("copy", tr("Copy Hash").as_str()), ("ok", tr("Close").as_str())]);
         dialog.set_default_response(Some("ok"));
         dialog.set_close_response("ok");
         if expected.is_some() && !ok {
@@ -394,9 +395,9 @@ impl Window {
         view.buffer().set_text(&current);
         let scroll = gtk::ScrolledWindow::builder().child(&view).min_content_height(140).has_frame(true).build();
         scroll.set_width_request(420);
-        let dialog = adw::AlertDialog::new(Some(&format!("Note on {}", item.display_name())), Some("Stored with the file (GIO metadata, the same note Nautilus shows) and searchable in the palette. Ctrl+S saves."));
+        let dialog = adw::AlertDialog::new(Some(&format!("Note on {}", item.display_name())), Some(tr("Stored with the file (GIO metadata, the same note Nautilus shows) and searchable in the palette. Ctrl+S saves.").as_str()));
         dialog.set_extra_child(Some(&scroll));
-        dialog.add_responses(&[("cancel", "Cancel"), ("clear", "Remove Note"), ("save", "Save")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("clear", tr("Remove Note").as_str()), ("save", tr("Save").as_str())]);
         dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("save"));
         dialog.set_close_response("cancel");
@@ -405,7 +406,7 @@ impl Window {
         type Save = Rc<dyn Fn(&Rc<Window>, String)>;
         let save: Save = Rc::new(move |w: &Rc<Window>, text: String| match w.notes.set(&file, &text) {
             Ok(()) => {
-                w.toast(if text.trim().is_empty() { "Note removed" } else { "Note saved" });
+                w.toast(&if text.trim().is_empty() { tr("Note removed") } else { tr("Note saved") });
                 if let Some(p) = &pane {
                     p.reload();
                 }
@@ -459,13 +460,13 @@ impl Window {
         let Some(pane) = self.active_pane() else { return };
         let Some(template) = crate::templates::list().into_iter().nth(index) else { return };
         let Some(dir) = pane.cwd().path() else {
-            self.toast_error("Templates work in local folders");
+            self.toast_error(&tr("Templates work in local folders"));
             return;
         };
         let entry = gtk::Entry::builder().text(crate::templates::default_name(&template)).activates_default(true).build();
-        let dialog = adw::AlertDialog::new(Some(&format!("New from “{}”", crate::templates::label(&template))), Some("Name for the new file or folder"));
+        let dialog = adw::AlertDialog::new(Some(&format!("New from “{}”", crate::templates::label(&template))), Some(tr("Name for the new file or folder").as_str()));
         dialog.set_extra_child(Some(&entry));
-        dialog.add_responses(&[("cancel", "Cancel"), ("create", "Create")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("create", tr("Create").as_str())]);
         dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("create"));
         dialog.set_close_response("cancel");
@@ -489,7 +490,7 @@ impl Window {
                     pane.select_file_later(f.clone());
                     w.record(Op::Derive(vec![f]), &format!("Created {}", name_of(&dest)));
                 }
-                Err(e) => w.toast_error(&format!("Cannot create: {e}")),
+                Err(e) => w.toast_error(&trf!("Cannot create: {e}", e = e)),
             }
         });
         entry.grab_focus();
@@ -533,7 +534,7 @@ impl Window {
         let name = crate::omarchy::archive_theme_name(&archive);
         let target = crate::omarchy::install_dir().join(&name);
         if target.exists() {
-            self.toast_error(&format!("A theme named {name} is already installed"));
+            self.toast_error(&trf!("A theme named {name} is already installed", name = name));
             return;
         }
         let this = Rc::downgrade(self);
@@ -554,10 +555,10 @@ impl Window {
             let Some(w) = this.upgrade() else { return };
             match result {
                 Ok(()) if target.is_dir() => {
-                    w.record(Op::Derive(vec![gio::File::for_path(&target)]), &format!("Installed theme {name}: omarchy-theme-set {name}"));
+                    w.record(Op::Derive(vec![gio::File::for_path(&target)]), &trf!("Installed theme {name}: omarchy-theme-set {name}", name = name));
                     w.refresh_sidebar();
                 }
-                Ok(()) => w.toast_error("Extracted, but no theme folder appeared"),
+                Ok(()) => w.toast_error(&tr("Extracted, but no theme folder appeared")),
                 Err(e) => w.toast_error(&format!("Install failed: {}", e.message())),
             }
         });
@@ -603,9 +604,9 @@ impl Window {
         let dir = self.selected_items().into_iter().find(|i| i.is_dir()).and_then(|i| i.target_file().path()).or_else(|| self.active_pane().and_then(|p| p.cwd().path()));
         let Some(dir) = dir else { return };
         if crate::hypr::open_in_new_workspace(&dir) {
-            self.toast("Opened on a new workspace");
+            self.toast(&tr("Opened on a new workspace"));
         } else {
-            self.toast_error("Needs a running Hyprland session (hyprctl)");
+            self.toast_error(&tr("Needs a running Hyprland session (hyprctl)"));
         }
     }
 }

@@ -1,5 +1,6 @@
 //! Git actions without a terminal: stage/unstage, commit, branch switch, discard.
 
+use crate::i18n::tr;
 use crate::git;
 use crate::item::FileItem;
 use crate::pane::Pane;
@@ -24,7 +25,7 @@ impl Window {
                 self.toast(ok);
                 pane.reload();
             }
-            Err(e) => self.toast_error(&format!("git: {e}")),
+            Err(e) => self.toast_error(&trf!("git: {e}", e = e)),
         }
     }
 
@@ -39,7 +40,7 @@ impl Window {
         glib::spawn_future_local(async move {
             let result = if staged { git::unstage(&root, &[path]).await } else { git::stage(&root, &[path]).await };
             if let Some(w) = this.upgrade() {
-                w.after_git(pane, result, if staged { "Unstaged" } else { "Staged" });
+                w.after_git(pane, result, &if staged { tr("Unstaged") } else { tr("Staged") });
             }
         });
     }
@@ -55,7 +56,7 @@ impl Window {
         glib::spawn_future_local(async move {
             let result = if unstage { git::unstage(&root, &paths).await } else { git::stage(&root, &paths).await };
             if let Some(w) = this.upgrade() {
-                w.after_git(pane, result, if unstage { "Unstaged" } else { "Staged" });
+                w.after_git(pane, result, &if unstage { tr("Unstaged") } else { tr("Staged") });
             }
         });
     }
@@ -68,9 +69,9 @@ impl Window {
             return;
         }
         let n = paths.len();
-        let body = format!("Local changes in {n} {} go back to the last commit. Untracked files are deleted. This cannot be undone.", if n == 1 { "item" } else { "items" });
-        let dialog = adw::AlertDialog::new(Some("Discard changes?"), Some(&body));
-        dialog.add_responses(&[("cancel", "Cancel"), ("discard", "Discard")]);
+        let body = format!("Local changes in {n} {} go back to the last commit. Untracked files are deleted. This cannot be undone.", if n == 1 { tr("item") } else { tr("items") });
+        let dialog = adw::AlertDialog::new(Some(tr("Discard changes?").as_str()), Some(&body));
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("discard", tr("Discard").as_str())]);
         dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
@@ -85,7 +86,7 @@ impl Window {
             glib::spawn_future_local(async move {
                 let result = git::discard(&root, &paths).await;
                 if let Some(w) = this.upgrade() {
-                    w.after_git(pane, result, "Changes discarded");
+                    w.after_git(pane, result, &tr("Changes discarded"));
                 }
             });
         });
@@ -95,11 +96,11 @@ impl Window {
         let Some(pane) = self.active_pane() else { return };
         let Some(repo) = pane.git.borrow().clone() else { return };
         let root = repo.root.clone();
-        let subject = gtk::Entry::builder().placeholder_text("Summary (required)").activates_default(true).build();
+        let subject = gtk::Entry::builder().placeholder_text(tr("Summary (required)")).activates_default(true).build();
         let body = gtk::TextView::builder().wrap_mode(gtk::WrapMode::WordChar).top_margin(6).bottom_margin(6).left_margin(8).right_margin(8).build();
         body.add_css_class("omafile-commit-body");
         let body_scroll = gtk::ScrolledWindow::builder().child(&body).min_content_height(90).has_frame(true).build();
-        let stage_all = gtk::CheckButton::with_label("Stage all changes first (git add -A)");
+        let stage_all = gtk::CheckButton::with_label(&tr("Stage all changes first (git add -A)"));
         stage_all.set_active(repo.staged == 0);
         let summary = gtk::Label::builder().xalign(0.0).wrap(true).build();
         summary.add_css_class("omafile-dim");
@@ -111,9 +112,9 @@ impl Window {
         vbox.append(&subject);
         vbox.append(&body_scroll);
         vbox.append(&stage_all);
-        let dialog = adw::AlertDialog::new(Some("Commit"), None);
+        let dialog = adw::AlertDialog::new(Some(tr("Commit").as_str()), None);
         dialog.set_extra_child(Some(&vbox));
-        dialog.add_responses(&[("cancel", "Cancel"), ("commit", "Commit")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("commit", tr("Commit").as_str())]);
         dialog.set_response_appearance("commit", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("commit"));
         dialog.set_close_response("cancel");
@@ -142,10 +143,10 @@ impl Window {
                 let Some(w) = this.upgrade() else { return };
                 match result {
                     Ok(line) => {
-                        w.toast(&format!("Committed {line}"));
+                        w.toast(&trf!("Committed {line}", line = line));
                         pane.reload();
                     }
-                    Err(e) => w.toast_error(&format!("git commit: {e}")),
+                    Err(e) => w.toast_error(&trf!("git commit: {e}", e = e)),
                 }
             });
         });
@@ -163,7 +164,7 @@ impl Window {
             let list = gtk::ListBox::new();
             list.add_css_class("boxed-list");
             list.set_selection_mode(gtk::SelectionMode::None);
-            let dialog = adw::Dialog::builder().title("Switch Branch").content_width(380).build();
+            let dialog = adw::Dialog::builder().title(tr("Switch Branch")).content_width(380).build();
             for (name, current) in &branches {
                 let row = adw::ActionRow::builder().title(name).activatable(!current).build();
                 if *current {
@@ -183,14 +184,14 @@ impl Window {
                         glib::spawn_future_local(async move {
                             let result = git::switch(&root, &name, false).await;
                             if let Some(w) = this.upgrade() {
-                                w.after_git(pane, result, &format!("Switched to {name}"));
+                                w.after_git(pane, result, &trf!("Switched to {name}", name = name));
                             }
                         });
                     });
                 }
                 list.append(&row);
             }
-            let new_entry = gtk::Entry::builder().placeholder_text("New branch from HEAD…").activates_default(false).hexpand(true).build();
+            let new_entry = gtk::Entry::builder().placeholder_text(tr("New branch from HEAD…")).activates_default(false).hexpand(true).build();
             let new_row = adw::ActionRow::new();
             new_row.add_prefix(&gtk::Image::from_icon_name("list-add-symbolic"));
             new_row.add_suffix(&new_entry);
@@ -211,7 +212,7 @@ impl Window {
                     glib::spawn_future_local(async move {
                         let result = git::switch(&root, &name, true).await;
                         if let Some(w) = this.upgrade() {
-                            w.after_git(pane, result, &format!("Created and switched to {name}"));
+                            w.after_git(pane, result, &trf!("Created and switched to {name}", name = name));
                         }
                     });
                 });

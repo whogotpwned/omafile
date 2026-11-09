@@ -72,7 +72,7 @@ pub fn copy_recursive(src: gio::File, dst: gio::File) -> Pin<Box<dyn Future<Outp
             return fut.await;
         }
         if dst.has_prefix(&src) {
-            return Err(glib::Error::new(gio::IOErrorEnum::InvalidArgument, "Cannot copy a folder into itself"));
+            return Err(glib::Error::new(gio::IOErrorEnum::InvalidArgument, &crate::i18n::tr("Cannot copy a folder into itself")));
         }
         dst.make_directory_future(PRIO).await?;
         let enumerator = src

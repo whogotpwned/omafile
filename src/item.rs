@@ -188,12 +188,12 @@ impl FileItem {
 
     pub fn type_description(&self) -> String {
         if self.is_symlink() && self.is_dir() {
-            return "Link to folder".into();
+            return crate::i18n::tr("Link to folder");
         }
         match self.content_type() {
             Some(ct) => gio::content_type_get_description(&ct).to_string(),
-            None if self.is_dir() => "Folder".into(),
-            None => "Unknown".into(),
+            None if self.is_dir() => crate::i18n::tr("Folder"),
+            None => crate::i18n::tr("Unknown"),
         }
     }
 

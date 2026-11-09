@@ -2,6 +2,7 @@
 //! dialog (replace, skip, rename, apply to all), used by paste, drag and drop,
 //! Copy To, Move To and Duplicate.
 
+use crate::i18n::tr;
 use crate::ops;
 use crate::pane::Pane;
 use crate::undo::Op;
@@ -52,7 +53,7 @@ impl Progress {
         let label = gtk::Label::builder().xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
         let bar = gtk::ProgressBar::builder().hexpand(true).valign(gtk::Align::Center).build();
         bar.add_css_class("omafile-progress-bar");
-        let cancel = gtk::Button::builder().label("Cancel").valign(gtk::Align::Center).tooltip_text("Stop the running operation").build();
+        let cancel = gtk::Button::builder().label(tr("Cancel")).valign(gtk::Align::Center).tooltip_text(tr("Stop the running operation")).build();
         cancel.add_css_class("flat");
         let texts = gtk::Box::new(gtk::Orientation::Vertical, 4);
         texts.set_hexpand(true);
@@ -122,8 +123,8 @@ impl Window {
 
     async fn run_transfer(self: &Rc<Self>, req: Request, cancel: gio::Cancellable) {
         let verb = match req.mode {
-            Mode::Copy => "Copying",
-            Mode::Move => "Moving",
+            Mode::Copy => tr("Copying"),
+            Mode::Move => tr("Moving"),
         };
         let total = req.files.len();
         let mut pairs: Vec<(gio::File, gio::File)> = Vec::new();
@@ -131,7 +132,7 @@ impl Window {
         let mut error: Option<String> = None;
         let mut skipped = 0;
         let dest_name = crate::window::display_name(&req.dest);
-        self.show_progress(&format!("{verb} {total} {} to {dest_name}", if total == 1 { "item" } else { "items" }), Some(0.0));
+        self.show_progress(&format!("{verb} {total} {} to {dest_name}", if total == 1 { tr("item") } else { tr("items") }), Some(0.0));
 
         for (index, src) in req.files.iter().enumerate() {
             if cancel.is_cancelled() {
@@ -212,10 +213,10 @@ impl Window {
         }
         let n = pairs.len();
         let done_verb = match req.mode {
-            Mode::Copy => "Copied",
-            Mode::Move => "Moved",
+            Mode::Copy => tr("Copied"),
+            Mode::Move => tr("Moved"),
         };
-        let mut message = format!("{done_verb} {n} {}", if n == 1 { "item" } else { "items" });
+        let mut message = format!("{done_verb} {n} {}", if n == 1 { tr("item") } else { tr("items") });
         if skipped > 0 {
             message.push_str(&format!(", {skipped} skipped"));
         }
@@ -255,10 +256,10 @@ impl Window {
         };
         let name = crate::window::display_name(dst);
         let body = format!("“{name}” already exists in {}.\n\nExisting: {}\nNew: {}", crate::window::display_name(&dst.parent().unwrap_or_else(|| dst.clone())), describe(dst), describe(src));
-        let apply_all = gtk::CheckButton::with_label("Apply to all remaining conflicts");
-        let dialog = adw::AlertDialog::new(Some("Replace file?"), Some(&body));
+        let apply_all = gtk::CheckButton::with_label(&tr("Apply to all remaining conflicts"));
+        let dialog = adw::AlertDialog::new(Some(tr("Replace file?").as_str()), Some(&body));
         dialog.set_extra_child(Some(&apply_all));
-        dialog.add_responses(&[("cancel", "Cancel"), ("skip", "Skip"), ("rename", "Keep Both"), ("replace", "Replace")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("skip", tr("Skip").as_str()), ("rename", tr("Keep Both").as_str()), ("replace", tr("Replace").as_str())]);
         dialog.set_response_appearance("replace", adw::ResponseAppearance::Destructive);
         dialog.set_response_appearance("rename", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("rename"));

@@ -2,6 +2,7 @@
 //! extract pages; trim video, video → GIF, extract audio, convert audio.
 //! Outputs are new files next to the originals, recorded for undo.
 
+use crate::i18n::tr;
 use crate::item::FileItem;
 use crate::ops;
 use crate::undo::Op;
@@ -45,7 +46,7 @@ impl Window {
                         pane.select_file_later(last.clone());
                     }
                     let n = files.len();
-                    w.record(Op::Derive(files), &format!("{verb}: {n} {}", if n == 1 { "file" } else { "files" }));
+                    w.record(Op::Derive(files), &format!("{verb}: {n} {}", if n == 1 { tr("file") } else { tr("files") }));
                 }
                 Err(e) => w.toast_error(&format!("{verb} failed: {}", e.message())),
             }
@@ -63,7 +64,7 @@ impl Window {
         let mut imgs = self.selected_paths_where(|i| i.is_image());
         imgs.sort();
         let (Some(first), Some(tool)) = (imgs.first().cloned(), magick()) else {
-            self.toast_error("ImageMagick is needed to build PDFs");
+            self.toast_error(&tr("ImageMagick is needed to build PDFs"));
             return;
         };
         let dir = first.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -79,11 +80,11 @@ impl Window {
         let mut pdfs = self.selected_paths_where(|i| i.is_pdf());
         pdfs.sort();
         if pdfs.len() < 2 {
-            self.toast("Select two or more PDFs to merge");
+            self.toast(&tr("Select two or more PDFs to merge"));
             return;
         }
         if !has("pdfunite") {
-            self.toast_error("pdfunite (poppler) is not installed");
+            self.toast_error(&tr("pdfunite (poppler) is not installed"));
             return;
         }
         let dir = pdfs[0].parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -98,7 +99,7 @@ impl Window {
     pub fn pdf_split(self: &Rc<Self>) {
         let Some(pdf) = self.selected_paths_where(|i| i.is_pdf()).into_iter().next() else { return };
         if !has("pdfseparate") {
-            self.toast_error("pdfseparate (poppler) is not installed");
+            self.toast_error(&tr("pdfseparate (poppler) is not installed"));
             return;
         }
         let dir = pdf.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -112,14 +113,14 @@ impl Window {
     pub fn pdf_extract_dialog(self: &Rc<Self>) {
         let Some(pdf) = self.selected_paths_where(|i| i.is_pdf()).into_iter().next() else { return };
         if !has("pdfseparate") || !has("pdfunite") {
-            self.toast_error("poppler (pdfseparate, pdfunite) is not installed");
+            self.toast_error(&tr("poppler (pdfseparate, pdfunite) is not installed"));
             return;
         }
         let pages = crate::thumbs::pdf_pages(&pdf).unwrap_or(0);
         let entry = gtk::Entry::builder().text("1-3").activates_default(true).build();
-        let dialog = adw::AlertDialog::new(Some("Extract pages"), Some(&format!("Pages to keep, e.g. 2-5 or 1,4,7{}", if pages > 0 { format!(" (the document has {pages})") } else { String::new() })));
+        let dialog = adw::AlertDialog::new(Some(tr("Extract pages").as_str()), Some(&format!("Pages to keep, e.g. 2-5 or 1,4,7{}", if pages > 0 { trf!(" (the document has {pages})", pages = pages) } else { String::new() })));
         dialog.set_extra_child(Some(&entry));
-        dialog.add_responses(&[("cancel", "Cancel"), ("extract", "Extract")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("extract", tr("Extract").as_str())]);
         dialog.set_response_appearance("extract", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("extract"));
         dialog.set_close_response("cancel");
@@ -132,7 +133,7 @@ impl Window {
                 return;
             }
             let Some(list) = parse_pages(&entry2.text(), pages as usize) else {
-                w.toast_error("Could not read that page range");
+                w.toast_error(&tr("Could not read that page range"));
                 return;
             };
             let dir = pdf.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -156,19 +157,19 @@ impl Window {
     pub fn video_trim_dialog(self: &Rc<Self>) {
         let Some(path) = self.selected_paths_where(|i| i.is_media()).into_iter().next() else { return };
         if !has("ffmpeg") {
-            self.toast_error("ffmpeg is not installed");
+            self.toast_error(&tr("ffmpeg is not installed"));
             return;
         }
         let start = gtk::Entry::builder().text("00:00:00").activates_default(true).build();
         let end = gtk::Entry::builder().text("00:00:10").activates_default(true).build();
         let grid = gtk::Grid::builder().row_spacing(8).column_spacing(12).build();
-        grid.attach(&gtk::Label::builder().label("From").xalign(0.0).build(), 0, 0, 1, 1);
+        grid.attach(&gtk::Label::builder().label(tr("From")).xalign(0.0).build(), 0, 0, 1, 1);
         grid.attach(&start, 1, 0, 1, 1);
-        grid.attach(&gtk::Label::builder().label("To").xalign(0.0).build(), 0, 1, 1, 1);
+        grid.attach(&gtk::Label::builder().label(tr("To")).xalign(0.0).build(), 0, 1, 1, 1);
         grid.attach(&end, 1, 1, 1, 1);
-        let dialog = adw::AlertDialog::new(Some("Trim"), Some("hh:mm:ss or seconds. The streams are copied, so it is instant and lossless; cuts land on the nearest keyframe."));
+        let dialog = adw::AlertDialog::new(Some(tr("Trim").as_str()), Some(tr("hh:mm:ss or seconds. The streams are copied, so it is instant and lossless; cuts land on the nearest keyframe.").as_str()));
         dialog.set_extra_child(Some(&grid));
-        dialog.add_responses(&[("cancel", "Cancel"), ("trim", "Trim")]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("trim", tr("Trim").as_str())]);
         dialog.set_response_appearance("trim", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("trim"));
         dialog.set_close_response("cancel");
@@ -193,7 +194,7 @@ impl Window {
     pub fn video_to_gif(self: &Rc<Self>) {
         let Some(path) = self.selected_paths_where(|i| i.is_video()).into_iter().next() else { return };
         if !has("ffmpeg") {
-            self.toast_error("ffmpeg is not installed");
+            self.toast_error(&tr("ffmpeg is not installed"));
             return;
         }
         let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -206,7 +207,7 @@ impl Window {
     pub fn video_extract_audio(self: &Rc<Self>) {
         let Some(path) = self.selected_paths_where(|i| i.is_video()).into_iter().next() else { return };
         if !has("ffmpeg") {
-            self.toast_error("ffmpeg is not installed");
+            self.toast_error(&tr("ffmpeg is not installed"));
             return;
         }
         let codec = std::process::Command::new("ffprobe").args(["-v", "quiet", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0"]).arg(&path).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
@@ -227,7 +228,7 @@ impl Window {
     pub fn audio_convert(self: &Rc<Self>, format: &str) {
         let paths = self.selected_paths_where(|i| i.is_media());
         if paths.is_empty() || !has("ffmpeg") {
-            self.toast_error("ffmpeg is not installed");
+            self.toast_error(&tr("ffmpeg is not installed"));
             return;
         }
         let (ext, codec_args): (&str, Vec<&str>) = match format {
