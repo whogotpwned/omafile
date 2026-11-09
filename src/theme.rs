@@ -610,6 +610,15 @@ toast {{
 .omafile-tag-blue {{ background-color: {blue}; }}
 .omafile-tag-purple {{ background-color: {magenta}; }}
 .omafile-tag-gray {{ background-color: {dim}; }}
+.omafile-sidebar-eject {{
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  opacity: 0.6;
+}}
+.omafile-sidebar-eject:hover {{
+  opacity: 1;
+}}
 @keyframes omafile-pulse {{
   from {{ opacity: 0.45; }}
   to {{ opacity: 1.0; }}

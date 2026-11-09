@@ -174,6 +174,14 @@ impl Window {
         page.add(&keys);
 
         let phone = adw::PreferencesGroup::builder().title(tr("iPhone & Nearby")).build();
+        let automount = adw::SwitchRow::builder().title(tr("Mount drives and phones when plugged in")).subtitle(tr("USB sticks, cards and iPhones appear in the sidebar at once and are mounted; the eject button makes them safe to unplug")).active(self.prefs.get_bool("auto-mount", true)).build();
+        let this = Rc::downgrade(self);
+        automount.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("auto-mount", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        phone.add(&automount);
         let nearby = adw::SwitchRow::builder().title(tr("Nearby devices (LocalSend)")).subtitle(tr("Be visible on this network and receive files from phones and computers running LocalSend; takes effect on the next start")).active(self.prefs.get_bool("nearby-enabled", true)).build();
         let this = Rc::downgrade(self);
         nearby.connect_active_notify(move |row| {

@@ -597,6 +597,11 @@ impl Window {
                 w.refresh_sidebar();
             }
         }));
+        simple("sidebar-mount", Box::new(|w| {
+            if let Some((_, PlaceKind::Volume(v))) = w.sidebar_target_place() {
+                w.mount_volume(&v, true);
+            }
+        }));
         simple("sidebar-unmount", Box::new(|w| {
             if let Some((_, PlaceKind::Mount(m))) = w.sidebar_target_place() {
                 w.unmount(m);

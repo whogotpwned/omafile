@@ -42,6 +42,8 @@ pub enum PlaceKind {
     Smart(crate::smart::SmartFolder),
     /// A LocalSend device (fingerprint).
     Nearby(String),
+    /// A drive or phone that is plugged in but not mounted yet.
+    Volume(gio::Volume),
 }
 
 pub struct WinState {
@@ -981,6 +983,7 @@ impl Window {
                         }
                     }
                     PlaceKind::Nearby(_) => w.open_nearby(),
+                    PlaceKind::Volume(v) => w.mount_volume(&v, true),
                     _ => w.navigate(file),
                 }
             }
@@ -997,7 +1000,9 @@ impl Window {
                 match state.places.get(index) {
                     Some(Place::Entry { kind: PlaceKind::Bookmark, .. }) => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Remove Bookmark", "win.sidebar-remove-bookmark")]),
                     Some(Place::Entry { kind: PlaceKind::Tag(_), .. }) => return,
+                    Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_eject() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Eject", "win.sidebar-unmount")]),
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_unmount() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Unmount", "win.sidebar-unmount")]),
+                    Some(Place::Entry { kind: PlaceKind::Volume(_), .. }) => menu_of(&[("Mount", "win.sidebar-mount")]),
                     Some(Place::Entry { .. }) => menu_of(&[("Open in New Tab", "win.sidebar-new-tab")]),
                     _ => return,
                 }
@@ -1031,7 +1036,7 @@ impl Window {
                             spring2.borrow_mut().take();
                             let Some(w) = this2.upgrade() else { return };
                             let file = match w.state.borrow().places.get(i as usize) {
-                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_)) => Some(file.clone()),
+                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => Some(file.clone()),
                                 _ => None,
                             };
                             if let Some(f) = file {
@@ -1067,7 +1072,7 @@ impl Window {
                 return true;
             }
             let dest = match w.state.borrow().places.get(row.index() as usize) {
-                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_)) => file.clone(),
+                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file.clone(),
                 _ => return false,
             };
             if let Some(p) = w.active_pane() {
@@ -1078,7 +1083,7 @@ impl Window {
         self.sidebar_list.add_controller(target);
 
         let monitor = gio::VolumeMonitor::get();
-        for signal in ["mount-added", "mount-removed", "mount-changed"] {
+        for signal in ["mount-changed", "volume-changed", "drive-changed", "drive-connected"] {
             let this = Rc::downgrade(self);
             monitor.connect_local(signal, false, move |_| {
                 if let Some(w) = this.upgrade() {
@@ -1087,6 +1092,63 @@ impl Window {
                 None
             });
         }
+        // Plugged in: show it at once and mount it (Preferences › Auto-mount), then say where it is.
+        let this = Rc::downgrade(self);
+        monitor.connect_volume_added(move |_, volume| {
+            let Some(w) = this.upgrade() else { return };
+            w.refresh_sidebar();
+            crate::status::write(&w);
+            if w.prefs.get_bool("auto-mount", true) && volume.can_mount() && volume.get_mount().is_none() {
+                w.mount_volume(volume, false);
+            }
+        });
+        let this = Rc::downgrade(self);
+        monitor.connect_mount_added(move |_, mount| {
+            let Some(w) = this.upgrade() else { return };
+            w.refresh_sidebar();
+            crate::status::write(&w);
+            if mount.is_shadowed() {
+                return;
+            }
+            let name = mount.name().to_string();
+            let location = mount.default_location();
+            let toast = adw::Toast::builder().title(&trf!("{name} is ready", name = name.clone())).timeout(6).button_label(tr("Open")).build();
+            let weak = Rc::downgrade(&w);
+            toast.connect_button_clicked(move |_| {
+                if let Some(w) = weak.upgrade() {
+                    w.navigate(location.clone());
+                }
+            });
+            w.toast.add_toast(toast);
+        });
+        let this = Rc::downgrade(self);
+        monitor.connect_mount_removed(move |_, mount| {
+            let Some(w) = this.upgrade() else { return };
+            // Tabs that were inside go home.
+            let root = mount.root();
+            for p in w.panes.borrow().clone() {
+                if p.cwd().has_prefix(&root) || p.cwd().equal(&root) {
+                    p.navigate(gio::File::for_path(glib::home_dir()), true);
+                }
+            }
+            w.refresh_sidebar();
+            crate::status::write(&w);
+        });
+        let this = Rc::downgrade(self);
+        monitor.connect_volume_removed(move |_, volume| {
+            if let Some(w) = this.upgrade() {
+                w.refresh_sidebar();
+                crate::status::write(&w);
+                w.toast_keyed("drive", &trf!("{name} was unplugged", name = volume.name()));
+            }
+        });
+        let this = Rc::downgrade(self);
+        monitor.connect_drive_disconnected(move |_, drive| {
+            if let Some(w) = this.upgrade() {
+                w.refresh_sidebar();
+                w.toast_keyed("drive", &trf!("{name} was unplugged", name = drive.name()));
+            }
+        });
         unsafe { self.window.set_data("volume-monitor", monitor) };
     }
 
@@ -1105,7 +1167,7 @@ impl Window {
         }
     }
 
-    fn rebuild_places(&self) {
+    fn rebuild_places(self: &Rc<Self>) {
         let mut places = vec![Place::Header(tr("Places"))];
         let home = glib::home_dir();
         let mut add = |name: &str, icon: &str, path: std::path::PathBuf| {
@@ -1210,6 +1272,15 @@ impl Window {
             }
             places.push(Place::Entry { name: mount.name().to_string(), icon, file: mount.default_location(), kind: PlaceKind::Mount(mount) });
         }
+        // Plugged in but not mounted yet (a thumb drive before automount, a phone before Trust): one click mounts it.
+        for volume in gio::VolumeMonitor::get().volumes() {
+            if volume.get_mount().is_some() || !volume.can_mount() {
+                continue;
+            }
+            let icon = volume.symbolic_icon().downcast::<gio::ThemedIcon>().ok().and_then(|i| i.names().first().map(|n| n.to_string())).unwrap_or_else(|| "drive-removable-media-symbolic".into());
+            let file = volume.activation_root().unwrap_or_else(|| gio::File::for_uri(&format!("volume://{}", volume.name())));
+            places.push(Place::Entry { name: volume.name().to_string(), icon, file, kind: PlaceKind::Volume(volume) });
+        }
 
         let volumes = self.containers.borrow();
         if !volumes.is_empty() {
@@ -1249,11 +1320,26 @@ impl Window {
                     }
                     hbox.append(&gtk::Label::builder().label(name).xalign(0.0).hexpand(true).ellipsize(pango::EllipsizeMode::End).build());
                     if let PlaceKind::Mount(m) = kind {
-                        if m.can_unmount() {
-                            let eject = gtk::Image::from_icon_name("media-eject-symbolic");
-                            eject.add_css_class("omafile-dim");
+                        if m.can_unmount() || m.can_eject() {
+                            let eject = gtk::Button::builder().icon_name("media-eject-symbolic").tooltip_text(if m.can_eject() { tr("Eject") } else { tr("Unmount") }).valign(gtk::Align::Center).build();
+                            eject.add_css_class("flat");
+                            eject.add_css_class("circular");
+                            eject.add_css_class("omafile-sidebar-eject");
+                            let this = Rc::downgrade(self);
+                            let m2 = m.clone();
+                            eject.connect_clicked(move |_| {
+                                if let Some(w) = this.upgrade() {
+                                    w.unmount(m2.clone());
+                                }
+                            });
                             hbox.append(&eject);
                         }
+                    }
+                    if let PlaceKind::Volume(_) = kind {
+                        let plug = gtk::Image::from_icon_name("list-add-symbolic");
+                        plug.set_tooltip_text(Some(&tr("Not mounted yet: click to mount")));
+                        plug.add_css_class("omafile-dim");
+                        hbox.append(&plug);
                     }
                     row.set_child(Some(&hbox));
                 }
@@ -1316,13 +1402,45 @@ impl Window {
         });
     }
 
+    /// Mount a plugged-in volume; `open` navigates into it afterwards.
+    pub fn mount_volume(self: &Rc<Self>, volume: &gio::Volume, open: bool) {
+        let op = gtk::MountOperation::new(Some(&self.window));
+        let this = Rc::downgrade(self);
+        let volume = volume.clone();
+        let name = volume.name().to_string();
+        glib::spawn_future_local(async move {
+            let result = volume.mount_future(gio::MountMountFlags::NONE, Some(&op)).await;
+            let Some(w) = this.upgrade() else { return };
+            match result {
+                Ok(()) => {
+                    w.refresh_sidebar();
+                    if open {
+                        if let Some(root) = volume.get_mount().map(|m| m.default_location()) {
+                            w.navigate(root);
+                        }
+                    }
+                }
+                Err(e) if e.matches(gio::IOErrorEnum::FailedHandled) || e.matches(gio::IOErrorEnum::AlreadyMounted) => {}
+                Err(e) => {
+                    let hint = if name.to_lowercase().contains("iphone") || name.to_lowercase().contains("ipad") { format!("  ·  {}", tr("Unlock the device and tap “Trust”")) } else { String::new() };
+                    w.toast_retry(&format!("{}: {}{hint}", trf!("Cannot mount {name}", name = name.clone()), e.message()), Box::new(move |w| w.mount_volume(&volume, open)));
+                }
+            }
+        });
+    }
+
     pub fn unmount(self: &Rc<Self>, mount: gio::Mount) {
         let op = gtk::MountOperation::new(Some(&self.window));
         let this = Rc::downgrade(self);
         let name = mount.name().to_string();
         let root = mount.root();
         glib::spawn_future_local(async move {
-            let result = mount.unmount_with_operation_future(gio::MountUnmountFlags::NONE, Some(&op)).await;
+            // Removable media: eject so the drive can be pulled; everything else: unmount.
+            let result = if mount.can_eject() {
+                mount.eject_with_operation_future(gio::MountUnmountFlags::NONE, Some(&op)).await
+            } else {
+                mount.unmount_with_operation_future(gio::MountUnmountFlags::NONE, Some(&op)).await
+            };
             let Some(w) = this.upgrade() else { return };
             match result {
                 Ok(()) => {
@@ -1333,10 +1451,10 @@ impl Window {
                             p.navigate(gio::File::for_path(glib::home_dir()), true);
                         }
                     }
-                    w.toast(&format!("{name} unmounted"));
+                    w.toast_keyed("drive", &trf!("{name} can be unplugged", name = name.clone()));
                     w.refresh_sidebar();
                 }
-                Err(e) => w.toast_error(&format!("Cannot unmount {name}: {}", e.message())),
+                Err(e) => w.toast_error(&format!("{}: {}", trf!("Cannot unmount {name}", name = name.clone()), e.message())),
             }
         });
     }
@@ -1400,7 +1518,7 @@ impl Window {
                     PlaceKind::Tag(_) => continue,
                     PlaceKind::Smart(_) => (tr("Smart folder"), PaletteTarget::Action(format!("smart-open::{name}"))),
                     PlaceKind::Bookmark => (tr("Bookmark"), PaletteTarget::Folder(file.clone())),
-                    PlaceKind::Nearby(_) => continue,
+                    PlaceKind::Nearby(_) | PlaceKind::Volume(_) => continue,
                     PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
                 };
@@ -1744,7 +1862,7 @@ fn icon_label(icon: &str, text: &str) -> gtk::Box {
 fn menu_of(entries: &[(&str, &str)]) -> gio::Menu {
     let menu = gio::Menu::new();
     for (label, action) in entries {
-        menu.append(Some(label), Some(action));
+        menu.append(Some(tr(label).as_str()), Some(action));
     }
     menu
 }

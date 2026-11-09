@@ -2,6 +2,11 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.16.0 — 2026-11-09
+
+### Added
+- **Removable drives and phones live in the sidebar**: a volume appears the moment it is plugged in, is mounted automatically (switch in Preferences), gets a toast with *Open*; unmounted ones show a + and mount on click; the row's eject button (or *Eject* in the context menu) ejects removable media; unplugging removes the entry, sends tabs inside it home and shows a toast.
+
 ## 0.15.0 — 2026-11-09
 
 ### Added

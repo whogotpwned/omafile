@@ -10,7 +10,7 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.15.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.16.0-f7768e)](CHANGELOG.md)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
@@ -84,6 +84,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![treemap](docs/screenshot-treemap.png) | **Disk usage map** (`Ctrl+Alt+U`, menu, or the context menu of a folder): the folder as a squarified treemap, two levels deep, sizes in every box. Click zooms into a folder, `Backspace` goes up, double click opens it in omafile, right click offers *Open*, *Reveal* and *Move to Trash* (undoable). Scanning runs off the main thread and can be cancelled by closing the dialog. |
 | ![rules](docs/screenshot-rules.png) | **Folder rules** (`Ctrl+Alt+R`), Hazel style: for the folder on show, "name matches *.pdf, older than 7 days → move to ~/Documents/Invoices", "*.iso → red tag", "*.tmp → trash", "screenshots → sort into YYYY-MM folders", or "run a command with $FILE". Each rule has a switch; *Run Now* applies them at once. Rules run when omafile starts and a few seconds after something lands in a watched folder; moves, copies, tags and trashing go into the undo journal. Stored in `~/.config/omafile/rules`. |
 | ![duplicates](docs/screenshot-duplicates.png) | **Find duplicates** (`Ctrl+Alt+F`): files below the folder with the same size and SHA-256, grouped with the wasted space. One copy per group stays unticked (*keep the oldest / newest / shortest path*), *Move Ticked to Trash* removes the rest in one undoable step. Only size collisions are hashed, so large trees scan quickly. |
+| ![devices](docs/screenshot-devices.png) | **Plug it in, it is there**: USB sticks, SD cards, external disks and iPhones appear under *Devices* the moment they are plugged in, are mounted on their own (Preferences › *Mount drives and phones when plugged in*) and get a toast with *Open*. A drive that is not mounted yet shows a + and mounts on click. The eject button on the row (or the context menu) ejects removable media so it is safe to pull; unplugging removes the entry, moves tabs that were inside back home and says so in a toast. Through GVFS, so SMB, SFTP and MTP mounts behave the same. |
 | ![nearby](docs/screenshot-nearby.png) | **iPhone & iPad, three ways.** **Nearby** (`Ctrl+Alt+P`): omafile speaks the LocalSend protocol, so with the free LocalSend app on the phone (Settings › Encryption off) the iPhone appears under *iPhone & iPad* in the sidebar; drop files on it to send them, and files sent from the phone arrive after an *Accept* prompt in `~/Downloads` (or any folder you pick), with a *Show* button on the toast. **USB**: with `gvfs-afc` the phone mounts like a drive; *Import Photos* copies the camera roll into `Pictures/iPhone/YYYY-MM`, converts HEIC to JPEG (libheif or ImageMagick), skips what was imported before, undoable; also `omafile --import-photos` and the bar menu. **No app at all**: *Share on Local Network* now serves a phone-friendly page with the selection to download **and** a drop zone / picker that sends photos straight into the folder on show; scan the QR code with the camera. |
 | ![ebooks](docs/screenshot-ebook.png) | **eBooks**: EPUB, comic archives (CBZ / CBR) and FictionBook show their **cover** in list, grid and preview, the preview and Properties list title, author, series, publisher, year, language, ISBN and chapter count, and the page turner pages from the cover into the **chapters** (text) or comic pages (`↑` `↓` in Quick Look). Context menu › *eBook*: *Open in Reader* (foliate, Calibre viewer, KOReader, Okular), *Rename from Metadata* (`Author - Title (Series 1).epub`, undoable), *Send to eReader* (Kindle `documents/`, Kobo, Tolino, PocketBook… when plugged in) and *Convert to* EPUB / MOBI / AZW3 / PDF with Calibre's `ebook-convert`. Covers go through the shared thumbnail cache; everything is read with `bsdtar`, no Calibre needed for reading. |
 | ![pdf pages](docs/screenshot-pdf-pages.png) | **Multi-page documents**: a `‹ 2 / 3 ›` turner appears under the page in the preview pane and in Quick Look. Pages render on demand through poppler at the pane's resolution, so flipping through a long PDF never blocks the list. |
@@ -432,7 +433,7 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 
 | File | Content |
 |---|---|
-| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `nearby-enabled`, `nearby-folder`, `nearby-accept-all`, `iphone-folder`, `iphone-convert-heic`, `trash-auto-days`) |
+| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `nearby-enabled`, `nearby-folder`, `nearby-accept-all`, `iphone-folder`, `iphone-convert-heic`, `auto-mount`, `trash-auto-days`) |
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
@@ -460,7 +461,7 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.15.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.16.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
