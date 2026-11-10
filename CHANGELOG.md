@@ -2,6 +2,11 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.17.0 — 2026-11-10
+
+### Added
+- **Animated previews**: GIFs (and animated WebP when the pixbuf loader is installed) play in the preview pane, Quick Look and the gallery; a click on the picture pauses and resumes. Thumbnails in list and grid stay still.
+
 ## 0.16.0 — 2026-11-09
 
 ### Added

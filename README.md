@@ -10,7 +10,7 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.16.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.17.0-f7768e)](CHANGELOG.md)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
@@ -77,7 +77,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![groups](docs/screenshot-groups.png) | **Groups** (menu › Group By): sections by kind (Folders, Images, PDF documents, eBooks, Documents, Code and config, Music, Videos, Archives), by date (Today, Yesterday, Previous 7 days…), by size or by tag, each with its count; the choice is remembered. |
 | ![thumbnails](docs/screenshot-thumbs.png) | **Previews in the icon**, like Finder and Explorer: text and source files show a page with their first lines, images and SVGs their picture, PDFs their first page, videos a frame (`ffmpegthumbnailer`, else `ffmpeg`), music its cover art, theme folders their `preview.png`. Everything decodes off the main thread and is cached; credential files are never rendered. |
 | ![play badge](docs/screenshot-play-badge.png) | **Play in place**: songs and videos carry a round play badge over their icon; one click starts them. Audio shows cover and transport controls in the preview pane, `Space` (Quick Look) plays right away, `←`/`→` walk the album. GStreamer decodes, so MP3, FLAC, Ogg and Opus work out of the box and H.264 / AAC need `gst-libav`. |
-| ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview without opening the file. PDFs with page count and **page turning** (`↑`/`↓`, the wheel, or the ‹ › buttons under the page), images, text, folders with item count, git diffs for changed files. `←`/`→` move through the folder, `Space` or `Esc` closes. The **preview pane** (`F3`) is the persistent sidebar version of the same thing; there `Alt+PgUp` / `Alt+PgDn` turn the pages. |
+| ![quick look](docs/screenshot-quicklook.png) | **Quick Look** (`Space`), as on macOS: a large preview without opening the file. **GIFs and animated WebP play** (a click on the picture pauses; icons in the list stay still), PDFs with page count and **page turning** (`↑`/`↓`, the wheel, or the ‹ › buttons under the page), images, text, folders with item count, git diffs for changed files. `←`/`→` move through the folder, `Space` or `Esc` closes. The **preview pane** (`F3`) is the persistent sidebar version of the same thing; there `Alt+PgUp` / `Alt+PgDn` turn the pages. |
 | ![streaming](docs/screenshot-streaming.png) | **Smooth under load**: folders stream in while they are still being listed (a 30k-file folder shows its first rows at once), skeleton rows stand in for slow listings, and a real crossfade carries you from folder to folder. Thumbnails go through the freedesktop cache in `~/.cache/thumbnails` (shared with Nautilus and Loupe), the rows on screen decode first and recycled cells are skipped. Local subfolders are prefetched, the gallery decodes its neighbours ahead, remote listings are cached and a dropped SFTP share is remounted and retried on its own. |
 | ![view memory](docs/screenshot-view-memory.png) | **Remembered per folder**: list or grid, sort order, grouping and icon size come back when you return to a folder (`~/.config/omafile/views`, Preferences › *Remember view per folder*). **Touchpad**: two-finger swipe goes back and forward, pinch zooms the grid, kinetic scrolling everywhere. **Drag & drop**: the list auto-scrolls near its edges, tabs and breadcrumbs are spring-loaded and accept drops, several items drag as a stack with a count badge. Toasts of the same kind merge instead of stacking, errors carry a *Retry* button, the window title shows the transfer percentage, and every animation obeys the system's reduced-motion setting. |
 | ![shelf](docs/screenshot-shelf.png) | **Shelf** (`Ctrl+Shift+S`, context menu › *Add to Shelf*, or drop files onto it): a small floating window that collects files from any folder, like Dropover or Yoink. Drag them out together, or *Copy Here* / *Move Here* into the folder omafile shows. The shelf survives a restart (`~/.local/state/omafile/shelf`). `Ctrl+Shift+B` shows or hides it; a Hyprland `windowrule = float, title:^(Shelf)$` keeps it floating. |
@@ -461,7 +461,7 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.16.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.17.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects

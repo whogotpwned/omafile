@@ -35,6 +35,9 @@ pub struct PreviewPane {
     page_label: gtk::Label,
     /// (document, current page, page count) of the document on show.
     doc: RefCell<Option<(Doc, u32, u32)>>,
+    /// Timer of a playing GIF / animated WebP, and whether a click paused it.
+    anim: RefCell<Option<glib::SourceId>>,
+    anim_paused: Cell<bool>,
 }
 
 /// What the page turner pages through.
@@ -167,11 +170,22 @@ impl PreviewPane {
         root.append(&stack);
         root.append(&info);
 
-        let this = Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None), pager, page_label, doc: RefCell::new(None) });
+        let this = Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None), pager, page_label, doc: RefCell::new(None), anim: RefCell::new(None), anim_paused: Cell::new(false) });
         let weak = Rc::downgrade(&this);
         prev.connect_clicked(move |_| { if let Some(p) = weak.upgrade() { p.doc_step(-1); } });
         let weak = Rc::downgrade(&this);
         next.connect_clicked(move |_| { if let Some(p) = weak.upgrade() { p.doc_step(1); } });
+        // A click on a playing GIF pauses it, another one resumes.
+        let weak = Rc::downgrade(&this);
+        let click = gtk::GestureClick::new();
+        click.connect_released(move |_, _, _, _| {
+            if let Some(p) = weak.upgrade() {
+                if p.anim.borrow().is_some() {
+                    p.anim_paused.set(!p.anim_paused.get());
+                }
+            }
+        });
+        this.picture.add_controller(click);
         // The wheel over the page turns it too.
         let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE);
         let weak = Rc::downgrade(&this);
@@ -183,6 +197,51 @@ impl PreviewPane {
         });
         picture_box.add_controller(scroll);
         this
+    }
+
+    /// GIFs and animated WebP play in the preview (the icons in the list stay still).
+    /// The still frame is on show first; the animation takes over once it is loaded.
+    fn start_animation(self: &Rc<Self>, item: &FileItem, gen: u64) {
+        let animated_type = matches!(item.content_type().as_deref(), Some("image/gif") | Some("image/webp") | Some("image/apng"));
+        if !animated_type || item.size() > 64 * 1024 * 1024 || !item.target_file().is_native() {
+            return;
+        }
+        let file = item.target_file();
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let Ok(stream) = file.read_future(glib::Priority::DEFAULT).await else { return };
+            let Ok(animation) = gtk::gdk_pixbuf::PixbufAnimation::from_stream_future(&stream).await else { return };
+            let Some(p) = this.upgrade() else { return };
+            if p.generation.get() != gen || animation.is_static_image() {
+                return;
+            }
+            let iter = animation.iter(None);
+            let existing = p.hint.text().to_string();
+            let note = tr("Animated  ·  click the picture to pause");
+            p.hint.set_text(&if existing.is_empty() { note } else { format!("{existing}\n{note}") });
+            p.animation_tick(iter, gen);
+        });
+    }
+
+    fn animation_tick(self: &Rc<Self>, iter: gtk::gdk_pixbuf::PixbufAnimationIter, gen: u64) {
+        // None means "this frame stays forever": nothing more to do.
+        let Some(delay) = iter.delay_time() else { return };
+        let delay = delay.max(std::time::Duration::from_millis(20));
+        let this = Rc::downgrade(self);
+        let id = glib::timeout_add_local_once(delay, move || {
+            let Some(p) = this.upgrade() else { return };
+            p.anim.borrow_mut().take();
+            if p.generation.get() != gen {
+                return;
+            }
+            // Keep time while paused or hidden, just do not draw.
+            if !p.anim_paused.get() && p.picture.is_mapped() && p.stack.visible_child_name().as_deref() == Some("image") {
+                iter.advance(std::time::SystemTime::now());
+                p.picture.set_paintable(Some(&gdk::Texture::for_pixbuf(&iter.pixbuf())));
+            }
+            p.animation_tick(iter, gen);
+        });
+        self.anim.replace(Some(id));
     }
 
     /// Turn the page of the document on show. Returns false when there is no
@@ -373,6 +432,7 @@ impl PreviewPane {
         if ThumbCache::can_thumbnail(item) && !item.is_text() {
             self.stack.set_visible_child_name("image");
             self.thumbs.assign(item, &self.picture, self.image_size);
+            self.start_animation(item, gen);
             if item.is_readable_ebook() {
                 if let (Some(path), Some(ct)) = (item.target_file().path(), item.content_type()) {
                     let this = Rc::downgrade(self);
@@ -788,6 +848,10 @@ impl PreviewPane {
 
     /// Stop and release the player (selection changed, pane hidden, dialog closed).
     pub fn stop(&self) {
+        if let Some(id) = self.anim.borrow_mut().take() {
+            id.remove();
+        }
+        self.anim_paused.set(false);
         if let Some(m) = self.media.borrow_mut().take() {
             m.pause();
             m.set_file(None::<&gio::File>);
