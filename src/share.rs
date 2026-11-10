@@ -10,11 +10,28 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub struct LanShare {
-    /// Dropping it stops the server.
-    _server: crate::httpd::Server,
+    /// Where the page lives: on the LocalSend port (open in Omarchy's firewall) or on a server of its own.
+    host: Host,
     pub url: String,
+    /// Port the page is served on, and whether it is the shared LocalSend port.
+    pub port: u16,
+    pub shared_port: bool,
     /// Files the phone uploaded, reported to the UI.
     pub uploads: std::sync::mpsc::Receiver<PathBuf>,
+}
+
+enum Host {
+    /// Dropping the server stops it.
+    Standalone(#[allow(dead_code)] crate::httpd::Server),
+    Mounted(std::sync::Arc<crate::localsend::Node>, String),
+}
+
+impl Drop for LanShare {
+    fn drop(&mut self) {
+        if let Host::Mounted(node, prefix) = &self.host {
+            node.unmount(prefix);
+        }
+    }
 }
 
 /// The address other machines on the LAN would use (no packet is sent).
@@ -56,13 +73,13 @@ fn escape(s: &str) -> String {
 }
 
 /// The page a phone sees: the shared files to download, and a drop zone / picker to send files back.
-pub fn page_html(files: &[PathBuf], upload_dir: &std::path::Path, theme: &PageTheme, strings: &[(&str, String)]) -> String {
+pub fn page_html(files: &[PathBuf], upload_dir: &std::path::Path, theme: &PageTheme, strings: &[(&str, String)], base: &str) -> String {
     let t = |k: &str| strings.iter().find(|(key, _)| *key == k).map(|(_, v)| v.clone()).unwrap_or_else(|| k.to_string());
     let mut rows = String::new();
     for (i, p) in files.iter().enumerate() {
         let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let size = std::fs::metadata(p).map(|m| if m.is_dir() { t("folder") } else { crate::ops::human_size(m.len()) }).unwrap_or_default();
-        let href = format!("/dl/{i}/{}", crate::httpd::percent_encode(&name));
+        let href = format!("{base}/dl/{i}/{}", crate::httpd::percent_encode(&name));
         rows.push_str(&format!("<a class=\"file\" href=\"{href}\" download><span class=\"name\">{}</span><span class=\"size\">{}</span><span class=\"get\">↓</span></a>", escape(&name), escape(&size)));
     }
     let dest = escape(&crate::rules::shorten(upload_dir));
@@ -100,7 +117,7 @@ async function send(files){{
   let n=0;for(const f of files){{
     status.textContent='{sending} '+f.name+' ('+(++n)+'/'+files.length+')';
     const fd=new FormData();fd.append('files',f,f.name);
-    const r=await fetch('/upload',{{method:'POST',body:fd}});
+    const r=await fetch('{base}/upload',{{method:'POST',body:fd}});
     if(!r.ok){{status.textContent='{failed} '+f.name;return;}}
   }}
   status.textContent='✓ '+n+' {sent}';status.className='done';
@@ -113,16 +130,21 @@ drop.addEventListener('drop',ev=>send([...ev.dataTransfer.files]));
         bg = theme.bg, fg = theme.fg, accent = theme.accent, card = theme.card, dim = theme.dim,
         host = escape(&glib::host_name()), download = escape(&t("Download")), upload = escape(&t("Send to this computer")),
         drop_hint = escape(&t("Drop files here or pick them")), choose = escape(&t("Choose files")), into = escape(&t("They land in")), dest = dest,
-        sending = escape(&t("Sending")), failed = escape(&t("Failed:")), sent = escape(&t("files sent")))
+        sending = escape(&t("Sending")), failed = escape(&t("Failed:")), sent = escape(&t("files sent")), base = base)
 }
 
 /// Serve `paths` on the LAN and accept uploads into `upload_dir` until the `LanShare` is dropped.
-pub fn start(paths: &[PathBuf], upload_dir: PathBuf, theme: PageTheme, strings: Vec<(&'static str, String)>) -> Result<LanShare, String> {
+pub fn start(paths: &[PathBuf], upload_dir: PathBuf, theme: PageTheme, strings: Vec<(&'static str, String)>, node: Option<std::sync::Arc<crate::localsend::Node>>) -> Result<LanShare, String> {
     let ip = lan_ip().ok_or_else(|| tr("No network address found: not connected to a LAN?"))?;
     let files: Vec<PathBuf> = paths.to_vec();
     let (tx, rx) = std::sync::mpsc::channel::<PathBuf>();
     let tx = std::sync::Mutex::new(tx);
-    let page = page_html(&files, &upload_dir, &theme, &strings);
+    // An unguessable path keeps the page private to whoever has the link or QR code.
+    let prefix = match &node {
+        Some(_) => format!("/s/{}", (0..16).map(|_| format!("{:x}", glib::random_int_range(0, 16))).collect::<String>()),
+        None => String::new(),
+    };
+    let page = page_html(&files, &upload_dir, &theme, &strings, &prefix);
     let handler: std::sync::Arc<crate::httpd::Handler> = std::sync::Arc::new(move |req: &crate::httpd::Request, body: &mut dyn std::io::Read| {
         use crate::httpd::Response;
         match (req.method.as_str(), req.path.as_str()) {
@@ -155,9 +177,14 @@ pub fn start(paths: &[PathBuf], upload_dir: PathBuf, theme: PageTheme, strings: 
             _ => Response::empty(404),
         }
     });
+    if let Some(node) = node {
+        let port = node.port();
+        node.mount(&prefix, handler);
+        return Ok(LanShare { host: Host::Mounted(node, prefix.clone()), url: format!("http://{ip}:{port}{prefix}/"), port, shared_port: true, uploads: rx });
+    }
     let server = crate::httpd::start(0, handler).map_err(|e| e.to_string())?;
-    let url = format!("http://{ip}:{}/", server.port);
-    Ok(LanShare { _server: server, url, uploads: rx })
+    let port = server.port;
+    Ok(LanShare { host: Host::Standalone(server), url: format!("http://{ip}:{port}/"), port, shared_port: false, uploads: rx })
 }
 
 pub fn qr_texture(text: &str) -> Option<gdk::Texture> {
@@ -196,7 +223,9 @@ impl Window {
             ("Download", tr("Download")), ("Send to this computer", tr("Send to this computer")), ("Drop files here or pick them", tr("Drop files here or pick them")),
             ("Choose files", tr("Choose files")), ("They land in", tr("They land in")), ("Sending", tr("Sending")), ("Failed:", tr("Failed:")), ("files sent", tr("files sent")), ("folder", tr("folder")),
         ];
-        let share = match start(&paths, upload_dir.clone(), theme, strings) {
+        // Ride on the LocalSend port when it is ours: Omarchy's firewall lets only 53317 in.
+        let node = self.nearby().map(|n| n.node.clone()).filter(|n| n.port() == crate::localsend::PORT);
+        let share = match start(&paths, upload_dir.clone(), theme, strings, node) {
             Ok(s) => s,
             Err(e) => {
                 self.toast_error(&trf!("Cannot share: {e}", e = e));
@@ -217,7 +246,11 @@ impl Window {
         link.add_css_class("omafile-share-url");
         let copy = gtk::Button::with_label(&tr("Copy Link"));
         copy.add_css_class("pill");
-        let note = gtk::Label::builder().label(trf!("Anyone on your local network can download this while the dialog is open, and the page lets a phone send files back into {folder}. Closing it stops the share.", folder = crate::rules::shorten(&upload_dir))).wrap(true).justify(gtk::Justification::Center).build();
+        let mut note_text = trf!("Anyone on your local network can download this while the dialog is open, and the page lets a phone send files back into {folder}. Closing it stops the share.", folder = crate::rules::shorten(&upload_dir));
+        if !share.shared_port && glib::find_program_in_path("ufw").is_some() {
+            note_text.push_str(&format!("\n\n{}", trf!("If the phone cannot open the page, the firewall is blocking port {port}: sudo ufw allow {port}/tcp", port = share.port)));
+        }
+        let note = gtk::Label::builder().label(note_text).wrap(true).justify(gtk::Justification::Center).selectable(true).build();
         note.add_css_class("omafile-dim");
         note.add_css_class("caption");
         let n = paths.len();
@@ -289,7 +322,34 @@ mod tests {
         let Some(out) = std::env::var_os("OMAFILE_PAGE_OUT") else { return };
         let theme = PageTheme { bg: "#1a1b26".into(), fg: "#c0caf5".into(), accent: "#7aa2f7".into(), card: "#24283b".into(), dim: "#565f89".into() };
         let files = vec![PathBuf::from("/tmp/Rechnung Oktober.pdf"), PathBuf::from("/tmp/Urlaub 2026.jpg"), PathBuf::from("/tmp/omarchy-theme.tar.gz")];
-        std::fs::write(out, page_html(&files, std::path::Path::new("/home/nora/Downloads"), &theme, &[])).unwrap();
+        std::fs::write(out, page_html(&files, std::path::Path::new("/home/nora/Downloads"), &theme, &[], "")).unwrap();
+    }
+
+    #[test]
+    fn share_page_rides_on_the_localsend_port() {
+        if glib::find_program_in_path("curl").is_none() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("omafile-share-mounted-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.txt");
+        std::fs::write(&file, b"mounted").unwrap();
+        let Ok((node, _rx)) = crate::localsend::start("test".into(), dir.clone()) else { return };
+        let theme = PageTheme { bg: "#000".into(), fg: "#fff".into(), accent: "#7aa2f7".into(), card: "#222".into(), dim: "#888".into() };
+        let Ok(share) = start(&[file.clone()], dir.clone(), theme, Vec::new(), Some(node.clone())) else { return };
+        assert!(share.shared_port && share.url.contains("/s/"));
+        let base = share.url.replace(&lan_ip().unwrap(), "127.0.0.1");
+        let get = |url: &str| std::process::Command::new("curl").args(["-s", "--noproxy", "*", url]).output().map(|o| o.stdout).unwrap_or_default();
+        let page = String::from_utf8_lossy(&get(&base)).to_string();
+        assert!(page.contains("omafile") && page.contains("/dl/0/a.txt"), "{page}");
+        assert_eq!(get(&format!("{base}dl/0/a.txt")), b"mounted");
+        // LocalSend's own endpoints still answer next to it.
+        assert!(String::from_utf8_lossy(&get(&format!("http://127.0.0.1:{}/api/localsend/v2/info", node.port()))).contains("fingerprint"));
+        let prefix_gone = base.clone();
+        drop(share);
+        assert!(get(&prefix_gone).is_empty());
+        node.stop();
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -302,7 +362,7 @@ mod tests {
         let file = dir.join("hello world.txt");
         std::fs::write(&file, b"shared!").unwrap();
         let theme = PageTheme { bg: "#000".into(), fg: "#fff".into(), accent: "#7aa2f7".into(), card: "#222".into(), dim: "#888".into() };
-        let Ok(share) = start(&[file.clone()], dir.clone(), theme, Vec::new()) else { return }; // no LAN in some sandboxes
+        let Ok(share) = start(&[file.clone()], dir.clone(), theme, Vec::new(), None) else { return }; // no LAN in some sandboxes
         let url = share.url.replace(&lan_ip().unwrap(), "127.0.0.1") + "dl/0/hello%20world.txt";
         let mut body = Vec::new();
         for _ in 0..20 {

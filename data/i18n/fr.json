@@ -354,6 +354,7 @@
   "Icon theme": "Thème d'icônes",
   "Icons": "Icônes",
   "Identical": "Identiques",
+  "If the phone cannot open the page, the firewall is blocking port {port}: sudo ufw allow {port}/tcp": "Si le téléphone ne peut pas ouvrir la page, le pare-feu bloque le port {port} : sudo ufw allow {port}/tcp",
   "Image": "Image",
   "Image: Convert to JPEG": "Image : convertir en JPEG",
   "Image: Convert to PNG": "Image : convertir en PNG",

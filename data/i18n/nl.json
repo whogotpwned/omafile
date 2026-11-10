@@ -354,6 +354,7 @@
   "Icon theme": "Pictogramthema",
   "Icons": "Pictogrammen",
   "Identical": "Identiek",
+  "If the phone cannot open the page, the firewall is blocking port {port}: sudo ufw allow {port}/tcp": "Als de telefoon de pagina niet kan openen, blokkeert de firewall poort {port}: sudo ufw allow {port}/tcp",
   "Image": "Afbeelding",
   "Image: Convert to JPEG": "Afbeelding: converteren naar JPEG",
   "Image: Convert to PNG": "Afbeelding: converteren naar PNG",

@@ -354,6 +354,7 @@
   "Icon theme": "Icon theme",
   "Icons": "Icons",
   "Identical": "Identical",
+  "If the phone cannot open the page, the firewall is blocking port {port}: sudo ufw allow {port}/tcp": "If the phone cannot open the page, the firewall is blocking port {port}: sudo ufw allow {port}/tcp",
   "Image": "Image",
   "Image: Convert to JPEG": "Image: Convert to JPEG",
   "Image: Convert to PNG": "Image: Convert to PNG",

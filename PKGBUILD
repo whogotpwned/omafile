@@ -1,6 +1,6 @@
 # Maintainer: whogotpwned
 pkgname=omafile
-pkgver=0.17.0
+pkgver=0.17.1
 pkgrel=1
 pkgdesc="Native GTK4/libadwaita file manager that follows the Omarchy theme"
 arch=('x86_64' 'aarch64')
@@ -8,27 +8,37 @@ url="https://github.com/whogotpwned/omafile"
 license=('MIT')
 depends=('gtk4' 'libadwaita' 'vte4' 'glib2' 'hicolor-icon-theme')
 optdepends=(
-  'gvfs: trash, removable drives and SFTP servers'
+  'gvfs: trash, removable drives, SFTP servers, archive browsing'
+  'gvfs-afc: iPhone and iPad over USB'
+  'libimobiledevice: iPhone and iPad over USB'
+  'gvfs-mtp: Android phones over USB'
   'gocryptfs: encrypted folders'
-  'git: status badges in repositories'
-  'poppler: PDF thumbnails and previews'
+  'git: status badges, stage, commit, branches'
+  'diffutils: compare files and folders'
+  'poppler: PDF thumbnails, previews, page turning, merge and split'
   'fd: fast recursive search'
-  'libarchive: extract and create archives'
-  'imagemagick: rotate, convert and resize images from the context menu'
+  'ripgrep: full-text search'
+  'bat: syntax highlighting in previews'
+  'jq: formatted JSON in previews'
+  'libarchive: archives, eBook covers and metadata (bsdtar)'
+  'imagemagick: rotate, convert and resize images, font specimens, HEIC import'
+  'libheif: HEIC to JPEG when importing iPhone photos'
   'ffmpegthumbnailer: video thumbnails'
-  'ffmpeg: audio cover thumbnails, video thumbnails without ffmpegthumbnailer'
+  'ffmpeg: cover art, video tools, media facts'
   'gst-plugins-good: play MP3, FLAC, Ogg and common video in the preview'
   'gst-plugins-bad: more video codecs for the preview player'
   'gst-libav: H.264 / AAC playback in the preview'
+  'webp-pixbuf-loader: animated WebP in the preview'
   'qrencode: QR code for "Share on Local Network"'
-  'python: serves "Share on Local Network" (http.server)'
+  'calibre: convert eBooks, eBook viewer'
+  'foliate: eBook reader'
   'docker: container volumes in the sidebar (or podman)'
   'uv: fast Python venv creation and installs from the Python menu'
   'xdg-desktop-portal-hyprland: "Open With" chooser'
-  'alacritty: terminal for "Open Terminal Here"'
-  'uwsm: launch the terminal as a proper session app'
+  'uwsm: launch terminals and readers as session apps'
 )
 makedepends=('cargo')
+checkdepends=('curl')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
@@ -61,6 +71,8 @@ package() {
   install -Dm644 data/hyprland-bindings.conf "$pkgdir/usr/share/omafile/hyprland-bindings.conf"
   install -Dm644 manifest.json "$pkgdir/usr/share/omafile/plugin/manifest.json"
   install -Dm644 plugin/BarWidget.qml "$pkgdir/usr/share/omafile/plugin/plugin/BarWidget.qml"
+  install -Dm644 -t "$pkgdir/usr/share/omafile/plugin/plugin/i18n" plugin/i18n/*.json
+  install -Dm644 CHANGELOG.md "$pkgdir/usr/share/doc/$pkgname/CHANGELOG.md"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

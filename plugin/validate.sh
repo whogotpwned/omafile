@@ -35,4 +35,8 @@ v=$(jq -r .version "$m")
 [ "$(sed -n 's/^pkgver=//p' "$dir/PKGBUILD")" = "$v" ] || fail "PKGBUILD pkgver differs from manifest ($v)"
 [ "$(sed -n 's/^## \([0-9][^ ]*\).*/\1/p' "$dir/CHANGELOG.md" | head -1)" = "$v" ] || fail "CHANGELOG.md newest entry is not $v"
 grep -q "version-$v-" "$dir/README.md" || fail "README version badge is not $v"
-echo "version: $v (Cargo.toml, PKGBUILD, CHANGELOG.md, README agree)"
+if [ -d "$dir/packaging/aur" ]; then
+  [ "$(sed -n 's/^pkgver=//p' "$dir/packaging/aur/omafile-bin/PKGBUILD")" = "$v" ] || fail "packaging/aur/omafile-bin/PKGBUILD pkgver differs from manifest ($v)"
+  cmp -s "$dir/PKGBUILD" "$dir/packaging/aur/omafile/PKGBUILD" || fail "PKGBUILD and packaging/aur/omafile/PKGBUILD differ (copy the root one)"
+fi
+echo "version: $v (Cargo.toml, PKGBUILD, AUR packages, CHANGELOG.md, README agree)"

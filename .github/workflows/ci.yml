@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test, lint (Arch)
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: System packages
+        run: |
+          pacman -Syu --noconfirm --needed rust gtk4 libadwaita vte4 pkgconf git jq curl python \
+            desktop-file-utils libarchive xorg-server-xvfb xorg-xauth dbus ttf-dejavu
+
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: arch-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: arch-cargo-
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Test
+        run: cargo test --release --locked
+
+      - name: Clippy
+        run: cargo clippy --release --locked -- -D warnings
+
+      - name: Translations
+        run: python scripts/check-i18n.py
+
+      - name: Plugin manifest and versions
+        run: bash plugin/validate.sh
+
+      - name: Desktop entry
+        run: desktop-file-validate data/io.github.whogotpwned.Omafile.desktop
+
+      - name: Starts under Xvfb
+        run: |
+          export HOME="$RUNNER_TEMP/home" XDG_RUNTIME_DIR="$RUNNER_TEMP/run" GDK_BACKEND=x11 GSK_RENDERER=cairo GTK_A11Y=none OMAFILE_TRACE=1
+          mkdir -p "$HOME" "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+          target/release/omafile --version
+          target/release/omafile --print-bindings | head -3
+          xvfb-run -a dbus-run-session -- bash -c 'target/release/omafile "$HOME" > "$RUNNER_TEMP/run.log" 2>&1 & pid=$!; sleep 6; kill $pid; wait $pid 2>/dev/null; true'
+          head -20 "$RUNNER_TEMP/run.log"
+          if grep -q "CRITICAL" "$RUNNER_TEMP/run.log"; then echo "::warning::GTK criticals in the smoke run (see log)"; fi
+          if grep -q "panicked" "$RUNNER_TEMP/run.log"; then echo "::error::omafile panicked on start"; exit 1; fi
+
+      - name: Release tarball
+        run: scripts/make-dist.sh --no-build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omafile-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  package:
+    name: makepkg (source PKGBUILD)
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: System packages
+        run: pacman -Syu --noconfirm --needed rust gtk4 libadwaita vte4 git curl namcap
+
+      - uses: actions/checkout@v4
+
+      - name: Build the package from this checkout
+        run: |
+          useradd -m builder
+          version="$(sed -n 's/^pkgver=//p' PKGBUILD)"
+          work=/home/builder/pkg
+          mkdir -p "$work"
+          # Same PKGBUILD as the AUR one, with the source pointed at this commit.
+          git config --global --add safe.directory "$PWD"
+          git archive --format=tar.gz --prefix="omafile-$version/" -o "$work/omafile-$version.tar.gz" HEAD
+          sed "s|^source=.*|source=(\"omafile-$version.tar.gz\")|" PKGBUILD > "$work/PKGBUILD"
+          chown -R builder "$work"
+          su builder -c "cd $work && makepkg --noconfirm --skipchecksums -f"
+          pacman -U --noconfirm "$work"/omafile-*.pkg.tar.zst
+          omafile --version
+          namcap "$work"/omafile-*.pkg.tar.zst || true
+
+      - name: .SRCINFO is in sync
+        run: |
+          for pkg in omafile omafile-bin; do
+            cp -r "packaging/aur/$pkg" "/home/builder/$pkg" && chown -R builder "/home/builder/$pkg"
+            su builder -c "cd /home/builder/$pkg && makepkg --printsrcinfo > .SRCINFO.new"
+            diff -u "packaging/aur/$pkg/.SRCINFO" "/home/builder/$pkg/.SRCINFO.new" || echo "::warning::packaging/aur/$pkg/.SRCINFO differs from makepkg --printsrcinfo: run packaging/aur/gen-srcinfo.sh on Arch before publishing"
+          done
+          diff -u PKGBUILD packaging/aur/omafile/PKGBUILD || { echo "::error::PKGBUILD and packaging/aur/omafile/PKGBUILD differ"; exit 1; }

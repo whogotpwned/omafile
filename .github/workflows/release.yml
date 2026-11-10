@@ -1,0 +1,75 @@
+name: Release
+
+# Push a tag vX.Y.Z (matching Cargo.toml) to build the release tarball and
+# publish a GitHub Release with the matching CHANGELOG section.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v0.17.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: System packages
+        run: pacman -Syu --noconfirm --needed rust gtk4 libadwaita vte4 pkgconf git jq curl python github-cli
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Tag matches the version files
+        run: |
+          version="${TAG#v}"
+          [ "$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" = "$version" ] || { echo "::error::Cargo.toml is not at $version"; exit 1; }
+          bash plugin/validate.sh
+          grep -q "^## $version " CHANGELOG.md || { echo "::error::CHANGELOG.md has no entry for $version"; exit 1; }
+
+      - name: Build and test
+        run: |
+          cargo build --release --locked
+          cargo test --release --locked
+          python scripts/check-i18n.py
+
+      - name: Tarball
+        run: |
+          git config --global --add safe.directory "$PWD"
+          scripts/make-dist.sh --no-build
+
+      - name: Release notes from the changelog
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '$0 ~ "^## " v " " {on=1; next} on && /^## [0-9]/ {exit} on {print}' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "### Install"
+            echo
+            echo '```sh'
+            echo "yay -S omafile-bin        # prebuilt, once the AUR package is published"
+            echo "yay -S omafile            # from source"
+            echo '```'
+            echo
+            echo "Or unpack \`omafile-$version-x86_64.tar.gz\` into \`/usr/local\` (or \`~/.local\`). Needs \`gtk4 libadwaita vte4\`."
+          } >> notes.md
+          cat notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" dist/* --title "omafile ${TAG#v}" --notes-file notes.md
+          fi

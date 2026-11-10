@@ -10,12 +10,13 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.17.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.17.1-f7768e)](CHANGELOG.md)
+[![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-66%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-67%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-pdf.png" alt="omafile in Tokyo Night: grid view with image and PDF thumbnails and the preview pane" width="900">
@@ -85,7 +86,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![rules](docs/screenshot-rules.png) | **Folder rules** (`Ctrl+Alt+R`), Hazel style: for the folder on show, "name matches *.pdf, older than 7 days → move to ~/Documents/Invoices", "*.iso → red tag", "*.tmp → trash", "screenshots → sort into YYYY-MM folders", or "run a command with $FILE". Each rule has a switch; *Run Now* applies them at once. Rules run when omafile starts and a few seconds after something lands in a watched folder; moves, copies, tags and trashing go into the undo journal. Stored in `~/.config/omafile/rules`. |
 | ![duplicates](docs/screenshot-duplicates.png) | **Find duplicates** (`Ctrl+Alt+F`): files below the folder with the same size and SHA-256, grouped with the wasted space. One copy per group stays unticked (*keep the oldest / newest / shortest path*), *Move Ticked to Trash* removes the rest in one undoable step. Only size collisions are hashed, so large trees scan quickly. |
 | ![devices](docs/screenshot-devices.png) | **Plug it in, it is there**: USB sticks, SD cards, external disks and iPhones appear under *Devices* the moment they are plugged in, are mounted on their own (Preferences › *Mount drives and phones when plugged in*) and get a toast with *Open*. A drive that is not mounted yet shows a + and mounts on click. The eject button on the row (or the context menu) ejects removable media so it is safe to pull; unplugging removes the entry, moves tabs that were inside back home and says so in a toast. Through GVFS, so SMB, SFTP and MTP mounts behave the same. |
-| ![nearby](docs/screenshot-nearby.png) | **iPhone & iPad, three ways.** **Nearby** (`Ctrl+Alt+P`): omafile speaks the LocalSend protocol, so with the free LocalSend app on the phone (Settings › Encryption off) the iPhone appears under *iPhone & iPad* in the sidebar; drop files on it to send them, and files sent from the phone arrive after an *Accept* prompt in `~/Downloads` (or any folder you pick), with a *Show* button on the toast. **USB**: with `gvfs-afc` the phone mounts like a drive; *Import Photos* copies the camera roll into `Pictures/iPhone/YYYY-MM`, converts HEIC to JPEG (libheif or ImageMagick), skips what was imported before, undoable; also `omafile --import-photos` and the bar menu. **No app at all**: *Share on Local Network* now serves a phone-friendly page with the selection to download **and** a drop zone / picker that sends photos straight into the folder on show; scan the QR code with the camera. |
+| ![nearby](docs/screenshot-nearby.png) | **iPhone & iPad, three ways.** **Nearby** (`Ctrl+Alt+P`): omafile speaks the LocalSend protocol, so with the free LocalSend app on the phone (Settings › Encryption off) the iPhone appears under *iPhone & iPad* in the sidebar; drop files on it to send them, and files sent from the phone arrive after an *Accept* prompt in `~/Downloads` (or any folder you pick), with a *Show* button on the toast. **USB**: with `gvfs-afc` the phone mounts like a drive; *Import Photos* copies the camera roll into `Pictures/iPhone/YYYY-MM`, converts HEIC to JPEG (libheif or ImageMagick), skips what was imported before, undoable; also `omafile --import-photos` and the bar menu. **No app at all**: *Share on Local Network* now serves a phone-friendly page with the selection to download **and** a drop zone / picker that sends photos straight into the folder on show; scan the QR code with the camera. Omarchy's firewall lets only port 53317 in (it is opened for LocalSend), so omafile listens there and serves the share page on the same port under a private path; nothing has to be opened by hand. |
 | ![ebooks](docs/screenshot-ebook.png) | **eBooks**: EPUB, comic archives (CBZ / CBR) and FictionBook show their **cover** in list, grid and preview, the preview and Properties list title, author, series, publisher, year, language, ISBN and chapter count, and the page turner pages from the cover into the **chapters** (text) or comic pages (`↑` `↓` in Quick Look). Context menu › *eBook*: *Open in Reader* (foliate, Calibre viewer, KOReader, Okular), *Rename from Metadata* (`Author - Title (Series 1).epub`, undoable), *Send to eReader* (Kindle `documents/`, Kobo, Tolino, PocketBook… when plugged in) and *Convert to* EPUB / MOBI / AZW3 / PDF with Calibre's `ebook-convert`. Covers go through the shared thumbnail cache; everything is read with `bsdtar`, no Calibre needed for reading. |
 | ![pdf pages](docs/screenshot-pdf-pages.png) | **Multi-page documents**: a `‹ 2 / 3 ›` turner appears under the page in the preview pane and in Quick Look. Pages render on demand through poppler at the pane's resolution, so flipping through a long PDF never blocks the list. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs** (`Ctrl+T`), **split view** (`F6`) with two sets of tabs and their own histories, drag files across sides or between a local and a remote tab. **Sessions** bring tabs, split, open terminal panels and window size back on the next start. |
@@ -268,7 +269,9 @@ o.rebind("SUPER + SHIFT + F", "File manager", { launch = "omafile" })
 o.rebind("SUPER + ALT + SHIFT + F", "File manager (cwd)", "setsid uwsm-app -- omafile \"$(omarchy-cmd-terminal-cwd)\"")
 ```
 
-Older releases get the same lines in `bindings.conf`. `--default` or `--bind` for only one of the two, nothing for just the binary. Arch package: `makepkg -si` (pacman then installs `vte4` for you), remove with `sudo pacman -Rns omafile`.
+Older releases get the same lines in `bindings.conf`. `--default` or `--bind` for only one of the two, nothing for just the binary.
+
+**Packages.** Tagged releases carry a prebuilt tarball on the [Releases](https://github.com/whogotpwned/omafile/releases) page, and two AUR packages are prepared in `packaging/aur/`: `omafile-bin` (that tarball) and `omafile` (builds from the tag). Once they are published, `yay -S omafile-bin` is the whole installation; until then `makepkg -si` in the repository root does the same from source (pacman installs `vte4` for you), remove with `sudo pacman -Rns omafile`. How a release is cut: [docs/RELEASING.md](docs/RELEASING.md).
 
 ### Uninstall
 
@@ -376,9 +379,9 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 <details>
 <summary>Release checklist and the rules the shell enforces</summary>
 
-1. Bump `version` in `Cargo.toml`, `PKGBUILD` and `manifest.json` together.
-2. `cargo test`, `cargo clippy`, `omarchy plugin validate .` (mirrored in `plugin/validate.sh` for machines without Omarchy).
-3. Commit, tag `vX.Y.Z`, push. `omarchy plugin update` fast-forwards users to the default branch, so keep it releasable.
+1. `scripts/bump-version.sh X.Y.Z` sets the version in `Cargo.toml`, the PKGBUILDs, `manifest.json` and the README, and opens a changelog entry.
+2. `cargo test`, `cargo clippy`, `python scripts/check-i18n.py`, `omarchy plugin validate .` (mirrored in `plugin/validate.sh` for machines without Omarchy). CI runs the same on every push.
+3. Commit, tag `vX.Y.Z`, push: the Release workflow builds the tarball and publishes the GitHub Release; `packaging/aur/update.sh` and `publish.sh` update the AUR. Details in [docs/RELEASING.md](docs/RELEASING.md); the real-machine pass is [docs/acceptance-checklist.md](docs/acceptance-checklist.md). `omarchy plugin update` fast-forwards users to the default branch, so keep it releasable.
 4. Submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org). GitHub topics: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`.
 
 | Rule | Here |
@@ -461,11 +464,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.17.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.17.1** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 66 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 67 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

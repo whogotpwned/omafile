@@ -86,6 +86,9 @@ pub struct Node {
     events: Mutex<Sender<Event>>,
     stop: Arc<AtomicBool>,
     server: Mutex<Option<httpd::Server>>,
+    /// Another handler served under a path prefix on the same port (the share
+    /// page): Omarchy's firewall only lets 53317 in, so everything rides on it.
+    mounted: Mutex<Option<(String, Arc<httpd::Handler>)>>,
 }
 
 impl Node {
@@ -160,6 +163,18 @@ impl Node {
         }
     }
 
+    /// Serve `handler` for every path below `prefix` (e.g. `/s/ab12`).
+    pub fn mount(&self, prefix: &str, handler: Arc<httpd::Handler>) {
+        *self.mounted.lock().unwrap() = Some((prefix.trim_end_matches('/').to_string(), handler));
+    }
+
+    pub fn unmount(&self, prefix: &str) {
+        let mut m = self.mounted.lock().unwrap();
+        if m.as_ref().map(|(p, _)| p == prefix.trim_end_matches('/')).unwrap_or(false) {
+            *m = None;
+        }
+    }
+
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
         self.server.lock().unwrap().take();
@@ -200,6 +215,7 @@ pub fn start(alias: String, dest: PathBuf) -> Result<(Arc<Node>, Receiver<Event>
         events: Mutex::new(tx),
         stop: stop.clone(),
         server: Mutex::new(None),
+        mounted: Mutex::new(None),
     });
     let weak = Arc::downgrade(&node);
     let handler: Arc<httpd::Handler> = Arc::new(move |req: &Request, body: &mut dyn Read| match weak.upgrade() {
@@ -249,6 +265,13 @@ fn listen_udp(node: Arc<Node>) {
 }
 
 fn handle(node: &Arc<Node>, req: &Request, body: &mut dyn Read) -> Response {
+    let mounted = node.mounted.lock().unwrap().clone();
+    if let Some((prefix, handler)) = mounted {
+        if let Some(rest) = req.path.strip_prefix(&prefix).filter(|r| r.is_empty() || r.starts_with('/')) {
+            let inner = Request { method: req.method.clone(), path: if rest.is_empty() { "/".to_string() } else { rest.to_string() }, query: req.query.clone(), headers: req.headers.clone(), content_length: req.content_length, peer: req.peer.clone() };
+            return handler(&inner, body);
+        }
+    }
     let path = req.path.trim_end_matches('/');
     match (req.method.as_str(), path) {
         ("GET", p) if p == format!("{API}/info") || p == "/api/localsend/v1/info" => Response::json(200, &node.info(false)),

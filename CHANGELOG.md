@@ -2,6 +2,16 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.17.1 — 2026-11-10
+
+### Fixed
+- *Share on Local Network* is served on the LocalSend port 53317 under a private path, the only port Omarchy's firewall lets in; on a random port the page was unreachable from a phone. A standalone port is still used when nearby devices are off, with the `ufw` command in the dialog.
+
+### Changed
+- Release tooling: GitHub Actions CI (build, test, clippy, catalogs, manifest, `makepkg`) and a tag-driven Release workflow with a prebuilt tarball; AUR packages `omafile` and `omafile-bin` under `packaging/aur/` with update and publish scripts; `scripts/bump-version.sh`, `scripts/make-dist.sh`, `scripts/check-i18n.py`; `docs/RELEASING.md` and a real-machine `docs/acceptance-checklist.md`.
+- PKGBUILD: optional dependencies brought up to date (gvfs-afc, libimobiledevice, libheif, ripgrep, bat, jq, calibre, foliate, …), python dropped (the share page is served natively), plugin catalogs and changelog installed.
+- Removed a stray `requirements.txt` (a Python test fixture that had slipped into the repository).
+
 ## 0.17.0 — 2026-11-10
 
 ### Added

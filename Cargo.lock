@@ -460,7 +460,7 @@ dependencies = [
 
 [[package]]
 name = "omafile"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "futures-channel",
  "futures-util",
