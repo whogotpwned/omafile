@@ -108,6 +108,7 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Developer", "", "Context menu › Python", "Create venv (uv), install requirements, freeze, REPL, .gitignore, recreate"),
     ("Developer", "", "Run in venv", "Context menu on a .py file: runs it with the venv's interpreter"),
     ("Developer", "", "Context menu › New Encrypted Folder", "gocryptfs vault; Unlock, Lock, Change Password on the folder"),
+    ("Developer", "", "Sidebar › Vaults", "Encrypted folders with their own master password: Add Vault… creates or lists one, a click shows the padlock and asks for the password, the lock button closes it"),
     ("Remote", "connect", "", "Connect to a server (SFTP, SMB, …)"),
     ("Remote", "", "Sidebar › Remote", "Hosts from ~/.ssh/config; right click to disconnect"),
     ("Tools", "treemap", "", "Disk usage map of this folder: click zooms, double click opens, right click trashes"),

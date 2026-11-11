@@ -1228,13 +1228,6 @@ impl Window {
         }
     }
 
-    /// Like `show_now_playing`, but silent when the feature is off.
-    pub fn show_now_playing_quiet(self: &Rc<Self>, show: bool) {
-        if self.now_playing.borrow().is_some() {
-            self.show_now_playing(show);
-        }
-    }
-
     pub fn toggle_now_playing(self: &Rc<Self>) {
         let showing = self.content_stack.visible_child_name().as_deref() == Some("nowplaying");
         self.show_now_playing(!showing);

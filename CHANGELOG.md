@@ -2,6 +2,17 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.19.0 — 2026-11-11
+
+### Added
+- **Vaults in the sidebar**: any number of encrypted folders (gocryptfs), each with its own master password, under a *Vaults* section. *Add Vault…* creates one (name, place, password) or lists an existing one. A locked vault shows a page with a large animated padlock and the password field instead of the files: a wrong password shakes it, the right one swings the shackle open and the files take its place. Unlocked vaults carry a green open padlock and a lock button; context menu with Unlock / Lock, Change Password, Show Encrypted Data, Remove from Sidebar. The list lives in `~/.config/omafile/vaults` and holds no secrets.
+- *New Encrypted Folder…* can put the vault anywhere (*Choose…*) and lists it in the sidebar; *Show in Sidebar under Vaults* in the context menu does the same for older ones. *Unlock Encrypted Folder…* now opens the padlock page.
+
+### Changed
+- **Icons and thumbnails are all the same size.** Every cell has a tile of fixed size (4:3 in the grid, square in list and columns): photos, videos, album art and folder previews fill it, pages, book covers and vector graphics are shown whole on a faint card, small originals are not blown up. In the list the names line up again; before, a landscape photo pushed its name to the right.
+- Files cannot be dropped on a locked vault in the sidebar (its folder is an ordinary, unencrypted one while locked).
+- An unlocked vault no longer appears under *Devices* and no longer raises the "is ready" toast meant for drives.
+
 ## 0.18.3 — 2026-11-11
 
 ### Fixed

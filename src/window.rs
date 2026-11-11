@@ -26,6 +26,12 @@ pub struct Clipboard {
     pub cut: bool,
 }
 
+/// Whether a mount is an unlocked vault (a gocryptfs folder next to its ciphertext).
+fn is_vault_mount(mount: &gio::Mount) -> bool {
+    mount.root().path().map(|p| crate::crypt::vault_for(&p).is_some()).unwrap_or(false)
+}
+
+#[derive(Clone)]
 pub enum Place {
     Header(String),
     Entry { name: String, icon: String, file: gio::File, kind: PlaceKind },
@@ -44,6 +50,8 @@ pub enum PlaceKind {
     Nearby(String),
     /// A drive or phone that is plugged in but not mounted yet.
     Volume(gio::Volume),
+    /// An encrypted folder listed under Vaults (its ciphertext folder).
+    Vault(std::path::PathBuf),
 }
 
 pub struct WinState {
@@ -85,6 +93,7 @@ pub struct Window {
     pub np_header_slot: gtk::Box,
     pub np_sidebar_slot: gtk::Box,
     pub now_playing: RefCell<Option<Rc<crate::nowplaying::NowPlaying>>>,
+    pub vault_page: RefCell<Option<Rc<crate::vaults::VaultPage>>>,
     pub sidebar_menu: gtk::PopoverMenu,
     pub back_btn: gtk::Button,
     pub forward_btn: gtk::Button,
@@ -308,6 +317,7 @@ impl Window {
             np_header_slot,
             np_sidebar_slot,
             now_playing: RefCell::new(None),
+            vault_page: RefCell::new(None),
             sidebar_menu,
             back_btn,
             forward_btn,
@@ -756,7 +766,7 @@ impl Window {
 
     pub fn navigate(self: &Rc<Self>, file: gio::File) {
         // Going somewhere means looking at files again.
-        self.show_now_playing_quiet(false);
+        self.show_files();
         if let Some(pane) = self.active_pane() {
             pane.navigate(file, true);
         }
@@ -1003,6 +1013,7 @@ impl Window {
                     }
                     PlaceKind::Nearby(_) => w.open_nearby(),
                     PlaceKind::Volume(v) => w.mount_volume(&v, true),
+                    PlaceKind::Vault(v) => w.open_vault(&v),
                     _ => w.navigate(file),
                 }
             }
@@ -1022,6 +1033,10 @@ impl Window {
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_eject() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Eject", "win.sidebar-unmount")]),
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_unmount() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Unmount", "win.sidebar-unmount")]),
                     Some(Place::Entry { kind: PlaceKind::Volume(_), .. }) => menu_of(&[("Mount", "win.sidebar-mount")]),
+                    Some(Place::Entry { file, kind: PlaceKind::Vault(_), .. }) if file.path().map(|m| crate::crypt::is_mounted(&m)).unwrap_or(false) => {
+                        menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Lock", "win.sidebar-vault-lock"), ("Change Password…", "win.sidebar-vault-passwd"), ("Show Encrypted Data", "win.sidebar-vault-reveal"), ("Remove from Sidebar", "win.sidebar-vault-forget")])
+                    }
+                    Some(Place::Entry { kind: PlaceKind::Vault(_), .. }) => menu_of(&[("Unlock…", "win.sidebar-vault-open"), ("Change Password…", "win.sidebar-vault-passwd"), ("Show Encrypted Data", "win.sidebar-vault-reveal"), ("Remove from Sidebar", "win.sidebar-vault-forget")]),
                     Some(Place::Entry { .. }) => menu_of(&[("Open in New Tab", "win.sidebar-new-tab")]),
                     _ => return,
                 }
@@ -1055,7 +1070,7 @@ impl Window {
                             spring2.borrow_mut().take();
                             let Some(w) = this2.upgrade() else { return };
                             let file = match w.state.borrow().places.get(i as usize) {
-                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => Some(file.clone()),
+                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_)) => Some(file.clone()),
                                 _ => None,
                             };
                             if let Some(f) = file {
@@ -1090,8 +1105,17 @@ impl Window {
                 w.nearby_send(&fp, list.files());
                 return true;
             }
-            let dest = match w.state.borrow().places.get(row.index() as usize) {
-                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file.clone(),
+            let place = w.state.borrow().places.get(row.index() as usize).cloned();
+            let dest = match place {
+                // Into a vault only while it is unlocked: its folder is an ordinary, unencrypted one while locked.
+                Some(Place::Entry { file, kind: PlaceKind::Vault(_), .. }) => {
+                    if !file.path().map(|m| crate::crypt::is_mounted(&m)).unwrap_or(false) {
+                        w.toast_error(&tr("Unlock the vault first"));
+                        return false;
+                    }
+                    file
+                }
+                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file,
                 _ => return false,
             };
             if let Some(p) = w.active_pane() {
@@ -1126,7 +1150,8 @@ impl Window {
             let Some(w) = this.upgrade() else { return };
             w.refresh_sidebar();
             crate::status::write(&w);
-            if mount.is_shadowed() {
+            // An unlocked vault has its own row and its own way in: no "is ready" toast for it.
+            if mount.is_shadowed() || is_vault_mount(mount) {
                 return;
             }
             let name = mount.name().to_string();
@@ -1237,6 +1262,18 @@ impl Window {
             }
         }
 
+        // Vaults: encrypted folders, each with its own master password.
+        let vaults = crate::vaults::list();
+        if !vaults.is_empty() || crate::crypt::available() {
+            places.push(Place::Header(tr("Vaults")));
+            for vault in vaults {
+                let mount = crate::crypt::mount_point_for(&vault);
+                let open = crate::crypt::is_mounted(&mount);
+                places.push(Place::Entry { name: crate::vaults::display_name(&vault), icon: if open { "changes-allow-symbolic" } else { "changes-prevent-symbolic" }.into(), file: gio::File::for_path(mount), kind: PlaceKind::Vault(vault) });
+            }
+            places.push(Place::Action { name: tr("Add Vault…"), icon: "list-add-symbolic".into(), action: "vault-add" });
+        }
+
         let used = self.tags.colors_in_use();
         if !used.is_empty() {
             places.push(Place::Header(tr("Tags")));
@@ -1286,7 +1323,8 @@ impl Window {
                 .ok()
                 .and_then(|i| i.names().first().map(|n| n.to_string()))
                 .unwrap_or_else(|| "drive-removable-media-symbolic".into());
-            if phones.iter().any(|(_, root)| root.equal(&mount.root())) {
+            // Phones and unlocked vaults have their own sections.
+            if phones.iter().any(|(_, root)| root.equal(&mount.root())) || is_vault_mount(&mount) {
                 continue;
             }
             places.push(Place::Entry { name: mount.name().to_string(), icon, file: mount.default_location(), kind: PlaceKind::Mount(mount) });
@@ -1352,6 +1390,26 @@ impl Window {
                                 }
                             });
                             hbox.append(&eject);
+                        }
+                    }
+                    if let PlaceKind::Vault(vault) = kind {
+                        if icon == "changes-allow-symbolic" {
+                            // Unlocked: the open padlock is tinted and a button locks it again.
+                            if let Some(image) = hbox.first_child() {
+                                image.add_css_class("omafile-vault-open");
+                            }
+                            let lock = gtk::Button::builder().icon_name("changes-prevent-symbolic").tooltip_text(tr("Lock")).valign(gtk::Align::Center).build();
+                            lock.add_css_class("flat");
+                            lock.add_css_class("circular");
+                            lock.add_css_class("omafile-sidebar-eject");
+                            let this = Rc::downgrade(self);
+                            let vault = vault.clone();
+                            lock.connect_clicked(move |_| {
+                                if let Some(w) = this.upgrade() {
+                                    w.lock_vault(vault.clone());
+                                }
+                            });
+                            hbox.append(&lock);
                         }
                     }
                     if let PlaceKind::Volume(_) = kind {
@@ -1537,7 +1595,7 @@ impl Window {
                     PlaceKind::Tag(_) => continue,
                     PlaceKind::Smart(_) => (tr("Smart folder"), PaletteTarget::Action(format!("smart-open::{name}"))),
                     PlaceKind::Bookmark => (tr("Bookmark"), PaletteTarget::Folder(file.clone())),
-                    PlaceKind::Nearby(_) | PlaceKind::Volume(_) => continue,
+                    PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_) => continue,
                     PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
                 };
@@ -2098,6 +2156,7 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     }
     if vault != VaultState::None {
         open.append(Some(tr("Change Vault Password…").as_str()), Some("win.vault-passwd"));
+        open.append(Some(tr("Show in Sidebar under Vaults").as_str()), Some("win.vault-register"));
     }
     if archive {
         open.append(Some(tr("Extract Here").as_str()), Some("win.extract"));

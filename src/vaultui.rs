@@ -5,6 +5,7 @@ use crate::crypt;
 use crate::window::Window;
 use adw::prelude::*;
 use gtk::{gio, glib};
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -13,7 +14,7 @@ fn password_row(title: &str) -> gtk::PasswordEntry {
 }
 
 impl Window {
-    fn require_gocryptfs(&self) -> bool {
+    pub(crate) fn require_gocryptfs(&self) -> bool {
         if crypt::available() {
             true
         } else {
@@ -22,15 +23,22 @@ impl Window {
         }
     }
 
+    /// Context menu › New Encrypted Folder: a vault in the folder on show.
     pub fn vault_new(self: &Rc<Self>) {
-        if !self.require_gocryptfs() {
-            return;
-        }
-        let Some(pane) = self.active_pane() else { return };
-        let Some(dir) = pane.cwd().path() else {
+        let Some(dir) = self.active_pane().and_then(|p| p.cwd().path()) else {
             self.toast_error(&tr("Encrypted folders can only be created on local file systems"));
             return;
         };
+        self.vault_create_dialog(dir, false);
+    }
+
+    /// Ask for a name, a place and a master password, create the vault, list it in the
+    /// sidebar and open it. `from_sidebar`: the dialog was opened from "Add Vault…".
+    pub fn vault_create_dialog(self: &Rc<Self>, dir: PathBuf, from_sidebar: bool) {
+        if !self.require_gocryptfs() {
+            return;
+        }
+        let dir = Rc::new(RefCell::new(dir));
         let name = gtk::Entry::builder().placeholder_text(tr("Folder name")).text(tr("Private")).activates_default(true).build();
         let pass = password_row(&tr("Password"));
         let confirm = password_row(&tr("Repeat password"));
@@ -51,13 +59,38 @@ impl Window {
             .xalign(0.0)
             .css_classes(["omafile-dim", "caption"])
             .build();
+        // Where it goes: next to the files on show, ~/Vaults from the sidebar, or anywhere else.
+        let place = gtk::Label::builder().label(crate::window::abbreviate_home(&dir.borrow())).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::Middle).css_classes(["omafile-dim"]).build();
+        let choose = gtk::Button::builder().label(tr("Choose…")).build();
+        choose.add_css_class("flat");
+        let location = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        location.append(&gtk::Image::from_icon_name("folder-symbolic"));
+        location.append(&place);
+        location.append(&choose);
+        {
+            let (dir, place, this) = (dir.clone(), place.clone(), Rc::downgrade(self));
+            choose.connect_clicked(move |_| {
+                let Some(w) = this.upgrade() else { return };
+                let chooser = gtk::FileDialog::builder().title(tr("Where to keep the vault")).modal(true).build();
+                let current = dir.borrow().clone();
+                chooser.set_initial_folder(Some(&gio::File::for_path(if current.is_dir() { current } else { glib::home_dir() })));
+                let (dir, place) = (dir.clone(), place.clone());
+                chooser.select_folder(Some(&w.window), gio::Cancellable::NONE, move |result| {
+                    if let Some(picked) = result.ok().and_then(|f| f.path()) {
+                        place.set_text(&crate::window::abbreviate_home(&picked));
+                        dir.replace(picked);
+                    }
+                });
+            });
+        }
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 8);
         vbox.append(&name);
+        vbox.append(&location);
         vbox.append(&pass);
         vbox.append(&confirm);
         vbox.append(&strength);
         vbox.append(&hint);
-        let dialog = adw::AlertDialog::new(Some(tr("New Encrypted Folder").as_str()), None);
+        let dialog = adw::AlertDialog::new(Some(if from_sidebar { tr("New Vault") } else { tr("New Encrypted Folder") }.as_str()), None);
         dialog.set_extra_child(Some(&vbox));
         dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("create", tr("Create").as_str())]);
         dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
@@ -92,6 +125,11 @@ impl Window {
                 w.toast_error(&tr("The passwords do not match"));
                 return;
             }
+            let dir = dir.borrow().clone();
+            if std::fs::create_dir_all(&dir).is_err() {
+                w.toast_error(&tr("Cannot create a folder there"));
+                return;
+            }
             let vault = dir.join(format!("{name}{}", crypt::SUFFIX));
             if vault.exists() || dir.join(&name).exists() {
                 w.toast_error(&tr("A folder with that name exists already"));
@@ -103,13 +141,22 @@ impl Window {
                 let Some(w) = this.upgrade() else { return };
                 match result {
                     Ok(key) => {
-                        // Unlock right away so the folder is ready to use.
+                        // Unlock right away so the folder is ready to use, and give it its place in the sidebar.
                         let mount = crypt::unlock(&vault, &p1).await;
+                        crate::vaults::add(&vault);
                         crate::status::write(&w);
-                        pane.reload();
+                        w.refresh_sidebar();
                         w.show_master_key(&name, &key);
-                        if let Ok(m) = mount {
-                            pane.select_file_later(gio::File::for_path(m));
+                        let Some(pane) = w.active_pane() else { return };
+                        let here = pane.cwd().path().map(|p| p == dir).unwrap_or(false);
+                        match mount {
+                            // Made next to the files on show: stay and point at it. Made elsewhere: go inside.
+                            Ok(m) if here => {
+                                pane.reload();
+                                pane.select_file_later(gio::File::for_path(m));
+                            }
+                            Ok(m) => w.navigate(gio::File::for_path(m)),
+                            Err(_) => pane.reload(),
                         }
                     }
                     Err(e) => w.toast_error(&format!("Cannot create encrypted folder: {}", e.message())),
@@ -161,84 +208,45 @@ impl Window {
         }
     }
 
+    /// Context menu › Unlock: the padlock page for the selected vault.
     pub fn vault_unlock(self: &Rc<Self>) {
         if !self.require_gocryptfs() {
             return;
         }
-        let Some(pane) = self.active_pane() else { return };
-        let Some(vault) = self.selected_vault() else { return };
-        let pass = password_row("Password");
-        let dialog = adw::AlertDialog::new(Some(tr("Unlock Encrypted Folder").as_str()), Some(&format!("Enter the password for {}", crate::window::abbreviate_home(&vault))));
-        dialog.set_extra_child(Some(&pass));
-        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("unlock", tr("Unlock").as_str())]);
-        dialog.set_response_appearance("unlock", adw::ResponseAppearance::Suggested);
-        dialog.set_default_response(Some("unlock"));
-        dialog.set_close_response("cancel");
-        let this = Rc::downgrade(self);
-        dialog.connect_closed({
-            let this = this.clone();
-            move |_| {
-                if let Some(w) = this.upgrade() {
-                    w.refocus();
-                }
-            }
-        });
-        let pass_entry = pass.clone();
-        dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
-            let Some(w) = this.upgrade() else { return };
-            if response != "unlock" {
-                return;
-            }
-            let password = pass_entry.text().to_string();
-            let this = Rc::downgrade(&w);
-            glib::spawn_future_local(async move {
-                let result = crypt::unlock(&vault, &password).await;
-                let Some(w) = this.upgrade() else { return };
-                match result {
-                    Ok(mount) => {
-                        crate::status::write(&w);
-                        w.toast(&tr("Unlocked"));
-                        pane.navigate(gio::File::for_path(mount), true);
-                    }
-                    Err(e) => w.toast_error(&format!("Cannot unlock: {}", e.message())),
-                }
-            });
-        });
-        pass.grab_focus();
+        if let Some(vault) = self.selected_vault() {
+            self.open_vault(&vault);
+        }
     }
 
     pub fn vault_lock(self: &Rc<Self>) {
-        let Some(pane) = self.active_pane() else { return };
-        let Some(vault) = self.selected_vault().or_else(|| pane.cwd().path().and_then(|p| crypt::vault_for(&p))) else { return };
-        let mount = crypt::mount_point_for(&vault);
-        let inside = pane.cwd().path().map(|p| p.starts_with(&mount)).unwrap_or(false);
-        let this = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            if inside {
-                // Leave the mount first, a busy mount cannot be unmounted.
-                if let Some(parent) = mount.parent() {
-                    pane.navigate(gio::File::for_path(parent), true);
-                }
-                glib::timeout_future(std::time::Duration::from_millis(300)).await;
-            }
-            let result = crypt::lock(&mount).await;
-            let Some(w) = this.upgrade() else { return };
-            match result {
-                Ok(()) => {
-                    crate::status::write(&w);
-                    w.toast(&tr("Locked"));
-                    pane.reload();
-                }
-                Err(e) => w.toast_error(&format!("Cannot lock (still in use?): {}", e.message())),
-            }
-        });
+        let vault = self.selected_vault().or_else(|| self.active_pane().and_then(|p| p.cwd().path()).and_then(|p| crypt::vault_for(&p)));
+        if let Some(vault) = vault {
+            self.lock_vault(vault);
+        }
     }
 
     pub fn vault_passwd(self: &Rc<Self>) {
+        if let Some(vault) = self.selected_vault() {
+            self.vault_passwd_for(vault);
+        }
+    }
+
+    /// Context menu › Show in Sidebar: list the selected vault under Vaults.
+    pub fn vault_register_selected(self: &Rc<Self>) {
+        if let Some(vault) = self.selected_vault() {
+            if crate::vaults::add(&vault) {
+                self.refresh_sidebar();
+                self.toast(&tr("Added to Vaults in the sidebar"));
+            } else {
+                self.toast(&tr("This vault is in the sidebar already"));
+            }
+        }
+    }
+
+    pub fn vault_passwd_for(self: &Rc<Self>, vault: PathBuf) {
         if !self.require_gocryptfs() {
             return;
         }
-        let Some(vault) = self.selected_vault() else { return };
         let old = password_row(&tr("Current password"));
         let new = password_row(&tr("New password"));
         let again = password_row(&tr("Repeat new password"));

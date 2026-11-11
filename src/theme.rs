@@ -387,6 +387,26 @@ pub fn css(p: &Palette) -> String {
 .omafile-grid-item .omafile-thumb {{
   border-radius: 8px;
 }}
+.omafile-thumb-page {{
+  background-color: alpha(currentColor, 0.06);
+}}
+.omafile-vault-page {{
+  background-color: {view_bg};
+}}
+.omafile-vault-title {{
+  font-size: 22pt;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}}
+.omafile-vault-entry {{
+  min-height: 38px;
+  border-radius: 999px;
+  padding-left: 14px;
+  padding-right: 8px;
+}}
+.omafile-vault-open {{
+  color: {green};
+}}
 .omafile-pathbar {{
   background-color: {hover};
   border-radius: 999px;

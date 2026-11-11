@@ -82,6 +82,7 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("image-to-jpg", "Image: Convert to JPEG", "image-x-generic-symbolic"),
     ("image-to-webp", "Image: Convert to WebP", "image-x-generic-symbolic"),
     ("vault-lock-all", "Lock All Encrypted Folders", "changes-prevent-symbolic"),
+    ("vault-add", "Add Vault (encrypted folder in the sidebar)", "changes-prevent-symbolic"),
     ("new-folder-with-selection", "New Folder with Selection", "folder-new-symbolic"),
     ("make-alias", "Make Alias (symbolic link)", "insert-link-symbolic"),
     ("show-original", "Show Original of Alias", "go-jump-symbolic"),
@@ -450,6 +451,7 @@ impl Window {
         simple("vault-lock-all", Box::new(|w| {
             let n = crate::status::lock_all();
             crate::status::write(w);
+            w.refresh_sidebar();
             if let Some(p) = w.active_pane() {
                 p.reload();
             }
@@ -515,6 +517,33 @@ impl Window {
         simple("vault-unlock", Box::new(|w| w.vault_unlock()));
         simple("vault-lock", Box::new(|w| w.vault_lock()));
         simple("vault-passwd", Box::new(|w| w.vault_passwd()));
+        simple("vault-register", Box::new(|w| w.vault_register_selected()));
+        simple("vault-add", Box::new(|w| w.vault_add()));
+        simple("sidebar-vault-open", Box::new(|w| {
+            if let Some((_, PlaceKind::Vault(v))) = w.sidebar_target_place() {
+                w.open_vault(&v);
+            }
+        }));
+        simple("sidebar-vault-lock", Box::new(|w| {
+            if let Some((_, PlaceKind::Vault(v))) = w.sidebar_target_place() {
+                w.lock_vault(v);
+            }
+        }));
+        simple("sidebar-vault-passwd", Box::new(|w| {
+            if let Some((_, PlaceKind::Vault(v))) = w.sidebar_target_place() {
+                w.vault_passwd_for(v);
+            }
+        }));
+        simple("sidebar-vault-reveal", Box::new(|w| {
+            if let Some((_, PlaceKind::Vault(v))) = w.sidebar_target_place() {
+                w.navigate(gio::File::for_path(v));
+            }
+        }));
+        simple("sidebar-vault-forget", Box::new(|w| {
+            if let Some((_, PlaceKind::Vault(v))) = w.sidebar_target_place() {
+                w.vault_forget(&v);
+            }
+        }));
         simple("undo", Box::new(|w| if !w.forward_to_editable("text.undo") { w.undo() }));
         simple("redo", Box::new(|w| if !w.forward_to_editable("text.redo") { w.redo() }));
         simple("copy-to", Box::new(|w| w.transfer_to(false)));

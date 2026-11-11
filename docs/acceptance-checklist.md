@@ -109,3 +109,11 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 11.3 Spotify or mpv next to the browser: the chooser at the top switches between them; seeking, volume, shuffle and repeat work where the player supports them.
 - [ ] 11.4 Quit the player: mini player and header button disappear, the view says *Nothing is playing*.
 - [ ] 11.5 `pavucontrol` › Recording shows omafile only while the Now Playing view is open.
+
+## 12. Vaults
+
+- [ ] 12.1 Sidebar › Add Vault… › Create New…: after name and password the master key is shown once, the vault appears under Vaults and opens.
+- [ ] 12.2 Lock it with the button in its row, click it again: the padlock page appears; a wrong password shakes the padlock, the right one opens it and shows the files.
+- [ ] 12.3 A vault on a USB stick: unplugged, its page says *Not found*; plugged in again it unlocks as usual.
+- [ ] 12.4 Reboot with a vault unlocked: it is locked afterwards (nothing is mounted automatically, no password is stored).
+- [ ] 12.5 Grid and list in a mixed folder (photos, PDFs, eBooks, archives): every icon and thumbnail has the same size.

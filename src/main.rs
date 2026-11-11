@@ -46,6 +46,7 @@ mod thumbs;
 mod transfer;
 mod trashauto;
 mod undo;
+mod vaults;
 mod vaultui;
 mod views;
 mod vimkeys;

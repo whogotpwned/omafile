@@ -10,16 +10,16 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.18.3-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.19.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-74%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-78%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
-<img src="docs/screenshot-hero.png" alt="Two omafile windows in Tokyo Night. Front left: grid view with thumbnails for photos, a GIF, a video, eBook covers, a PDF and a song, the preview pane, an iPhone under iPhone & iPad in the sidebar and the mini player at its bottom. Right: the Now Playing view with cover, live spectrum and transport controls." width="900">
+<img src="docs/screenshot-hero.png" alt="Two omafile windows in Tokyo Night. Front left: grid view with thumbnails for photos, a GIF, a video, eBook covers, a PDF and a song, the preview pane, an unlocked and a locked vault and an iPhone in the sidebar and the mini player at its bottom. Right: the Now Playing view with cover, live spectrum and transport controls." width="900">
 
 <sub>Two omafile windows, captured separately and arranged on a wallpaper. More in motion: <a href="docs/nowplaying.gif">Now Playing as a GIF</a>.</sub>
 
@@ -74,7 +74,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 
 | | |
 |---|---|
-| ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, rubber-band and multi-selection, live reload when a folder changes. **Hidden files** toggle with the eye button or `Ctrl+H`; hidden items are dimmed, italic and greyed, the status line counts them while hidden. **Zoom** the grid with `Ctrl+Plus` / `Ctrl+Minus` / `Ctrl+scroll`, `Ctrl+0` resets. |
+| ![list](docs/screenshot-list.png) | **List and grid views** with sortable columns, rubber-band and multi-selection, live reload when a folder changes. **Hidden files** toggle with the eye button or `Ctrl+H`; hidden items are dimmed, italic and greyed, the status line counts them while hidden. **Zoom** the grid with `Ctrl+Plus` / `Ctrl+Minus` / `Ctrl+scroll`, `Ctrl+0` resets. Every icon and thumbnail sits in a tile of the same size: photos, videos and album art fill it, pages and book covers are shown whole on a faint card, so rows and columns line up whatever the folder holds. ![grid](docs/screenshot-grid.png) |
 | ![columns](docs/screenshot-columns.png) | **Column view** (`Ctrl+3`), Finder's Miller columns: every folder on the way from home is a column, the last one is the live folder, a selected file opens a preview column at the end. `←` and `→` move between columns, `Enter` opens. |
 | ![gallery](docs/screenshot-gallery.png) | **Gallery view** (`Ctrl+4`): a large preview with a filmstrip of thumbnails underneath, metadata beneath the picture. The header button cycles list → grid → columns → gallery. |
 | ![groups](docs/screenshot-groups.png) | **Groups** (menu › Group By): sections by kind (Folders, Images, PDF documents, eBooks, Documents, Code and config, Music, Videos, Archives), by date (Today, Yesterday, Previous 7 days…), by size or by tag, each with its count; the choice is remembered. |
@@ -142,6 +142,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | | |
 |---|---|
 | ![vault](docs/screenshot-vault.png) | **Encrypted folders** with gocryptfs: *New Encrypted Folder…* creates `Name.gocryptfs` (ciphertext) next to `Name` (plaintext while unlocked). Unlock, lock, change password from the context menu; the password only travels through a pipe; the master key is shown once. The `.gocryptfs` folder is the thing to back up or sync. Details [below](#encrypted-folders-in-detail). |
+| ![vault page](docs/screenshot-vault-locked.png) | **Vaults in the sidebar**: any number of encrypted folders, each with its own master password, listed under *Vaults*. *Add Vault…* creates a new one (name, place, password; `~/Vaults` unless you choose another folder, a USB stick works too) or lists one that exists already. A click on a locked vault puts a **large padlock** where the files would be and asks for the master password: a wrong one makes it shake its head, the right one swings the shackle open and the files appear. Unlocked vaults show a green open padlock and a button that locks them again; tabs inside step out first. Right click: change password, show the encrypted data, remove from the sidebar (the data stays). Files cannot be dropped on a locked vault. No password or key is stored, only the list of folders. ![unlocking](docs/vault.gif) |
 | ![secrets](docs/screenshot-secrets.png) | **Secrets protection**: `.env`, `id_rsa`, `*.pem`, `*.key`, `*.p12`, `*.kdbx`, `credentials.json`, `.netrc`, `.npmrc`, `kubeconfig`, … get a key badge, a masked preview and a confirmation before they are copied. `.env.example` and `*.pub` are exempt. |
 | ![share](docs/screenshot-share.png) | **Share** on your terms: *Copy scp Command*, or *Share on Local Network…* serves exactly the selection over HTTP from a scratch folder of links with a QR code, until you close the dialog. |
 
@@ -407,6 +408,7 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 ## Encrypted folders in detail
 
 - **Format.** gocryptfs: AES-256-GCM per file, encrypted file names (EME), scrypt-derived keys. `Name.gocryptfs` holds only ciphertext plus `gocryptfs.conf` (the wrapped master key).
+- **Vaults in the sidebar.** The list is `~/.config/omafile/vaults`, one ciphertext folder per line; it holds no password and no key. Every vault made with omafile is added to it, others through *Add Vault… › Add Existing…* or *Show in Sidebar under Vaults* in the context menu. Unlocking through the padlock page, the context menu or `gocryptfs` on the command line all end in the same mount, and the sidebar follows.
 - **Migration and backup.** Copy or sync `Name.gocryptfs` with any tool (rsync, USB, cloud folder, `scp`). Elsewhere, put it next to an empty `Name` folder and use *Unlock Encrypted Folder…*, or `gocryptfs Name.gocryptfs Name`. Changing the password rewraps the master key, so copies made before still open with the old one. The master key shown once at creation opens the folder without a password; keep it in a password manager.
 - **Handling.** Unlocking mounts for your user only (FUSE, no root). Lock from the menu or the bar button, or it stays unlocked until logout. The password is piped to gocryptfs, never written to disk or a command line.
 - **Scope.** Local file systems only.
@@ -447,6 +449,7 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
 | `~/.config/omafile/rules` | Folder rules: folder, glob, older-than-days, action, argument, enabled |
 | `~/.config/omafile/views` | Remembered view per folder: uri, view, sort, order, group, grid |
+| `~/.config/omafile/vaults` | Vaults listed in the sidebar: one encrypted folder (`Name.gocryptfs`) per line, no secrets |
 | `~/.cache/thumbnails/` | freedesktop thumbnail cache, shared with other apps |
 | `~/.local/state/omafile/shelf` | Files currently on the shelf, one URI per line |
 | `~/.local/state/omafile/iphone-imported` | Photos already imported from a device (name and size) |
@@ -469,11 +472,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.18.3** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.19.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 74 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 78 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

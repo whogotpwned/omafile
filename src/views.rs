@@ -352,7 +352,7 @@ impl GalleryView {
         let weak = Rc::downgrade(pane);
         factory.connect_setup(move |_, obj| {
             let li = obj.downcast_ref::<gtk::ListItem>().unwrap();
-            let thumb = crate::pane::make_thumb(56, weak.clone());
+            let thumb = crate::pane::make_thumb(56, false, weak.clone());
             let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
             frame.add_css_class("omafile-strip-item");
             frame.set_size_request(72, 72);

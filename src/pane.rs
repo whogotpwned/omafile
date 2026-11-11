@@ -271,7 +271,7 @@ impl Pane {
         name_factory.connect_setup(move |_, obj| {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-            let thumb = make_thumb(ICON_LIST, this.clone());
+            let thumb = make_thumb(ICON_LIST, false, this.clone());
             let label = gtk::Label::builder().xalign(0.0).ellipsize(pango::EllipsizeMode::Middle).hexpand(true).build();
             hbox.append(&thumb);
             hbox.append(&label);
@@ -461,9 +461,9 @@ impl Pane {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let size = this.upgrade().map(|p| p.grid_size.get()).unwrap_or(ICON_GRID);
             let vbox = gtk::Box::new(gtk::Orientation::Vertical, 8);
-            vbox.set_width_request(size + 40);
+            vbox.set_width_request((size + 40).max(tile_width(size, true) + 16));
             vbox.add_css_class("omafile-grid-item");
-            let thumb = make_thumb(size, this.clone());
+            let thumb = make_thumb(size, true, this.clone());
             let label = gtk::Label::builder()
                 .justify(gtk::Justification::Center)
                 .wrap(true)
@@ -494,7 +494,7 @@ impl Pane {
             let label = caption.first_child().and_downcast::<gtk::Label>().unwrap();
             let dot = caption.last_child().and_downcast::<gtk::Box>().unwrap();
             if let Some(p) = this.upgrade() {
-                bind_thumb(&p.thumbs, &thumb, &item, p.grid_size.get(), p.thumbnails_enabled());
+                bind_thumb(&p.thumbs, &thumb, &item, tile_width(p.grid_size.get(), true), p.thumbnails_enabled());
                 bind_tag_dot(&dot, p.tag_of(&item));
             }
             label.set_text(&item.display_label());
@@ -2037,8 +2037,18 @@ impl Drop for Pane {
 
 /// Icon-or-thumbnail widget used in both views.
 /// Icon / thumbnail stack with a play badge over media files, as Finder shows it.
-pub fn make_thumb(size: i32, pane: Weak<Pane>) -> gtk::Overlay {
-    let stack = make_thumb_stack(size);
+/// Width of the box every icon and thumbnail is shown in: a square in lists, 4:3 in the grid.
+/// Its height is always `size`.
+pub fn tile_width(size: i32, wide: bool) -> i32 {
+    if wide {
+        size * 4 / 3
+    } else {
+        size
+    }
+}
+
+pub fn make_thumb(size: i32, wide: bool, pane: Weak<Pane>) -> gtk::Overlay {
+    let stack = make_thumb_stack(size, wide);
     let overlay = gtk::Overlay::new();
     overlay.set_child(Some(&stack));
     let play = gtk::Button::from_icon_name("media-playback-start-symbolic");
@@ -2077,7 +2087,10 @@ pub fn make_thumb(size: i32, pane: Weak<Pane>) -> gtk::Overlay {
     overlay
 }
 
-fn make_thumb_stack(size: i32) -> gtk::Stack {
+/// Icon and thumbnail of a cell. Both occupy the same tile, whatever the file is: a picture
+/// left to its natural size makes photos, pages, covers and icons all come out differently.
+fn make_thumb_stack(size: i32, wide: bool) -> gtk::Stack {
+    let width = tile_width(size, wide);
     let stack = gtk::Stack::new();
     stack.set_transition_type(gtk::StackTransitionType::Crossfade);
     stack.set_transition_duration(crate::motion::FAST);
@@ -2085,21 +2098,46 @@ fn make_thumb_stack(size: i32) -> gtk::Stack {
     stack.set_vhomogeneous(true);
     let image = gtk::Image::new();
     image.set_pixel_size(size);
+    image.set_size_request(width, size);
     let picture = gtk::Picture::new();
-    picture.set_content_fit(gtk::ContentFit::Contain);
-    picture.set_size_request(size, size);
+    picture.set_content_fit(gtk::ContentFit::Cover);
     picture.set_can_shrink(true);
+    picture.set_overflow(gtk::Overflow::Hidden);
     picture.add_css_class("omafile-thumb");
+    // A fixed box decides the size; the picture lies over it and fills or fits it.
+    let sizer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    sizer.set_size_request(width, size);
+    let tile = gtk::Overlay::new();
+    tile.set_child(Some(&sizer));
+    tile.add_overlay(&picture);
     stack.add_named(&image, Some("icon"));
-    stack.add_named(&picture, Some("thumb"));
+    stack.add_named(&tile, Some("thumb"));
     // Switch to the thumbnail whenever one arrives, back to the icon when cleared.
     let stack2 = stack.clone();
     picture.connect_paintable_notify(move |p| {
+        if let Some(paintable) = p.paintable() {
+            // Small originals (an icon, an emoji) are not blown up to fill the tile.
+            let small = paintable.intrinsic_width().max(paintable.intrinsic_height()) < size;
+            p.set_content_fit(if small {
+                gtk::ContentFit::ScaleDown
+            } else if p.has_css_class("omafile-thumb-page") {
+                gtk::ContentFit::Contain
+            } else {
+                gtk::ContentFit::Cover
+            });
+        }
         stack2.set_visible_child_name(if p.paintable().is_some() { "thumb" } else { "icon" });
     });
     stack.set_valign(gtk::Align::Center);
     stack.set_halign(gtk::Align::Center);
     stack
+}
+
+/// Photos, videos, album art and folder previews fill their tile (cropped); pages, covers of
+/// books and vector graphics are shown whole on a faint card of the same size.
+fn fills_tile(item: &FileItem) -> bool {
+    let vector = item.content_type().map(|ct| ct.contains("svg") || ct.contains("icon")).unwrap_or(false);
+    item.is_dir() || item.is_video() || item.is_audio() || (item.is_image() && !vector)
 }
 
 pub fn bind_thumb(thumbs: &Rc<ThumbCache>, overlay: &gtk::Overlay, item: &FileItem, size: i32, enabled: bool) {
@@ -2109,7 +2147,12 @@ pub fn bind_thumb(thumbs: &Rc<ThumbCache>, overlay: &gtk::Overlay, item: &FileIt
         play.set_visible(item.is_media());
     }
     let image = stack.child_by_name("icon").and_downcast::<gtk::Image>().unwrap();
-    let picture = stack.child_by_name("thumb").and_downcast::<gtk::Picture>().unwrap();
+    let picture = stack.child_by_name("thumb").and_then(|tile| tile.last_child()).and_downcast::<gtk::Picture>().unwrap();
+    if fills_tile(item) {
+        picture.remove_css_class("omafile-thumb-page");
+    } else {
+        picture.add_css_class("omafile-thumb-page");
+    }
     match item.icon() {
         Some(icon) => image.set_from_gicon(&icon),
         None => image.set_icon_name(Some("text-x-generic")),
