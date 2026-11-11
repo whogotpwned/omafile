@@ -253,7 +253,6 @@ impl Window {
         sidebar.add_top_bar(&sidebar_header);
         sidebar.set_content(Some(&sidebar_scroll));
         let np_sidebar_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        np_sidebar_slot.set_visible(false);
         sidebar.add_bottom_bar(&np_sidebar_slot);
         let sidebar_menu = gtk::PopoverMenu::from_model(None::<&gio::MenuModel>);
         sidebar_menu.set_has_arrow(false);

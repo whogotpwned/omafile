@@ -2,6 +2,12 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.18.2 — 2026-11-11
+
+### Changed
+- Now Playing arrives and leaves in motion: the mini player slides up from the bottom of the sidebar while it fades in and glows once in the accent colour, the equalizer button slides into the header; both slide and fade away when the player quits. The small cover cross-fades between tracks and nods with the bass, a new title fades in, play / pause answers with a bounce, the progress line moves continuously, and the mini player has its own live equalizer. The parts of the full view fade in one after the other when it opens.
+- The mini player's tooltip sits on the cover and title only; over the whole card it covered the buttons.
+
 ## 0.18.1 — 2026-11-11
 
 ### Changed

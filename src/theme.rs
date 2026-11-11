@@ -635,9 +635,45 @@ toast {{
   background-color: alpha(currentColor, 0.06);
   border: 1px solid alpha(currentColor, 0.08);
 }}
-.omafile-np-mini-cover {{
-  border-radius: 8px;
+.omafile-np-mini {{
+  transition: background-color 220ms ease, border-color 220ms ease;
+}}
+.omafile-np-mini:hover {{
   background-color: alpha(currentColor, 0.10);
+  border-color: alpha({accent}, 0.45);
+}}
+@keyframes omafile-np-arrive {{
+  0% {{ background-color: alpha({accent}, 0.34); border-color: alpha({accent}, 0.95); box-shadow: 0 0 0 0 alpha({accent}, 0.0); }}
+  35% {{ background-color: alpha({accent}, 0.20); border-color: alpha({accent}, 0.80); box-shadow: 0 0 9px 1px alpha({accent}, 0.55); }}
+  100% {{ background-color: alpha(currentColor, 0.06); border-color: alpha(currentColor, 0.08); box-shadow: 0 0 0 0 alpha({accent}, 0.0); }}
+}}
+.omafile-np-arrive {{
+  animation: omafile-np-arrive 1400ms ease-out 1;
+}}
+@keyframes omafile-np-pop-a {{
+  0% {{ transform: scale(0.70); }}
+  55% {{ transform: scale(1.14); }}
+  100% {{ transform: scale(1.0); }}
+}}
+@keyframes omafile-np-pop-b {{
+  0% {{ transform: scale(0.70); }}
+  55% {{ transform: scale(1.14); }}
+  100% {{ transform: scale(1.0); }}
+}}
+.omafile-np-pop-a {{
+  animation: omafile-np-pop-a 340ms ease-out 1;
+}}
+.omafile-np-pop-b {{
+  animation: omafile-np-pop-b 340ms ease-out 1;
+}}
+.omafile-np-mini button {{
+  transition: transform 150ms cubic-bezier(0.2, 0.9, 0.3, 1.4), background-color 150ms ease;
+}}
+.omafile-np-mini button:hover {{
+  transform: scale(1.14);
+}}
+.omafile-np-mini button:active {{
+  transform: scale(0.90);
 }}
 .omafile-np-mini-title {{
   font-weight: 700;

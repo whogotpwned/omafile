@@ -24,6 +24,7 @@ struct Page {
     backdrops: [gtk::Picture; 2],
     art: gtk::DrawingArea,
     vis: gtk::DrawingArea,
+    column: gtk::Box,
     title: gtk::Label,
     subtitle: gtk::Label,
     source: gtk::Label,
@@ -50,9 +51,19 @@ pub struct NowPlaying {
     window: Weak<Window>,
     mpris: RefCell<Option<Rc<Mpris>>>,
     header_btn: gtk::Button,
+    header_reveal: gtk::Revealer,
     header_eq: gtk::DrawingArea,
     mini: gtk::Revealer,
-    mini_cover: gtk::Picture,
+    mini_card: gtk::Box,
+    mini_cover: gtk::DrawingArea,
+    mini_eq: gtk::DrawingArea,
+    /// The small cover and the one it fades from.
+    mini_surface: RefCell<Option<gtk::cairo::ImageSurface>>,
+    old_mini_surface: RefCell<Option<gtk::cairo::ImageSurface>>,
+    /// Whether a player is on show, to animate arrival and departure once.
+    shown: Cell<bool>,
+    was_playing: Cell<Option<bool>>,
+    pop_flip: Cell<bool>,
     mini_title: gtk::Label,
     mini_artist: gtk::Label,
     mini_play: gtk::Button,
@@ -177,6 +188,38 @@ fn square(pixbuf: &Pixbuf, size: i32) -> Pixbuf {
     cropped.scale_simple(size, size, gtk::gdk_pixbuf::InterpType::Bilinear).unwrap_or(cropped)
 }
 
+/// The stand-in for a missing cover: a square in the accent colour with a note drawn by hand
+/// (two heads, two stems, a beam).
+fn paint_note(cr: &gtk::cairo::Context, x: f64, y: f64, size: f64, accent: (f64, f64, f64), alpha: f64) {
+    let (ar, ag, ab) = accent;
+    let gradient = gtk::cairo::LinearGradient::new(x, y, x + size, y + size);
+    gradient.add_color_stop_rgba(0.0, ar, ag, ab, alpha);
+    gradient.add_color_stop_rgba(1.0, ar * 0.35, ag * 0.35, ab * 0.55, alpha);
+    cr.rectangle(x, y, size, size);
+    let _ = cr.set_source(&gradient);
+    let _ = cr.fill();
+    let u = size / 10.0;
+    cr.set_source_rgba(1.0, 1.0, 1.0, 0.85 * alpha);
+    for hx in [3.6, 6.6] {
+        let _ = cr.save();
+        cr.translate(x + hx * u, y + (if hx < 5.0 { 6.9 } else { 6.3 }) * u);
+        cr.rotate(-0.35);
+        cr.scale(0.95 * u, 0.7 * u);
+        cr.arc(0.0, 0.0, 1.0, 0.0, 2.0 * std::f64::consts::PI);
+        let _ = cr.restore();
+        let _ = cr.fill();
+    }
+    cr.rectangle(x + 4.2 * u, y + 3.3 * u, 0.32 * u, 3.5 * u);
+    cr.rectangle(x + 7.2 * u, y + 2.7 * u, 0.32 * u, 3.5 * u);
+    let _ = cr.fill();
+    cr.move_to(x + 4.2 * u, y + 3.3 * u);
+    cr.line_to(x + 7.52 * u, y + 2.7 * u);
+    cr.line_to(x + 7.52 * u, y + 3.6 * u);
+    cr.line_to(x + 4.2 * u, y + 4.2 * u);
+    cr.close_path();
+    let _ = cr.fill();
+}
+
 /// A pixbuf as a cairo surface, converted once.
 fn surface_of(pixbuf: &Pixbuf) -> Option<gtk::cairo::ImageSurface> {
     let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, pixbuf.width(), pixbuf.height()).ok()?;
@@ -204,25 +247,24 @@ impl NowPlaying {
         let header_eq = gtk::DrawingArea::new();
         header_eq.set_content_width(20);
         header_eq.set_content_height(16);
-        let header_btn = gtk::Button::builder().child(&header_eq).tooltip_text(tr("Now Playing (F8)")).action_name("win.now-playing").visible(false).build();
+        let header_btn = gtk::Button::builder().child(&header_eq).tooltip_text(tr("Now Playing (F8)")).action_name("win.now-playing").build();
         header_btn.add_css_class("flat");
         header_btn.add_css_class("omafile-np-header");
-        window.np_header_slot.append(&header_btn);
+        // The button slides in from the right when a player appears and out again when it leaves.
+        let header_reveal = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(360).child(&header_btn).reveal_child(false).build();
+        window.np_header_slot.append(&header_reveal);
 
         // Sidebar: the mini player.
-        let mini_cover = gtk::Picture::new();
-        mini_cover.set_size_request(42, 42);
-        mini_cover.set_content_fit(gtk::ContentFit::Cover);
-        mini_cover.set_can_shrink(true);
-        mini_cover.add_css_class("omafile-np-mini-cover");
-        // A note shows through while a track has no cover.
-        let cover_frame = gtk::Overlay::new();
-        cover_frame.set_overflow(gtk::Overflow::Hidden);
-        cover_frame.add_css_class("omafile-np-mini-cover");
-        cover_frame.set_size_request(42, 42);
-        cover_frame.set_valign(gtk::Align::Center);
-        cover_frame.set_child(Some(&gtk::Image::builder().icon_name("audio-x-generic-symbolic").pixel_size(20).opacity(0.6).build()));
-        cover_frame.add_overlay(&mini_cover);
+        // The cover is drawn by hand: it cross-fades between tracks and nods along with the bass.
+        let mini_cover = gtk::DrawingArea::new();
+        mini_cover.set_content_width(48);
+        mini_cover.set_content_height(48);
+        mini_cover.set_valign(gtk::Align::Center);
+        let mini_eq = gtk::DrawingArea::new();
+        mini_eq.set_content_width(16);
+        mini_eq.set_content_height(14);
+        mini_eq.set_valign(gtk::Align::Center);
+        mini_eq.set_margin_end(2);
         let mini_title = gtk::Label::builder().xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).css_classes(["omafile-np-mini-title"]).build();
         let mini_artist = gtk::Label::builder().xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).css_classes(["omafile-dim", "caption"]).build();
         let labels = gtk::Box::new(gtk::Orientation::Vertical, 1);
@@ -230,9 +272,10 @@ impl NowPlaying {
         labels.set_valign(gtk::Align::Center);
         labels.append(&mini_title);
         labels.append(&mini_artist);
-        let top = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        top.append(&cover_frame);
+        let top = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        top.append(&mini_cover);
         top.append(&labels);
+        top.append(&mini_eq);
         let mini_prev = icon_button("media-skip-backward-symbolic", &tr("Previous"), &["flat", "circular"]);
         let mini_play = icon_button("media-playback-start-symbolic", &tr("Play / Pause"), &["circular", "omafile-np-mini-play"]);
         let mini_next = icon_button("media-skip-forward-symbolic", &tr("Next"), &["flat", "circular"]);
@@ -248,8 +291,9 @@ impl NowPlaying {
         card.append(&top);
         card.append(&mini_progress);
         card.append(&buttons);
-        card.set_tooltip_text(Some(&tr("Open Now Playing (F8)")));
-        let mini = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideUp).transition_duration(crate::motion::PANEL).child(&card).reveal_child(false).build();
+        // Only on the cover and title: over the whole card the tooltip would cover the buttons.
+        top.set_tooltip_text(Some(&tr("Open Now Playing (F8)")));
+        let mini = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideUp).transition_duration(460).child(&card).reveal_child(false).build();
         window.np_sidebar_slot.append(&mini);
 
         let now = Instant::now();
@@ -257,9 +301,17 @@ impl NowPlaying {
             window: Rc::downgrade(window),
             mpris: RefCell::new(None),
             header_btn,
+            header_reveal,
             header_eq,
             mini,
+            mini_card: card.clone(),
             mini_cover,
+            mini_eq,
+            mini_surface: RefCell::new(None),
+            old_mini_surface: RefCell::new(None),
+            shown: Cell::new(false),
+            was_playing: Cell::new(None),
+            pop_flip: Cell::new(false),
             mini_title,
             mini_artist,
             mini_play,
@@ -308,10 +360,18 @@ impl NowPlaying {
         let weak = Rc::downgrade(&this);
         this.mini_next.connect_clicked(move |_| { if let Some(n) = weak.upgrade() { n.with_mpris(|m| m.next()); } });
 
+        for eq in [&this.header_eq, &this.mini_eq] {
+            let weak = Rc::downgrade(&this);
+            eq.set_draw_func(move |area, cr, w, h| {
+                if let Some(n) = weak.upgrade() {
+                    n.draw_header_eq(area, cr, w as f64, h as f64);
+                }
+            });
+        }
         let weak = Rc::downgrade(&this);
-        this.header_eq.set_draw_func(move |area, cr, w, h| {
+        this.mini_cover.set_draw_func(move |_, cr, w, h| {
             if let Some(n) = weak.upgrade() {
-                n.draw_header_eq(area, cr, w as f64, h as f64);
+                n.draw_mini_cover(cr, w as f64, h as f64);
             }
         });
         this.ensure_tick();
@@ -358,18 +418,34 @@ impl NowPlaying {
         let players = self.players();
         let active = self.active();
         let any = !players.is_empty();
-        self.header_btn.set_visible(any);
+        self.header_reveal.set_reveal_child(any);
         self.mini.set_reveal_child(any);
-        if let Some(w) = self.window.upgrade() {
-            // The slot keeps no height while empty.
-            w.np_sidebar_slot.set_visible(any || self.mini.is_child_revealed());
+        if any != self.shown.replace(any) {
+            self.arrive_or_leave(any);
         }
         let playing = active.as_ref().map(|p| p.status == Status::Playing).unwrap_or(false);
         let play_icon = if playing { "media-playback-pause-symbolic" } else { "media-playback-start-symbolic" };
         self.mini_play.set_icon_name(play_icon);
+        // Play ↔ pause: the buttons answer with a little bounce.
+        let toggled = any && self.was_playing.replace(Some(playing)).map(|was| was != playing).unwrap_or(false);
+        if toggled {
+            self.pop(&self.mini_play);
+            if let Some(page) = self.page.borrow().as_ref() {
+                self.pop(&page.play);
+            }
+            self.pop_flip.set(!self.pop_flip.get());
+        }
         if let Some(p) = &active {
-            self.mini_title.set_text(&p.display_title());
-            self.mini_artist.set_text(&if p.artist.is_empty() { p.identity.clone() } else { p.artist.clone() });
+            let artist = if p.artist.is_empty() { p.identity.clone() } else { p.artist.clone() };
+            if self.mini_title.text() != p.display_title() || self.mini_artist.text() != artist {
+                self.mini_title.set_text(&p.display_title());
+                self.mini_artist.set_text(&artist);
+                // A new track fades its name in (not on arrival: the whole card fades then).
+                if self.mini.is_child_revealed() {
+                    crate::motion::property(&self.mini_title, "opacity", 0.0, 1.0, 420, None);
+                    crate::motion::property(&self.mini_artist, "opacity", 0.0, 1.0, 620, None);
+                }
+            }
             self.mini_prev.set_sensitive(p.can_previous);
             self.mini_next.set_sensitive(p.can_next);
             self.header_btn.set_tooltip_text(Some(&format!("{}  ·  {}", p.display_title(), tr("Now Playing (F8)"))));
@@ -461,10 +537,16 @@ impl NowPlaying {
         match &pixbuf {
             Some(p) => {
                 self.tint.set(dominant_color(p));
-                self.mini_cover.set_paintable(Some(&gdk::Texture::for_pixbuf(&square(p, 96))));
+                let small = surface_of(&square(p, 96));
+                if let Some(s) = &small {
+                    s.set_device_scale(2.0, 2.0); // 96 pixels shown as 48
+                }
+                let old = self.mini_surface.replace(small);
+                self.old_mini_surface.replace(old);
             }
             None => {
-                self.mini_cover.set_paintable(None::<&gdk::Paintable>);
+                let old = self.mini_surface.replace(None);
+                self.old_mini_surface.replace(old);
                 if let Some(w) = self.window.upgrade() {
                     let a = w.theme.palette().accent;
                     self.tint.set((a.0 as f64 / 255.0, a.1 as f64 / 255.0, a.2 as f64 / 255.0));
@@ -473,6 +555,65 @@ impl NowPlaying {
         }
         self.cover.replace(pixbuf);
         self.update_backdrop();
+    }
+
+    /// A player appeared or the last one left: fade the mini player and the header button
+    /// while their revealers slide, and let the card glow once when it arrives.
+    fn arrive_or_leave(self: &Rc<Self>, arrive: bool) {
+        use crate::motion::property;
+        if arrive {
+            property(&self.mini_card, "opacity", 0.0, 1.0, 620, None);
+            property(&self.header_btn, "opacity", 0.0, 1.0, 520, None);
+            self.mini_title.set_opacity(1.0);
+            self.mini_artist.set_opacity(1.0);
+            self.mini_card.add_css_class("omafile-np-arrive");
+            let weak = Rc::downgrade(self);
+            glib::timeout_add_local_once(Duration::from_millis(1500), move || {
+                if let Some(n) = weak.upgrade() {
+                    n.mini_card.remove_css_class("omafile-np-arrive");
+                }
+            });
+        } else {
+            self.was_playing.set(None);
+            property(&self.mini_card, "opacity", self.mini_card.opacity(), 0.0, 300, None);
+            property(&self.header_btn, "opacity", self.header_btn.opacity(), 0.0, 260, None);
+        }
+    }
+
+    /// Restart the bounce animation on a button. Two classes with the same keyframes take
+    /// turns, because adding a class that is already there does not start it again.
+    fn pop(&self, button: &gtk::Button) {
+        let (on, off) = if self.pop_flip.get() { ("omafile-np-pop-a", "omafile-np-pop-b") } else { ("omafile-np-pop-b", "omafile-np-pop-a") };
+        button.remove_css_class(off);
+        button.add_css_class(on);
+    }
+
+    /// The small cover in the sidebar: rounded, cross-fading, nodding with the bass.
+    fn draw_mini_cover(&self, cr: &gtk::cairo::Context, w: f64, h: f64) {
+        let size = w.min(h) - 6.0;
+        let pulse = 1.0 + 0.07 * self.bass.get() as f64;
+        cr.translate(w / 2.0, h / 2.0);
+        cr.scale(pulse, pulse);
+        cr.translate(-size / 2.0, -size / 2.0);
+        rounded(cr, 0.0, 0.0, size, size, 9.0);
+        cr.clip();
+        let t = (self.cover_at.get().elapsed().as_secs_f64() / 0.5).min(1.0);
+        let eased = 1.0 - (1.0 - t).powi(3);
+        let paint = |surface: &Option<gtk::cairo::ImageSurface>, alpha: f64| match surface {
+            Some(s) => {
+                let k = size / 48.0;
+                let _ = cr.save();
+                cr.scale(k, k);
+                let _ = cr.set_source_surface(s, 0.0, 0.0);
+                let _ = cr.paint_with_alpha(alpha);
+                let _ = cr.restore();
+            }
+            None => paint_note(cr, 0.0, 0.0, size, self.accent(), alpha),
+        };
+        if eased < 1.0 {
+            paint(&self.old_mini_surface.borrow(), 1.0);
+        }
+        paint(&self.mini_surface.borrow(), eased);
     }
 
     /// The cover, blurred by scaling it down and up again, behind everything.
@@ -546,8 +687,15 @@ impl NowPlaying {
             self.bass.set(self.bass.get() + (bass - self.bass.get()) * 0.35);
         }
         let fading = self.cover_at.get().elapsed() < Duration::from_millis(600);
-        if moving || playing {
+        if moving || playing || fading {
             self.header_eq.queue_draw();
+            self.mini_eq.queue_draw();
+            self.mini_cover.queue_draw();
+        }
+        if playing {
+            if let Some(p) = &active {
+                self.mini_progress.set_fraction(p.fraction());
+            }
         }
         if page_visible {
             if let Some(page) = self.page.borrow().as_ref() {
@@ -790,36 +938,7 @@ impl NowPlaying {
             let _ = cr.paint_with_alpha(alpha);
             let _ = cr.restore();
         };
-        let placeholder = |alpha: f64| {
-            let (ar, ag, ab) = self.accent();
-            let gradient = gtk::cairo::LinearGradient::new(x, y, x + size, y + size);
-            gradient.add_color_stop_rgba(0.0, ar, ag, ab, alpha);
-            gradient.add_color_stop_rgba(1.0, ar * 0.35, ag * 0.35, ab * 0.55, alpha);
-            cr.rectangle(x, y, size, size);
-            let _ = cr.set_source(&gradient);
-            let _ = cr.fill();
-            // A note drawn by hand: two heads, two stems, a beam.
-            let u = size / 10.0;
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.85 * alpha);
-            for hx in [3.6, 6.6] {
-                let _ = cr.save();
-                cr.translate(x + hx * u, y + (if hx < 5.0 { 6.9 } else { 6.3 }) * u);
-                cr.rotate(-0.35);
-                cr.scale(0.95 * u, 0.7 * u);
-                cr.arc(0.0, 0.0, 1.0, 0.0, 2.0 * std::f64::consts::PI);
-                let _ = cr.restore();
-                let _ = cr.fill();
-            }
-            cr.rectangle(x + 4.2 * u, y + 3.3 * u, 0.32 * u, 3.5 * u);
-            cr.rectangle(x + 7.2 * u, y + 2.7 * u, 0.32 * u, 3.5 * u);
-            let _ = cr.fill();
-            cr.move_to(x + 4.2 * u, y + 3.3 * u);
-            cr.line_to(x + 7.52 * u, y + 2.7 * u);
-            cr.line_to(x + 7.52 * u, y + 3.6 * u);
-            cr.line_to(x + 4.2 * u, y + 4.2 * u);
-            cr.close_path();
-            let _ = cr.fill();
-        };
+        let placeholder = |alpha: f64| paint_note(cr, x, y, size, self.accent(), alpha);
         // Crossfade from the previous cover.
         let t = (self.cover_at.get().elapsed().as_secs_f64() / 0.5).min(1.0);
         let eased = 1.0 - (1.0 - t).powi(3);
@@ -955,7 +1074,7 @@ impl NowPlaying {
         root.add_overlay(&top);
         root.set_focusable(true);
 
-        let page = Page { root, body, backdrop, backdrops, art, vis, title, subtitle, source, pos, len, scale, play, prev, next, shuffle, repeat, volume_box, volume, chooser, raise };
+        let page = Page { root, body, backdrop, backdrops, art, vis, column, title, subtitle, source, pos, len, scale, play, prev, next, shuffle, repeat, volume_box, volume, chooser, raise };
 
         let weak = Rc::downgrade(self);
         page.art.set_draw_func(move |a, cr, w, h| { if let Some(n) = weak.upgrade() { n.draw_art(a, cr, w as f64, h as f64); } });
@@ -1044,6 +1163,10 @@ impl NowPlaying {
         let page = self.build_page(window);
         window.content_stack.add_named(&page.root, Some("nowplaying"));
         self.page.replace(Some(page.clone()));
+        // Start on the right side of the stack: no cross-fade from "Nothing is playing".
+        let side = if self.players().is_empty() { "empty" } else { "player" };
+        page.body.set_visible_child_full(side, gtk::StackTransitionType::None);
+        self.update();
         self.update_backdrop();
         page
     }
@@ -1055,6 +1178,23 @@ impl NowPlaying {
         let wants_live = self.window.upgrade().map(|w| w.prefs.get_bool("now-playing-spectrum", true)).unwrap_or(true);
         if wants_live && self.spectrum.borrow().is_none() {
             self.spectrum.replace(Spectrum::start());
+        }
+    }
+
+    /// The parts of the view arrive one after the other, top to bottom.
+    fn entrance(&self, page: &Page) {
+        if !crate::motion::animations_enabled(&page.root) {
+            return;
+        }
+        let mut child = page.column.first_child();
+        let mut delay = 90u64;
+        while let Some(widget) = child {
+            child = widget.next_sibling();
+            widget.set_opacity(0.0);
+            glib::timeout_add_local_once(Duration::from_millis(delay), move || {
+                crate::motion::property(&widget, "opacity", 0.0, 1.0, 460, None);
+            });
+            delay += 55;
         }
     }
 
@@ -1075,6 +1215,9 @@ impl Window {
         };
         if show {
             let page = np.ensure_page(self);
+            if self.content_stack.visible_child_name().as_deref() != Some("nowplaying") {
+                np.entrance(&page);
+            }
             self.content_stack.set_visible_child_name("nowplaying");
             np.page_shown();
             page.root.grab_focus();
