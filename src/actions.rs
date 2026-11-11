@@ -50,6 +50,7 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("cwd-properties", "Folder Properties", "dialog-information-symbolic"),
     ("preferences", "Preferences", "emblem-system-symbolic"),
     ("shortcuts", "Keyboard Shortcuts", "input-keyboard-symbolic"),
+    ("help", "Help: Features, Shortcuts, Version", "help-browser-symbolic"),
     ("home", "Go Home", "user-home-symbolic"),
     ("up", "Parent Folder", "go-up-symbolic"),
     ("reload", "Reload", "view-refresh-symbolic"),
@@ -189,7 +190,8 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.tag::purple", &["<Control><Alt>6"]),
     ("win.tag::gray", &["<Control><Alt>7"]),
     ("win.tag::none", &["<Control><Alt>0"]),
-    ("win.shortcuts", &["<Control>question", "F1"]),
+    ("win.shortcuts", &["<Control>question"]),
+    ("win.help", &["F1"]),
     ("win.copy-other", &["<Shift>F5"]),
     ("win.move-other", &["<Shift>F6"]),
     ("win.compare", &["<Control><Alt>d"]),
@@ -694,6 +696,8 @@ impl Window {
             }
         }));
         simple("shortcuts", Box::new(|w| w.show_shortcuts()));
+        simple("help", Box::new(|w| w.show_help("features")));
+        simple("help-about", Box::new(|w| w.show_help("about")));
 
         // Stateful actions.
         let hidden = gio::SimpleAction::new_stateful("show-hidden", None, &false.to_variant());
@@ -1410,7 +1414,7 @@ impl Window {
     }
 
     fn show_shortcuts(self: &Rc<Self>) {
-        self.show_bindings();
+        self.show_help("keys");
     }
 }
 

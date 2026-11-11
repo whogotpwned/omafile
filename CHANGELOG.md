@@ -2,6 +2,14 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.21.0 — 2026-11-11
+
+### Added
+- **Help** (`F1`): a dialog with three pages and one search field. *Features* lists what omafile can do, grouped by area, each with the way to reach it and, where it is safe, an *Open* button. *Shortcuts* is the full list of bindings (`Ctrl+?` opens it directly). *About* shows the version, what is new in it (from the built-in changelog), which optional tools were found on this computer, and where settings, state and caches are kept. The version is always visible in the corner of the dialog. The main menu has *Help and Features*; *About Files* opens the About page.
+
+### Changed
+- Shortcuts are drawn as keycaps.
+
 ## 0.20.0 — 2026-11-11
 
 ### Added

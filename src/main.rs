@@ -16,6 +16,7 @@ mod feeds;
 mod feedsui;
 mod finder;
 mod git;
+mod help;
 mod gitui;
 mod groups;
 mod hypr;

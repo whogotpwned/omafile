@@ -426,6 +426,29 @@ pub fn css(p: &Palette) -> String {
 .omafile-feed-image {{
   border-radius: 12px;
 }}
+.omafile-keycap {{
+  font-size: 0.86em;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background-color: alpha(currentColor, 0.08);
+  border: 1px solid alpha(currentColor, 0.14);
+  border-bottom-width: 2px;
+}}
+.omafile-help-title {{
+  font-weight: 700;
+}}
+.omafile-help-icon {{
+  color: {accent};
+}}
+.omafile-help-version {{
+  font-size: 13pt;
+  font-weight: 700;
+  color: {accent};
+}}
+.omafile-help-found {{
+  color: {green};
+}}
 .omafile-vault-page {{
   background-color: {view_bg};
 }}

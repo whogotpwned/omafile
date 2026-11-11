@@ -5,10 +5,8 @@
 
 use crate::i18n::tr;
 use crate::actions::ACCELS;
-use crate::window::Window;
 use adw::prelude::*;
 use gtk::glib;
-use std::rc::Rc;
 
 /// (group, action name without `win.` or empty, keys when not an action, what it does)
 pub const TABLE: &[(&str, &str, &str, &str)] = &[
@@ -127,7 +125,8 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Vim keys", "", "/  :", "Filter this folder, command palette"),
     ("Vim keys", "", "dd  yy  p  x  u", "Trash, copy, paste, cut, undo; each group can be switched off"),
     ("App", "preferences", "", "Preferences"),
-    ("App", "shortcuts", "", "This list"),
+    ("App", "help", "", "Help: what omafile can do, every shortcut, the version and what is new in it"),
+    ("App", "shortcuts", "", "Keyboard shortcuts (this list)"),
     ("App", "", "Ctrl+Q", "Quit"),
 ];
 
@@ -239,97 +238,67 @@ pub fn print() {
     }
 }
 
-impl Window {
-    /// Searchable list of every binding, grouped; typing filters at once.
-    pub fn show_bindings(self: &Rc<Self>) {
-        let list = gtk::ListBox::new();
-        list.add_css_class("omafile-bindings");
-        list.add_css_class("boxed-list");
-        list.set_selection_mode(gtk::SelectionMode::None);
-        for b in all() {
-            let row = gtk::ListBoxRow::new();
-            row.set_activatable(false);
-            let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-            hbox.set_margin_top(7);
-            hbox.set_margin_bottom(7);
-            hbox.set_margin_start(12);
-            hbox.set_margin_end(12);
-            let what = gtk::Label::builder().label(&b.what).xalign(0.0).hexpand(true).wrap(true).build();
-            hbox.append(&what);
-            let keys = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            keys.set_valign(gtk::Align::Center);
-            for alt in b.keys.split("  /  ") {
-                if alt.is_empty() {
-                    continue;
-                }
-                let cap = gtk::Label::new(Some(alt));
-                cap.add_css_class("omafile-keycap");
-                keys.append(&cap);
+/// The list of every binding, grouped, ready to be filtered with `filter_rows`.
+pub fn bindings_list() -> gtk::ListBox {
+    let list = gtk::ListBox::new();
+    list.add_css_class("omafile-bindings");
+    list.add_css_class("boxed-list");
+    list.set_selection_mode(gtk::SelectionMode::None);
+    for b in all() {
+        let row = gtk::ListBoxRow::new();
+        row.set_activatable(false);
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        hbox.set_margin_top(7);
+        hbox.set_margin_bottom(7);
+        hbox.set_margin_start(12);
+        hbox.set_margin_end(12);
+        let what = gtk::Label::builder().label(&b.what).xalign(0.0).hexpand(true).wrap(true).build();
+        hbox.append(&what);
+        let keys = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        keys.set_valign(gtk::Align::Center);
+        for alt in b.keys.split("  /  ") {
+            if alt.is_empty() {
+                continue;
             }
-            hbox.append(&keys);
-            row.set_child(Some(&hbox));
-            // Searchable text and group live on the row for the filter and header functions.
-            unsafe {
-                row.set_data("group", Box::leak(b.group.clone().into_boxed_str()) as &'static str);
-                row.set_data("haystack", format!("{} {} {}", b.group, b.keys, b.what).to_lowercase());
-            }
-            list.append(&row);
+            let cap = gtk::Label::new(Some(alt));
+            cap.add_css_class("omafile-keycap");
+            keys.append(&cap);
         }
-        list.set_header_func(|row, before| {
-            let group: &str = unsafe { row.data::<&'static str>("group").map(|p| *p.as_ref()).unwrap_or("") };
-            let prev: Option<&str> = before.map(|b| unsafe { b.data::<&'static str>("group").map(|p| *p.as_ref()).unwrap_or("") });
-            if prev == Some(group) {
-                row.set_header(None::<&gtk::Widget>);
-            } else {
-                let label = gtk::Label::builder().label(group).xalign(0.0).margin_start(12).margin_top(14).margin_bottom(4).build();
-                label.add_css_class("caption-heading");
-                label.add_css_class("omafile-dim");
-                row.set_header(Some(&label));
-            }
-        });
-        let search = gtk::SearchEntry::builder().placeholder_text(tr("Filter bindings…")).hexpand(true).build();
-        let list2 = list.clone();
-        search.connect_search_changed(move |e| {
-            let needle = e.text().to_lowercase();
-            let words: Vec<String> = needle.split_whitespace().map(str::to_string).collect();
-            list2.set_filter_func(move |row| {
-                if words.is_empty() {
-                    return true;
-                }
-                let hay: String = unsafe { row.data::<String>("haystack").map(|p| p.as_ref().clone()).unwrap_or_default() };
-                words.iter().all(|w| hay.contains(w))
-            });
-            list2.invalidate_headers();
-        });
-        let scroll = gtk::ScrolledWindow::builder().child(&list).vexpand(true).hscrollbar_policy(gtk::PolicyType::Never).build();
-        scroll.set_margin_start(12);
-        scroll.set_margin_end(12);
-        scroll.set_margin_bottom(12);
-        let header = adw::HeaderBar::new();
-        header.set_title_widget(Some(&search));
-        let hint = gtk::Label::new(Some(tr("Type to filter  ·  Esc closes  ·  omafile --print-bindings prints this list").as_str()));
-        hint.add_css_class("omafile-dim");
-        hint.add_css_class("caption");
-        hint.set_margin_bottom(8);
-        let content = adw::ToolbarView::new();
-        content.add_top_bar(&header);
-        content.set_content(Some(&scroll));
-        content.add_bottom_bar(&hint);
-        let dialog = adw::Dialog::builder().title(tr("Keyboard Shortcuts")).content_width(680).content_height(720).child(&content).build();
-        dialog.add_css_class("omafile-bindings-dialog");
-        search.set_key_capture_widget(Some(&dialog));
-        // Esc in the search entry ends the search; a second Esc (or an empty field) closes.
-        let d2 = dialog.clone();
-        search.connect_stop_search(move |e| {
-            if e.text().is_empty() {
-                d2.close();
-            } else {
-                e.set_text("");
-            }
-        });
-        self.present_dialog(&dialog);
-        search.grab_focus();
+        hbox.append(&keys);
+        row.set_child(Some(&hbox));
+        // Searchable text and group live on the row for the filter and header functions.
+        unsafe {
+            row.set_data("group", Box::leak(b.group.clone().into_boxed_str()) as &'static str);
+            row.set_data("haystack", format!("{} {} {}", b.group, b.keys, b.what).to_lowercase());
+        }
+        list.append(&row);
     }
+    list.set_header_func(|row, before| {
+        let group: &str = unsafe { row.data::<&'static str>("group").map(|p| *p.as_ref()).unwrap_or("") };
+        let prev: Option<&str> = before.map(|b| unsafe { b.data::<&'static str>("group").map(|p| *p.as_ref()).unwrap_or("") });
+        if prev == Some(group) {
+            row.set_header(None::<&gtk::Widget>);
+        } else {
+            let label = gtk::Label::builder().label(group).xalign(0.0).margin_start(12).margin_top(14).margin_bottom(4).build();
+            label.add_css_class("caption-heading");
+            label.add_css_class("omafile-dim");
+            row.set_header(Some(&label));
+        }
+    });
+    list
+}
+
+/// Show only the rows of a list built here (or in `help`) that contain every word of `needle`.
+pub fn filter_rows(list: &gtk::ListBox, needle: &str) {
+    let words: Vec<String> = needle.to_lowercase().split_whitespace().map(str::to_string).collect();
+    list.set_filter_func(move |row| {
+        if words.is_empty() {
+            return true;
+        }
+        let hay: String = unsafe { row.data::<String>("haystack").map(|p| p.as_ref().clone()).unwrap_or_default() };
+        words.iter().all(|w| hay.contains(w))
+    });
+    list.invalidate_headers();
 }
 
 #[cfg(test)]

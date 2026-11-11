@@ -10,13 +10,13 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.20.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.21.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-89%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-93%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-hero.png" alt="Two omafile windows in Tokyo Night. Front left: grid view with thumbnails for photos, a GIF, a video, eBook covers, a PDF and a song, the preview pane, an unlocked and a locked vault and an iPhone in the sidebar and the mini player at its bottom. Right: the Now Playing view with cover, live spectrum and transport controls." width="900">
@@ -61,7 +61,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 </tr>
 <tr>
 <td><img src="docs/screenshot-columns.png" alt="column view"><br><b>Finder views</b><br><sub>Miller columns, gallery with filmstrip, groups by kind / date / size / tag, <code>Ctrl+scroll</code> zoom.</sub></td>
-<td><img src="docs/screenshot-bindings.png" alt="bindings overlay"><br><b>Every binding, searchable</b><br><sub><code>F1</code> lists all shortcuts, gestures and menu entries, generated from the real table.</sub></td>
+<td><img src="docs/screenshot-bindings.png" alt="bindings overlay"><br><b>Every binding, searchable</b><br><sub><code>Ctrl+?</code> lists all shortcuts, gestures and menu entries, generated from the real table; <code>F1</code> is Help with all features and the version.</sub></td>
 <td><img src="docs/screenshot-venv-reqs.png" alt="python requirements"><br><b>Python aware</b><br><sub>venv badge, requirements ✓/✗ against the venv, create / install / freeze from the menu.</sub></td>
 </tr>
 </table>
@@ -98,7 +98,8 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![content search](docs/screenshot-content-search.png) | **Full-text search**: the second toggle in the search bar hands the query to `ripgrep`, so you find the files that *contain* the words, streamed the same way (`.git` skipped, 8 MB per file cap). |
 | ![code preview](docs/screenshot-code-preview.png) | **Quick Look renderers**: source code with syntax highlighting (`bat`), Markdown with headings, lists, links and code, CSV / TSV as an aligned table, JSON formatted by `jq`, font files as a specimen (ImageMagick). Plain text stays plain. |
 | ![media facts](docs/screenshot-media-facts.png) | **Metadata where you look**: images show dimensions, format, camera, date taken and exposure (EXIF); audio and video show codec, sample rate, channels, resolution, frame rate, bitrate and tags, in the preview, Quick Look and the *Media* group of Properties. |
-| ![bindings](docs/screenshot-bindings.png) | **All bindings in one place** (`F1`, `Ctrl+?`): a searchable overlay of every shortcut, gesture and menu entry with keycaps, starting with the Hyprland key that opens omafile. Generated from the accelerator table, kept complete by a test, printable with `omafile --print-bindings`. |
+| ![help](docs/screenshot-help.png) | **Help** (`F1`): one dialog with three pages and one search field. **Features** is a tour of what omafile can do, grouped by area; every entry says how to reach it (its shortcut or the menu it lives in) and, where nothing can go wrong, has an *Open* button that takes you there. **Shortcuts** is the full list of bindings. **About** shows the **version**, what is new in it (taken from the changelog built into the program), which optional tools were found on this computer with a tick or a cross, and where settings, state and caches are kept. The version is also in the corner of the dialog and in `omafile --version`. ![about](docs/screenshot-help-about.png) |
+| ![bindings](docs/screenshot-bindings.png) | **All bindings in one place** (`Ctrl+?`, or the *Shortcuts* page of Help): a searchable overlay of every shortcut, gesture and menu entry with keycaps, starting with the Hyprland key that opens omafile. Generated from the accelerator table, kept complete by a test, printable with `omafile --print-bindings`. |
 
 ### Files and operations
 
@@ -193,7 +194,7 @@ Panels move the way the rest of Omarchy moves instead of snapping: the terminal 
 
 ## Keyboard shortcuts
 
-`F1` or `Ctrl+?` opens the full, searchable list inside omafile. `omafile --print-bindings` prints it for scripts. The essentials:
+`Ctrl+?` opens the full, searchable list inside omafile (it is the *Shortcuts* page of Help, `F1`). `omafile --print-bindings` prints it for scripts. The essentials:
 
 | Keys | Action |
 |---|---|
@@ -226,7 +227,7 @@ Panels move the way the rest of Omarchy moves instead of snapping: the terminal 
 | `Ctrl+Alt+D` `Ctrl+Alt+M` `Ctrl+Alt+S` `Ctrl+Alt+V` | Compare, note, save smart folder, activate venv |
 | `Ctrl+Alt+1…7` / `Ctrl+Alt+0` `Ctrl+Alt+I` | Tags, remove tag, change icon |
 | `Ctrl+D` `Ctrl+Shift+K` `Ctrl+I` | Bookmark, connect to server, properties |
-| `Ctrl+,` `F1` `Ctrl+Q` | Preferences, all bindings, quit |
+| `Ctrl+,` `F1` `Ctrl+?` `Ctrl+Q` | Preferences, help (features, version), all bindings, quit |
 | `h` `j` `k` `l` `gg` `G` `/` `:` `dd` `yy` `p` `x` `u` | **Vim keys**, off by default: Preferences › Keys turns them on, group by group |
 
 Every shortcut is exercised by an automated run under Xvfb (`OMAFILE_TRACE=1` logs each action). Shortcuts that also mean something in a text field act on the text while a field has focus and on files otherwise.
@@ -479,11 +480,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.20.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.21.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 89 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 93 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 
