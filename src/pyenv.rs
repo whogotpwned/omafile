@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(checked[1].1, None);
         assert!(summary(&v).contains("2 packages (uv)"));
         // find() from a project folder that holds the venv as .venv
-        let project = std::env::temp_dir().join(format!("omafile-proj-{}", std::process::id()));
+        let project = std::env::temp_dir().join(format!("omafile-pyenv-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&project);
         std::fs::create_dir_all(project.join("src")).unwrap();
         std::fs::write(project.join("pyproject.toml"), "[project]\nname='p'\n").unwrap();

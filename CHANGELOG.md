@@ -2,6 +2,15 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.18.3 — 2026-11-11
+
+### Fixed
+- Animated GIFs larger than the thumbnail size had no thumbnail in list and grid (gdk-pixbuf's scaling loader gives up on them); the first frame is now taken from the animation and scaled.
+- Two unit tests shared a temporary folder and could fail each other when run in parallel (seen in CI for 0.18.2).
+
+### Changed
+- README: a new picture at the top showing the grid with thumbnails, the preview, a phone in the sidebar, the mini player and the Now Playing view.
+
 ## 0.18.2 — 2026-11-11
 
 ### Changed

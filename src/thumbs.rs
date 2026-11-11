@@ -310,7 +310,18 @@ fn to_decoded(pixbuf: gtk::gdk_pixbuf::Pixbuf) -> Decoded {
 }
 
 fn decode_image(path: &std::path::Path, size: i32) -> Option<Decoded> {
-    let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true).ok()?;
+    let pixbuf = match gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true) {
+        Ok(p) => p,
+        // An animated GIF larger than the thumbnail: the scaling loader stops after the first
+        // frame and gdk-pixbuf reports "not all frames were loaded". Take the first frame of
+        // the animation and scale it here.
+        Err(_) => {
+            let full = gtk::gdk_pixbuf::PixbufAnimation::from_file(path).ok()?.static_image()?;
+            let k = (size as f64 / full.width().max(full.height()).max(1) as f64).min(1.0);
+            let (w, h) = (((full.width() as f64 * k) as i32).max(1), ((full.height() as f64 * k) as i32).max(1));
+            full.scale_simple(w, h, gtk::gdk_pixbuf::InterpType::Bilinear)?
+        }
+    };
     let pixbuf = pixbuf.apply_embedded_orientation().unwrap_or(pixbuf);
     Some(to_decoded(pixbuf))
 }
