@@ -159,8 +159,8 @@ impl Spectrum {
                     continue;
                 }
                 let mut energy = 0.0f32;
-                for pair in buf.chunks_exact(2) {
-                    let s = i16::from_le_bytes([pair[0], pair[1]]) as f32 / 32768.0;
+                for pair in buf.as_chunks::<2>().0 {
+                    let s = i16::from_le_bytes(*pair) as f32 / 32768.0;
                     energy += s * s;
                     ring.push(s);
                 }

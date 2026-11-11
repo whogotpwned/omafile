@@ -41,6 +41,11 @@ struct Page {
     raise: gtk::Button,
 }
 
+/// Rendered layers and the keys they were rendered for (size, scale, colours, cover).
+type HaloLayer = Option<((i32, i32, i32, [u8; 3]), gtk::cairo::ImageSurface)>;
+type BodyLayer = Option<((i32, i32, i32, Instant, [u8; 3]), gtk::cairo::ImageSurface)>;
+type BarLayers = Option<((i32, i32, i32, [u8; 3], [u8; 3]), gtk::cairo::ImageSurface, gtk::cairo::ImageSurface)>;
+
 pub struct NowPlaying {
     window: Weak<Window>,
     mpris: RefCell<Option<Rc<Mpris>>>,
@@ -57,7 +62,13 @@ pub struct NowPlaying {
     page: RefCell<Option<Page>>,
     /// Current and previous cover (the previous one fades out).
     cover: RefCell<Option<Pixbuf>>,
-    old_cover: RefCell<Option<Pixbuf>>,
+    /// The covers as surfaces ready to paint: converting a pixbuf on every frame is what costs.
+    cover_surface: RefCell<Option<gtk::cairo::ImageSurface>>,
+    old_cover_surface: RefCell<Option<gtk::cairo::ImageSurface>>,
+    /// Rendered layers of the big cover, keyed by what they depend on.
+    halo_layer: RefCell<HaloLayer>,
+    body_layer: RefCell<BodyLayer>,
+    bar_layers: RefCell<BarLayers>,
     cover_at: Cell<Instant>,
     cover_url: RefCell<String>,
     /// Dominant colour of the cover, for the spectrum and the glow.
@@ -68,6 +79,9 @@ pub struct NowPlaying {
     spectrum: RefCell<Option<Spectrum>>,
     started: Instant,
     last_ui: Cell<Instant>,
+    last_frame: Cell<Instant>,
+    /// Whether the frame callback is installed; it removes itself once everything stands still.
+    ticking: Cell<bool>,
     last_sync: Cell<Instant>,
     updating: Cell<bool>,
     backdrop_flip: Cell<usize>,
@@ -163,6 +177,16 @@ fn square(pixbuf: &Pixbuf, size: i32) -> Pixbuf {
     cropped.scale_simple(size, size, gtk::gdk_pixbuf::InterpType::Bilinear).unwrap_or(cropped)
 }
 
+/// A pixbuf as a cairo surface, converted once.
+fn surface_of(pixbuf: &Pixbuf) -> Option<gtk::cairo::ImageSurface> {
+    let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, pixbuf.width(), pixbuf.height()).ok()?;
+    let cr = gtk::cairo::Context::new(&surface).ok()?;
+    cr.set_source_pixbuf(pixbuf, 0.0, 0.0);
+    cr.paint().ok()?;
+    drop(cr);
+    Some(surface)
+}
+
 fn pixbuf_from_bytes(bytes: &[u8]) -> Option<Pixbuf> {
     let loader = gtk::gdk_pixbuf::PixbufLoader::new();
     loader.write(bytes).ok()?;
@@ -244,7 +268,11 @@ impl NowPlaying {
             mini_progress,
             page: RefCell::new(None),
             cover: RefCell::new(None),
-            old_cover: RefCell::new(None),
+            cover_surface: RefCell::new(None),
+            old_cover_surface: RefCell::new(None),
+            halo_layer: RefCell::new(None),
+            body_layer: RefCell::new(None),
+            bar_layers: RefCell::new(None),
             cover_at: Cell::new(now),
             cover_url: RefCell::new(String::new()),
             tint: Cell::new((0.48, 0.64, 0.97)),
@@ -254,6 +282,8 @@ impl NowPlaying {
             spectrum: RefCell::new(None),
             started: now,
             last_ui: Cell::new(now),
+            last_frame: Cell::new(now),
+            ticking: Cell::new(false),
             last_sync: Cell::new(now),
             updating: Cell::new(false),
             backdrop_flip: Cell::new(0),
@@ -284,17 +314,7 @@ impl NowPlaying {
                 n.draw_header_eq(area, cr, w as f64, h as f64);
             }
         });
-        // One frame clock drives every animation; it only ticks while the header button is on screen.
-        let weak = Rc::downgrade(&this);
-        this.header_eq.add_tick_callback(move |_, _| {
-            match weak.upgrade() {
-                Some(n) => {
-                    n.tick();
-                    glib::ControlFlow::Continue
-                }
-                None => glib::ControlFlow::Break,
-            }
-        });
+        this.ensure_tick();
 
         let weak = Rc::downgrade(&this);
         glib::spawn_future_local(async move {
@@ -334,6 +354,7 @@ impl NowPlaying {
 
     /// Something changed on the bus: refresh every widget.
     pub fn update(self: &Rc<Self>) {
+        self.ensure_tick();
         let players = self.players();
         let active = self.active();
         let any = !players.is_empty();
@@ -433,8 +454,10 @@ impl NowPlaying {
     }
 
     fn set_cover(self: &Rc<Self>, pixbuf: Option<Pixbuf>) {
-        self.old_cover.replace(self.cover.borrow().clone());
+        let old = self.cover_surface.replace(pixbuf.as_ref().and_then(|p| surface_of(&square(p, 480))));
+        self.old_cover_surface.replace(old);
         self.cover_at.set(Instant::now());
+        self.ensure_tick();
         match &pixbuf {
             Some(p) => {
                 self.tint.set(dominant_color(p));
@@ -467,11 +490,37 @@ impl NowPlaying {
 
     // ----- animation -------------------------------------------------------------------
 
-    fn tick(self: &Rc<Self>) {
+    /// One frame clock drives every animation. It runs only while the header button is on
+    /// screen and something moves; `update` and friends start it again.
+    fn ensure_tick(self: &Rc<Self>) {
+        if self.ticking.replace(true) {
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        self.header_eq.add_tick_callback(move |_, _| {
+            let Some(n) = weak.upgrade() else { return glib::ControlFlow::Break };
+            if n.tick() {
+                glib::ControlFlow::Continue
+            } else {
+                n.ticking.set(false);
+                glib::ControlFlow::Break
+            }
+        });
+    }
+
+    /// Advance the animation by a frame; false once nothing is left to animate.
+    fn tick(self: &Rc<Self>) -> bool {
+        let page_visible = self.page_visible();
+        // 60 frames a second in the full view (also on faster screens), 20 for the small equalizer.
+        let since = self.last_frame.get().elapsed();
+        if since < Duration::from_millis(if page_visible { 15 } else { 48 }) {
+            return true;
+        }
+        self.last_frame.set(Instant::now());
+        let (attack, decay, fall) = if page_visible { (0.5, 0.16, 0.009) } else { (0.875, 0.41, 0.027) };
         let active = self.active();
         let playing = active.as_ref().map(|p| p.status == Status::Playing).unwrap_or(false);
         let t = self.started.elapsed().as_secs_f64();
-        let page_visible = self.page_visible();
         let live = if page_visible { self.spectrum.borrow().as_ref().and_then(|s| s.latest()) } else { None };
         let target = match live {
             Some(bands) if playing => bands,
@@ -482,13 +531,16 @@ impl NowPlaying {
             let mut bars = self.bars.borrow_mut();
             let mut peaks = self.peaks.borrow_mut();
             for i in 0..BANDS {
-                let k = if target[i] > bars[i] { 0.5 } else { 0.16 };
+                let k = if target[i] > bars[i] { attack } else { decay };
                 let new = bars[i] + (target[i] - bars[i]) * k;
                 if (new - bars[i]).abs() > 0.002 {
                     moving = true;
                 }
                 bars[i] = new;
-                peaks[i] = if new >= peaks[i] { new } else { (peaks[i] - 0.009).max(new) };
+                if peaks[i] > new + 0.002 {
+                    moving = true;
+                }
+                peaks[i] = if new >= peaks[i] { new } else { (peaks[i] - fall).max(new) };
             }
             let bass: f32 = bars[..6].iter().sum::<f32>() / 6.0;
             self.bass.set(self.bass.get() + (bass - self.bass.get()) * 0.35);
@@ -522,6 +574,7 @@ impl NowPlaying {
             self.last_sync.set(Instant::now());
             self.with_mpris(|m| m.sync_position());
         }
+        playing || moving || fading
     }
 
     fn accent(&self) -> (f64, f64, f64) {
@@ -550,79 +603,193 @@ impl NowPlaying {
         }
     }
 
+    /// The spectrum. The bars and their reflection are rendered once at full height; a frame
+    /// only copies pixel-aligned slices of them, which costs a fraction of drawing 44 rounded,
+    /// shaded bars sixty times a second.
     fn draw_vis(&self, area: &gtk::DrawingArea, cr: &gtk::cairo::Context, w: f64, h: f64) {
         let bars = self.bars.borrow();
         let peaks = self.peaks.borrow();
-        let (ar, ag, ab) = self.accent();
-        let (tr_, tg, tb) = self.tint.get();
-        let fg = area.color();
+        let scale = area.scale_factor().max(1);
+        let n = BANDS as f64;
         let gap = 4.0;
-        let bw = ((w - gap * (BANDS as f64 - 1.0)) / BANDS as f64).max(2.0);
-        let base = h * 0.72; // bars above, their reflection below
-        for i in 0..BANDS {
-            let f = i as f64 / (BANDS as f64 - 1.0);
-            let (r, g, b) = (ar + (tr_ - ar) * f, ag + (tg - ag) * f, ab + (tb - ab) * f);
-            let v = bars[i] as f64;
-            let bh = (base - 4.0) * v + 3.0;
-            let x = i as f64 * (bw + gap);
-            let gradient = gtk::cairo::LinearGradient::new(0.0, base - bh, 0.0, base);
-            gradient.add_color_stop_rgba(0.0, (r + 0.25).min(1.0), (g + 0.25).min(1.0), (b + 0.25).min(1.0), 1.0);
-            gradient.add_color_stop_rgba(1.0, r, g, b, 0.85);
-            rounded(cr, x, base - bh, bw, bh, bw / 2.0);
-            let _ = cr.set_source(&gradient);
+        let bw = ((w - gap * (n - 1.0)) / n).floor().max(2.0);
+        let x0 = ((w - (bw * n + gap * (n - 1.0))) / 2.0).floor().max(0.0);
+        let base = (h * 0.72).floor(); // bars above, their reflection below
+        let room = (h - base - 3.0).floor();
+        if base < 8.0 {
+            return;
+        }
+        let x_of = |i: usize| x0 + i as f64 * (bw + gap);
+        let height = |v: f32| ((base - 4.0) * v as f64 + 3.0).round().clamp(3.0, base);
+        let byte = |c: (f64, f64, f64)| [(c.0 * 255.0) as u8, (c.1 * 255.0) as u8, (c.2 * 255.0) as u8];
+        let (accent, tint) = (self.accent(), self.tint.get());
+        let key = (w as i32, h as i32, scale, byte(accent), byte(tint));
+        let mut layers = self.bar_layers.borrow_mut();
+        if layers.as_ref().map(|(k, _, _)| *k != key).unwrap_or(true) {
+            let surface = |height: f64| {
+                let s = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, w as i32 * scale, (height.max(1.0)) as i32 * scale).ok()?;
+                s.set_device_scale(scale as f64, scale as f64);
+                Some(s)
+            };
+            // Accent on the left (bass) to the cover's colour on the right (treble).
+            let colour = |i: usize| {
+                let f = i as f64 / (n - 1.0);
+                (accent.0 + (tint.0 - accent.0) * f, accent.1 + (tint.1 - accent.1) * f, accent.2 + (tint.2 - accent.2) * f)
+            };
+            let full = surface(base).and_then(|s| {
+                let c = gtk::cairo::Context::new(&s).ok()?;
+                for i in 0..BANDS {
+                    let (r, g, b) = colour(i);
+                    // A bright tip that melts into the bar's colour.
+                    let shade = gtk::cairo::LinearGradient::new(0.0, 0.0, 0.0, base);
+                    shade.add_color_stop_rgba(0.0, (r + 0.32).min(1.0), (g + 0.32).min(1.0), (b + 0.32).min(1.0), 1.0);
+                    shade.add_color_stop_rgba(0.55, r, g, b, 0.92);
+                    shade.add_color_stop_rgba(1.0, r, g, b, 0.85);
+                    rounded(&c, x_of(i), 0.0, bw, base + bw, bw / 2.0);
+                    let _ = c.set_source(&shade);
+                    let _ = c.fill();
+                }
+                drop(c);
+                Some(s)
+            });
+            let mirror = surface(room).and_then(|s| {
+                let c = gtk::cairo::Context::new(&s).ok()?;
+                for i in 0..BANDS {
+                    let (r, g, b) = colour(i);
+                    let fade = gtk::cairo::LinearGradient::new(0.0, 0.0, 0.0, room.max(1.0));
+                    fade.add_color_stop_rgba(0.0, r, g, b, 0.30);
+                    fade.add_color_stop_rgba(1.0, r, g, b, 0.0);
+                    c.rectangle(x_of(i), 0.0, bw, room.max(1.0));
+                    let _ = c.set_source(&fade);
+                    let _ = c.fill();
+                }
+                drop(c);
+                Some(s)
+            });
+            *layers = match (full, mirror) {
+                (Some(full), Some(mirror)) => Some((key, full, mirror)),
+                _ => None,
+            };
+        }
+        let Some((_, full, mirror)) = layers.as_ref() else { return };
+        for (i, v) in bars.iter().enumerate() {
+            let bh = height(*v);
+            // The layer is moved so that its rounded tip sits at this bar's top.
+            let _ = cr.set_source_surface(full, 0.0, base - bh);
+            cr.rectangle(x_of(i), base - bh, bw, bh);
             let _ = cr.fill();
-            // Falling peak cap.
-            let ph = (base - 4.0) * peaks[i] as f64 + 3.0;
-            if ph > bh + 4.0 {
-                rounded(cr, x, base - ph - 3.0, bw, 2.5, 1.2);
-                cr.set_source_rgba(fg.red() as f64, fg.green() as f64, fg.blue() as f64, 0.55);
-                let _ = cr.fill();
+        }
+        if room >= 2.0 {
+            for (i, v) in bars.iter().enumerate() {
+                cr.rectangle(x_of(i), base + 3.0, bw, room.min((height(*v) * 0.45).round()));
             }
-            // Reflection.
-            let rh = (h - base - 2.0).min(bh * 0.45);
-            let reflection = gtk::cairo::LinearGradient::new(0.0, base + 3.0, 0.0, base + 3.0 + rh);
-            reflection.add_color_stop_rgba(0.0, r, g, b, 0.28);
-            reflection.add_color_stop_rgba(1.0, r, g, b, 0.0);
-            rounded(cr, x, base + 3.0, bw, rh, bw / 2.0);
-            let _ = cr.set_source(&reflection);
+            let _ = cr.set_source_surface(mirror, 0.0, base + 3.0);
+            let _ = cr.fill();
+        }
+        // Falling peak caps.
+        let fg = area.color();
+        let mut caps = false;
+        for i in 0..BANDS {
+            let (bh, ph) = (height(bars[i]), height(peaks[i]));
+            if ph > bh + 4.0 {
+                cr.rectangle(x_of(i), base - ph - 3.0, bw, 2.0);
+                caps = true;
+            }
+        }
+        if caps {
+            cr.set_source_rgba(fg.red() as f64, fg.green() as f64, fg.blue() as f64, 0.55);
             let _ = cr.fill();
         }
     }
 
+    /// The cover and its halo. Both are rendered once into layers and only composited per
+    /// frame: the halo scaled and faded with the bass, the cover as it is.
     fn draw_art(&self, area: &gtk::DrawingArea, cr: &gtk::cairo::Context, w: f64, h: f64) {
-        let pulse = 1.0 + 0.022 * self.bass.get() as f64;
-        let size = (w.min(h) - 64.0).clamp(40.0, 440.0) * pulse;
+        let bass = self.bass.get() as f64;
+        let scale = area.scale_factor().max(1);
+        let byte = |c: (f64, f64, f64)| [(c.0 * 255.0) as u8, (c.1 * 255.0) as u8, (c.2 * 255.0) as u8];
+        let layer = |halo: bool| -> Option<gtk::cairo::ImageSurface> {
+            let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, w as i32 * scale, h as i32 * scale).ok()?;
+            surface.set_device_scale(scale as f64, scale as f64);
+            let c = gtk::cairo::Context::new(&surface).ok()?;
+            self.render_art(&c, w, h, halo, !halo);
+            Some(surface)
+        };
+        let halo_key = (w as i32, h as i32, scale, byte(self.tint.get()));
+        let mut halo = self.halo_layer.borrow_mut();
+        if halo.as_ref().map(|(k, _)| *k != halo_key).unwrap_or(true) {
+            *halo = layer(true).map(|s| (halo_key, s));
+        }
+        if let Some((_, surface)) = halo.as_ref() {
+            let grow = 1.0 - 0.09 * (1.0 - bass);
+            let _ = cr.save();
+            cr.translate(w / 2.0, h / 2.0);
+            cr.scale(grow, grow);
+            cr.translate(-w / 2.0, -h / 2.0);
+            let _ = cr.set_source_surface(surface, 0.0, 0.0);
+            let _ = cr.paint_with_alpha(0.5 + 0.5 * bass);
+            let _ = cr.restore();
+        }
+        // While two covers cross-fade the body is drawn directly; afterwards from its layer.
+        if self.cover_at.get().elapsed() < Duration::from_millis(520) {
+            self.render_art(cr, w, h, false, true);
+            return;
+        }
+        let body_key = (w as i32, h as i32, scale, self.cover_at.get(), byte(self.accent()));
+        let mut body = self.body_layer.borrow_mut();
+        if body.as_ref().map(|(k, _)| *k != body_key).unwrap_or(true) {
+            *body = layer(false).map(|s| (body_key, s));
+        }
+        match body.as_ref() {
+            Some((_, surface)) => {
+                let _ = cr.set_source_surface(surface, 0.0, 0.0);
+                let _ = cr.paint();
+            }
+            None => self.render_art(cr, w, h, false, true),
+        }
+    }
+
+    /// Paint the halo (at full strength) and / or the cover with its shadow.
+    fn render_art(&self, cr: &gtk::cairo::Context, w: f64, h: f64, halo: bool, body: bool) {
+        let size = (w.min(h) - 64.0).clamp(40.0, 440.0);
         let (x, y) = ((w - size) / 2.0, (h - size) / 2.0);
         let radius = 22.0;
         let (tr_, tg, tb) = self.tint.get();
-        // A tight halo in the cover's colour that breathes with the bass, then a soft shadow.
-        let bass = self.bass.get() as f64;
-        for i in 1..=13 {
-            let grow = i as f64 * 2.0 * (0.75 + 0.5 * bass);
-            rounded(cr, x - grow, y - grow, size + 2.0 * grow, size + 2.0 * grow, radius + grow);
-            cr.set_source_rgba(tr_, tg, tb, 0.030 + 0.018 * bass);
-            let _ = cr.fill();
+        // Rings around the cover (even-odd fill), so the cover's own area is not blended 18 times.
+        cr.set_fill_rule(gtk::cairo::FillRule::EvenOdd);
+        if halo {
+            for i in 1..=13 {
+                let grow = i as f64 * 2.4;
+                rounded(cr, x - grow, y - grow, size + 2.0 * grow, size + 2.0 * grow, radius + grow);
+                rounded(cr, x + 1.0, y + 1.0, size - 2.0, size - 2.0, radius);
+                cr.set_source_rgba(tr_, tg, tb, 0.048);
+                let _ = cr.fill();
+            }
+        }
+        if !body {
+            cr.set_fill_rule(gtk::cairo::FillRule::Winding);
+            return;
         }
         for i in 1..=5 {
             let grow = i as f64 * 2.0;
             rounded(cr, x - grow, y - grow + 8.0, size + 2.0 * grow, size + 2.0 * grow, radius + grow);
+            rounded(cr, x + 1.0, y + 1.0, size - 2.0, size - 2.0, radius);
             cr.set_source_rgba(0.0, 0.0, 0.0, 0.07);
             let _ = cr.fill();
         }
+        cr.set_fill_rule(gtk::cairo::FillRule::Winding);
         let _ = cr.save();
         rounded(cr, x, y, size, size, radius);
         cr.clip();
-        let paint = |pixbuf: &Pixbuf, alpha: f64| {
-            let (pw, ph) = (pixbuf.width() as f64, pixbuf.height() as f64);
-            let scale = size / pw.min(ph);
+        let paint = |surface: &gtk::cairo::ImageSurface, alpha: f64| {
+            let scale = size / surface.width().max(1) as f64;
             let _ = cr.save();
-            cr.translate(x + (size - pw * scale) / 2.0, y + (size - ph * scale) / 2.0);
+            cr.translate(x, y);
             cr.scale(scale, scale);
-            cr.set_source_pixbuf(pixbuf, 0.0, 0.0);
+            let _ = cr.set_source_surface(surface, 0.0, 0.0);
             let _ = cr.paint_with_alpha(alpha);
             let _ = cr.restore();
         };
-        let _ = area;
         let placeholder = |alpha: f64| {
             let (ar, ag, ab) = self.accent();
             let gradient = gtk::cairo::LinearGradient::new(x, y, x + size, y + size);
@@ -657,12 +824,12 @@ impl NowPlaying {
         let t = (self.cover_at.get().elapsed().as_secs_f64() / 0.5).min(1.0);
         let eased = 1.0 - (1.0 - t).powi(3);
         if eased < 1.0 {
-            match self.old_cover.borrow().as_ref() {
+            match self.old_cover_surface.borrow().as_ref() {
                 Some(old) => paint(old, 1.0),
                 None => placeholder(1.0),
             }
         }
-        match self.cover.borrow().as_ref() {
+        match self.cover_surface.borrow().as_ref() {
             Some(new) => paint(new, eased),
             None => placeholder(eased),
         }
@@ -692,8 +859,10 @@ impl NowPlaying {
         // Takes whatever height the window has left, so the controls always fit.
         art.set_content_width(200);
         art.set_content_height(150);
-        art.set_hexpand(true);
-        art.set_vexpand(true);
+        // A square slot: only the cover's own area is redrawn on every frame.
+        let art_slot = gtk::AspectFrame::new(0.5, 0.5, 1.0, false);
+        art_slot.set_vexpand(true);
+        art_slot.set_child(Some(&art));
         let title = gtk::Label::builder().ellipsize(gtk::pango::EllipsizeMode::End).max_width_chars(42).justify(gtk::Justification::Center).css_classes(["omafile-np-title"]).build();
         let subtitle = gtk::Label::builder().ellipsize(gtk::pango::EllipsizeMode::End).max_width_chars(60).css_classes(["omafile-np-subtitle"]).build();
         let source = gtk::Label::builder().css_classes(["omafile-dim", "caption-heading", "omafile-np-source"]).build();
@@ -740,7 +909,7 @@ impl NowPlaying {
         column.set_margin_end(28);
         column.set_margin_top(34);
         column.set_margin_bottom(18);
-        column.append(&art);
+        column.append(&art_slot);
         column.append(&source);
         column.append(&title);
         column.append(&subtitle);
@@ -880,6 +1049,7 @@ impl NowPlaying {
     }
 
     fn page_shown(self: &Rc<Self>) {
+        self.ensure_tick();
         self.update();
         self.with_mpris(|m| m.sync_position());
         let wants_live = self.window.upgrade().map(|w| w.prefs.get_bool("now-playing-spectrum", true)).unwrap_or(true);

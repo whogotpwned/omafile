@@ -2,6 +2,14 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.18.1 — 2026-11-11
+
+### Changed
+- Now Playing is much lighter: the cover, its halo and the spectrum bars are rendered once into layers and only composited per frame (drawing a frame took about 5.5 ms, now 0.8 ms); the animation clock stops when nothing moves (paused, no fade), runs at 60 frames a second in the full view even on faster screens and at 20 for the small header equalizer.
+
+### Fixed
+- Build with the current Rust toolchain: a new clippy lint rejected the audio capture loop, which failed CI for 0.18.0.
+
 ## 0.18.0 — 2026-11-11
 
 ### Added

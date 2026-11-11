@@ -475,23 +475,22 @@ impl Window {
         self.split.set_show_sidebar(s.sidebar);
         // Replace the single start tab with the saved ones.
         let initial: Vec<adw::TabPage> = (0..self.tab_views[0].n_pages()).map(|i| self.tab_views[0].nth_page(i)).collect();
-        for side in 0..2 {
-            if s.sides[side].is_empty() {
+        for (side, tabs) in s.sides.iter().enumerate().take(2) {
+            if tabs.is_empty() {
                 continue;
             }
             if side == 1 {
                 self.split_boxes[1].set_visible(true);
             }
             self.active_side.set(side);
-            for (uri, _) in &s.sides[side] {
+            for (uri, _) in tabs {
                 self.open_in_new_tab(gio::File::for_uri(uri), false);
             }
         }
         for page in initial {
             self.tab_views[0].close_page(&page);
         }
-        for side in 0..2 {
-            let view = &self.tab_views[side];
+        for (side, view) in self.tab_views.iter().enumerate().take(2) {
             if view.n_pages() == 0 {
                 continue;
             }
