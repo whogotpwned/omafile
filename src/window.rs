@@ -2367,6 +2367,9 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     if !multiple && !in_trash {
         info.append(Some(tr("Edit Note…").as_str()), Some("win.edit-note"));
     }
+    if f.local && !in_trash && !multiple {
+        info.append(Some(tr("Earlier Versions…").as_str()), Some("win.versions"));
+    }
     info.append(Some(tr("Properties").as_str()), Some("win.properties"));
     menu.append_section(None, &info);
     menu
@@ -2455,6 +2458,7 @@ pub fn background_menu_model_ext(in_trash: bool, project: Option<&projects::Proj
     s3.append(Some(tr("Open Terminal Window Here").as_str()), Some("win.terminal"));
     s3.append(Some(tr("Add Bookmark").as_str()), Some("win.bookmark"));
     s3.append(Some(tr("Copy Path").as_str()), Some("win.copy-cwd-path"));
+    s3.append(Some(tr("Earlier Versions…").as_str()), Some("win.versions"));
     s3.append(Some(tr("Properties").as_str()), Some("win.cwd-properties"));
     menu.append_section(None, &s3);
     menu

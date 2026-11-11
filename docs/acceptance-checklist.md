@@ -131,3 +131,11 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 14.1 Download a file in the browser and choose *Show in folder*: omafile comes to the front with the file selected (with omafile running, and after *Make Default* also when it was closed).
 - [ ] 14.2 Preferences › Default file manager › *Make Default*, then `xdg-open ~/Documents`: omafile opens. *Undo* gives folders back to the previous file manager.
 - [ ] 14.3 Copy something large and run `systemd-inhibit --list`: omafile is listed with "Copying files"; it disappears when the copy is done. The laptop does not suspend during the copy.
+
+## 15. Earlier versions (needs Btrfs, cannot be tested in a container)
+
+- [ ] 15.1 In your home folder press `Ctrl+Alt+H`: the dialog offers to turn versions on and shows the commands. Run them; `sudo` asks once; `snapper list-configs` shows `home`, `systemctl list-timers` shows `snapper-timeline.timer`.
+- [ ] 15.2 Edit a text file, press *Snapshot Now*, edit it again: `Ctrl+Alt+H` on the file lists the earlier state; *Compare* shows the difference; *Restore a Copy* puts it next to the file; *Restore* replaces it and the replaced file is in the trash.
+- [ ] 15.3 Delete a file, open the folder's versions: it is listed under *Deleted from this folder* and *Restore* brings it back.
+- [ ] 15.4 A day later: several hourly snapshots exist, `snapper -c home list` shows old ones being pruned; `sudo btrfs filesystem du -s /home/.snapshots` stays reasonable.
+- [ ] 15.5 On a folder outside Btrfs (a FAT USB stick): the toast says versions need Btrfs.

@@ -2,6 +2,13 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.23.0 — 2026-11-11
+
+### Added
+- **Earlier versions** (`Ctrl+Alt+H`, context menu): file history from Btrfs snapshots made by snapper. For a file: its distinct earlier states with *Compare*, *Restore a Copy* and *Restore* (in place, the current state goes to the trash). For a folder: every snapshot to look into or compare, and what was deleted from the folder with *Restore*. *Snapshot Now* takes one on demand. Snapshots are read straight from `<subvolume>/.snapshots`, so any snapper configuration works.
+- **Turning versions on for the home folder**: Omarchy snapshots only the system. One dialog explains the step, shows the commands (snapper configuration, hourly timeline with automatic pruning, read access for the user) and runs them in a terminal with `sudo`.
+- Help: *Earlier versions* in the feature list, snapper in the list of tools found on this computer.
+
 ## 0.22.0 — 2026-11-11
 
 ### Added

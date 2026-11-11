@@ -56,6 +56,8 @@ mod undo;
 mod vaults;
 mod vaultui;
 mod views;
+mod versions;
+mod versionsui;
 mod vimkeys;
 mod viewmem;
 mod shelf;

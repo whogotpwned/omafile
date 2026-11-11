@@ -106,6 +106,7 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Developer", "", "Context menu › Python", "Create venv (uv), install requirements, freeze, REPL, .gitignore, recreate"),
     ("Developer", "", "Run in venv", "Context menu on a .py file: runs it with the venv's interpreter"),
     ("Developer", "", "Context menu › New Encrypted Folder", "gocryptfs vault; Unlock, Lock, Change Password on the folder"),
+    ("Tools", "versions", "", "Earlier versions of the selected file or folder from Btrfs snapshots: compare, restore a copy or in place, bring back deleted files; turns snapshots on for the home folder"),
     ("Tools", "feeds", "", "Feeds: read RSS and Atom news where the files are (Add Feed… in the sidebar); in the reader: ↑ ↓ or J K next and previous article, O opens the page in the browser, M marks unread, R fetches, Space scrolls, Esc back"),
     ("Remote", "", "Sidebar › Remote", "Saved connections open beside the local files (local left, server right); copy or move across with the header arrows, Shift+F5 / Shift+F6 or by dragging; passwords stay in the system keyring"),
     ("Developer", "", "Sidebar › Vaults", "Encrypted folders with their own master password: Add Vault… creates or lists one, a click shows the padlock and asks for the password, the lock button closes it"),

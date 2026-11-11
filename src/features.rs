@@ -161,7 +161,7 @@ impl Window {
         self.present_dialog(&dialog);
     }
 
-    fn show_file_compare(self: &Rc<Self>, a: &Path, b: &Path, diff: &str) {
+    pub(crate) fn show_file_compare(self: &Rc<Self>, a: &Path, b: &Path, diff: &str) {
         let text = gtk::TextView::builder().editable(false).cursor_visible(false).monospace(true).left_margin(10).right_margin(10).top_margin(10).build();
         text.add_css_class("omafile-preview-text");
         let (adds, dels) = crate::preview::render_diff_into(&text, diff);
@@ -177,7 +177,7 @@ impl Window {
         self.compare_dialog(&format!("{}  ↔  {}", name_of(a), name_of(b)), &subtitle, scroll.upcast_ref());
     }
 
-    fn show_dir_compare(self: &Rc<Self>, a: &Path, b: &Path, d: crate::compare::DirDiff) {
+    pub(crate) fn show_dir_compare(self: &Rc<Self>, a: &Path, b: &Path, d: crate::compare::DirDiff) {
         let page = adw::PreferencesPage::new();
         let total = d.only_left.len() + d.only_right.len() + d.differ.len();
         let section = |title: String, entries: &[String], icon: &str, css: &str| {

@@ -47,6 +47,7 @@ pub const FEATURES: &[Feature] = &[
     f("Organising", "emblem-system-symbolic", "Folder rules", "Tidy a folder automatically: move, copy, tag, trash or sort files by name, type and age.", "rules", true, ""),
     f("Organising", "folder-open-symbolic", "Shelf", "A floating place to collect files from several folders, then copy or move them in one go.", "shelf-show", true, ""),
     f("Organising", "edit-undo-symbolic", "Undo for file operations", "Move, copy, rename and trash can be undone and redone, also after a mistake in a batch.", "undo", false, ""),
+    f("Organising", "document-open-recent-symbolic", "Earlier versions", "Hourly Btrfs snapshots of your home folder: bring a file back as it was, compare it with now, or restore what was deleted.", "versions", true, ""),
     f("Organising", "document-edit-symbolic", "Rename many at once", "Patterns, find and replace, numbering and metadata, with a preview before anything changes.", "", false, "F2 with several files selected"),
     f("Organising", "accessories-text-editor-symbolic", "Notes on files", "A note on any file or folder, shown as a badge next to its name.", "edit-note", false, ""),
     // ----- documents and media
@@ -92,6 +93,7 @@ const TOOLS: &[(&[&str], &str)] = &[
     (&["git"], "Git status, commits and branches"),
     (&["uv"], "Fast Python environments"),
     (&["curl"], "News feeds"),
+    (&["snapper"], "Earlier versions of files"),
     (&["parec", "pw-record"], "Live spectrum in Now Playing"),
     (&["heif-convert", "magick"], "HEIC photos from the iPhone"),
     (&["ebook-convert"], "Converting eBooks (Calibre)"),
