@@ -10,13 +10,13 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.21.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.22.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-93%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-96%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-hero.png" alt="Two omafile windows in Tokyo Night. Front left: grid view with thumbnails for photos, a GIF, a video, eBook covers, a PDF and a song, the preview pane, an unlocked and a locked vault and an iPhone in the sidebar and the mini player at its bottom. Right: the Now Playing view with cover, live spectrum and transport controls." width="900">
@@ -98,6 +98,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![content search](docs/screenshot-content-search.png) | **Full-text search**: the second toggle in the search bar hands the query to `ripgrep`, so you find the files that *contain* the words, streamed the same way (`.git` skipped, 8 MB per file cap). |
 | ![code preview](docs/screenshot-code-preview.png) | **Quick Look renderers**: source code with syntax highlighting (`bat`), Markdown with headings, lists, links and code, CSV / TSV as an aligned table, JSON formatted by `jq`, font files as a specimen (ImageMagick). Plain text stays plain. |
 | ![media facts](docs/screenshot-media-facts.png) | **Metadata where you look**: images show dimensions, format, camera, date taken and exposure (EXIF); audio and video show codec, sample rate, channels, resolution, frame rate, bitrate and tags, in the preview, Quick Look and the *Media* group of Properties. |
+| ![show in folder](docs/screenshot-show-in-folder.png) | **The system's file manager**: omafile answers `org.freedesktop.FileManager1`, the D-Bus interface behind *Show in folder* in browsers, download managers and editors: the folder opens in a new tab with the file selected (or its properties, when the program asks for those). Preferences › Default file manager › *Make Default* also opens folders from other programs in omafile and writes a small D-Bus service file into your own data directory, so that *Show in folder* starts omafile when it is not running; *Undo* puts the previous file manager back. While files are being copied or moved omafile holds a **sleep and idle inhibitor** with systemd-logind (hypridle honours it), so a long transfer is not cut short by suspend. |
 | ![help](docs/screenshot-help.png) | **Help** (`F1`): one dialog with three pages and one search field. **Features** is a tour of what omafile can do, grouped by area; every entry says how to reach it (its shortcut or the menu it lives in) and, where nothing can go wrong, has an *Open* button that takes you there. **Shortcuts** is the full list of bindings. **About** shows the **version**, what is new in it (taken from the changelog built into the program), which optional tools were found on this computer with a tick or a cross, and where settings, state and caches are kept. The version is also in the corner of the dialog and in `omafile --version`. ![about](docs/screenshot-help-about.png) |
 | ![bindings](docs/screenshot-bindings.png) | **All bindings in one place** (`Ctrl+?`, or the *Shortcuts* page of Help): a searchable overlay of every shortcut, gesture and menu entry with keycaps, starting with the Hyprland key that opens omafile. Generated from the accelerator table, kept complete by a test, printable with `omafile --print-bindings`. |
 
@@ -456,6 +457,7 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 | `~/.config/omafile/rules` | Folder rules: folder, glob, older-than-days, action, argument, enabled |
 | `~/.config/omafile/views` | Remembered view per folder: uri, view, sort, order, group, grid |
 | `~/.config/omafile/vaults` | Vaults listed in the sidebar: one encrypted folder (`Name.gocryptfs`) per line, no secrets |
+| `~/.local/share/dbus-1/services/org.freedesktop.FileManager1.service` | Written by *Make Default*: lets D-Bus start omafile for *Show in folder*; removed by *Undo* |
 | `~/.config/omafile/connections` | Saved server connections: name and address per line; passwords are in the system keyring, not here |
 | `~/.config/omafile/feeds` | News feeds: title and address per line (articles are cached under `~/.cache/omafile/feeds`, read marks in `~/.local/state/omafile/feeds-read`) |
 | `~/.cache/thumbnails/` | freedesktop thumbnail cache, shared with other apps |
@@ -480,11 +482,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.21.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.22.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 93 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 96 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

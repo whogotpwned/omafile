@@ -209,6 +209,48 @@ impl Window {
         phone.add(&import_dir);
         page.add(&phone);
 
+        // The system's file manager: folders open here, and so does "Show in folder" elsewhere.
+        let system = adw::PreferencesGroup::builder().title(tr("Default file manager")).build();
+        let default_row = adw::ActionRow::builder().title(tr("Open folders with omafile")).subtitle(tr("Folders from other programs and “Show in folder” in browsers open here, also when omafile is not running yet")).build();
+        let default_btn = gtk::Button::builder().valign(gtk::Align::Center).build();
+        default_btn.set_label(&if crate::fm1::is_default() { tr("Undo") } else { tr("Make Default") });
+        let this = Rc::downgrade(self);
+        let row2 = default_row.clone();
+        default_btn.connect_clicked(move |button| {
+            let Some(w) = this.upgrade() else { return };
+            // The answer goes into the row: a toast would sit behind this dialog.
+            let said = if crate::fm1::is_default() {
+                let previous = w.prefs.get("previous-file-manager");
+                match crate::fm1::undo_default(previous.as_deref()) {
+                    Ok(()) => tr("omafile is no longer the default file manager"),
+                    Err(e) => e,
+                }
+            } else {
+                match crate::fm1::make_default() {
+                    Ok(before) => {
+                        if let Some(before) = before {
+                            w.prefs.set("previous-file-manager", Some(&before));
+                        }
+                        tr("omafile is now the default file manager")
+                    }
+                    Err(e) => e,
+                }
+            };
+            row2.set_subtitle(&said);
+            button.set_label(&if crate::fm1::is_default() { tr("Undo") } else { tr("Make Default") });
+        });
+        default_row.add_suffix(&default_btn);
+        system.add(&default_row);
+        let dbus_row = adw::SwitchRow::builder().title(tr("Answer “Show in folder” while running")).subtitle(tr("Other programs find omafile through org.freedesktop.FileManager1; takes effect on the next start")).active(self.prefs.get_bool("file-manager-dbus", true)).build();
+        let this = Rc::downgrade(self);
+        dbus_row.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("file-manager-dbus", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        system.add(&dbus_row);
+        page.add(&system);
+
         let servers = adw::PreferencesGroup::builder().title(tr("Servers")).build();
         let two = adw::SwitchRow::builder().title(tr("Open servers beside the local files")).subtitle(tr("Connecting splits the view: local on the left, the server on the right, like WinSCP. Off: the server opens in the current tab")).active(self.prefs.get_bool("remote-two-panes", true)).build();
         let this = Rc::downgrade(self);

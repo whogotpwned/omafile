@@ -101,6 +101,8 @@ pub struct Window {
     pub feed_page: RefCell<Option<Rc<crate::feedsui::FeedPage>>>,
     /// Unread articles per feed, until something changes.
     pub feed_counts: RefCell<Option<std::collections::HashMap<String, usize>>>,
+    /// Held while files are being copied, so the computer does not go to sleep half way.
+    pub sleep_guard: RefCell<Option<crate::inhibit::Guard>>,
     /// Copy / move to the other pane, shown in the header while the view is split.
     pub split_tools: gtk::Box,
     pub sidebar_menu: gtk::PopoverMenu,
@@ -342,6 +344,7 @@ impl Window {
             feed_page: RefCell::new(None),
             feed_counts: RefCell::new(None),
             split_tools,
+            sleep_guard: RefCell::new(None),
             sidebar_menu,
             back_btn,
             forward_btn,

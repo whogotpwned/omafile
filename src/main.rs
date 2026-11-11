@@ -14,12 +14,14 @@ mod extras;
 mod features;
 mod feeds;
 mod feedsui;
+mod fm1;
 mod finder;
 mod git;
 mod help;
 mod gitui;
 mod groups;
 mod hypr;
+mod inhibit;
 mod imagetools;
 mod item;
 mod mediatools;
@@ -139,6 +141,11 @@ fn main() -> glib::ExitCode {
             app2.quit()
         });
         app.add_action(&quit);
+        // "Show in folder" from browsers and other programs ends up here.
+        if prefs2.get_bool("file-manager-dbus", true) {
+            let (app3, prefs3, theme3) = (app.clone(), prefs2.clone(), theme2.clone());
+            fm1::serve(move |request| show_for_other_apps(&app3, request, &prefs3, &theme3));
+        }
         let about = gio::SimpleAction::new("about", None);
         let app2 = app.clone();
         about.connect_activate(move |_, _| actions::about(&app2));
@@ -183,10 +190,49 @@ fn main() -> glib::ExitCode {
     app.run()
 }
 
-fn open_window(app: &adw::Application, start: gio::File, prefs: &Rc<prefs::Prefs>, theme: &Rc<RefCell<Option<Rc<theme::ThemeManager>>>>) {
+fn open_window(app: &adw::Application, start: gio::File, prefs: &Rc<prefs::Prefs>, theme: &Rc<RefCell<Option<Rc<theme::ThemeManager>>>>) -> Rc<window::Window> {
     let theme = theme.borrow().clone().expect("theme manager is created at startup");
     let win = window::Window::new(app, start, prefs.clone(), theme);
     // The Rc graph is owned by the GTK window's closures; keep it alive explicitly too.
     unsafe { win.window.set_data("omafile-window", win.clone()) };
     win.window.present();
+    win
+}
+
+/// "Show in folder" from another program (org.freedesktop.FileManager1): a new tab in the
+/// window that is there, or a new window; the item selected, its properties if asked for.
+fn show_for_other_apps(app: &adw::Application, request: fm1::Request, prefs: &Rc<prefs::Prefs>, theme: &Rc<RefCell<Option<Rc<theme::ThemeManager>>>>) {
+    let (uris, select, properties) = match request {
+        fm1::Request::Folders(uris) => (uris, false, false),
+        fm1::Request::Items(uris) => (uris, true, false),
+        fm1::Request::Properties(uris) => (uris, true, true),
+    };
+    for uri in uris {
+        let file = gio::File::for_uri(&uri);
+        let folder = if select { file.parent().unwrap_or_else(|| file.clone()) } else { file.clone() };
+        let existing = app.active_window().or_else(|| app.windows().into_iter().next()).and_then(|w| unsafe { w.data::<Rc<window::Window>>("omafile-window").map(|p| p.as_ref().clone()) });
+        let win = match existing {
+            Some(win) => {
+                win.show_files();
+                win.open_in_new_tab(folder, true);
+                win
+            }
+            None => open_window(app, folder, prefs, theme),
+        };
+        if select {
+            if let Some(pane) = win.active_pane() {
+                pane.select_file_later(file.clone());
+            }
+        }
+        if properties {
+            // Once the folder has been read and the item is selected.
+            let weak = Rc::downgrade(&win);
+            glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+                if let Some(win) = weak.upgrade() {
+                    gio::prelude::ActionGroupExt::activate_action(&win.window, "properties", None);
+                }
+            });
+        }
+        win.window.present();
+    }
 }

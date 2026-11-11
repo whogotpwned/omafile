@@ -29,6 +29,12 @@ pub fn unlocked_vaults() -> Vec<std::path::PathBuf> {
 
 pub fn write(window: &Window) {
     let busy = window.queue_busy();
+    // Stay awake for as long as files are on the move.
+    if busy && window.sleep_guard.borrow().is_none() {
+        window.sleep_guard.replace(crate::inhibit::take("Copying files"));
+    } else if !busy {
+        window.sleep_guard.replace(None);
+    }
     let vaults = unlocked_vaults().len();
     let iphone = crate::iphone::devices().len();
     let peers = window.nearby_peers();

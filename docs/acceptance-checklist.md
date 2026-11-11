@@ -125,3 +125,9 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 13.3 Copy a folder up and a file down with the header arrows and by dragging between the panes.
 - [ ] 13.4 Add three real feeds (one by giving only the site's address): unread counts appear, articles read well, *Open in Browser* opens the default browser.
 - [ ] 13.5 Go offline: feeds already fetched can still be read.
+
+## 14. System integration
+
+- [ ] 14.1 Download a file in the browser and choose *Show in folder*: omafile comes to the front with the file selected (with omafile running, and after *Make Default* also when it was closed).
+- [ ] 14.2 Preferences › Default file manager › *Make Default*, then `xdg-open ~/Documents`: omafile opens. *Undo* gives folders back to the previous file manager.
+- [ ] 14.3 Copy something large and run `systemd-inhibit --list`: omafile is listed with "Copying files"; it disappears when the copy is done. The laptop does not suspend during the copy.

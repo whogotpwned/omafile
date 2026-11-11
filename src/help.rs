@@ -75,6 +75,7 @@ pub const FEATURES: &[Feature] = &[
     f("Make it yours", "applications-graphics-symbolic", "Follows your Omarchy theme", "Colours, accent, light or dark and the icon set come from the active theme and change with it at once.", "", false, "Sidebar › Omarchy Themes"),
     f("Make it yours", "preferences-desktop-locale-symbolic", "Your language", "English, German, Spanish, French, Italian, Portuguese and Dutch, chosen from the system.", "", false, "Omarchy › Setup › Language"),
     f("Make it yours", "input-keyboard-symbolic", "Keyboard first", "Every command has a shortcut; Vim keys can be switched on in groups.", "preferences", true, ""),
+    f("Make it yours", "folder-symbolic", "The system's file manager", "Folders from other programs and “Show in folder” in browsers open in omafile; long transfers keep the computer awake.", "", false, "Preferences › Default file manager"),
     f("Make it yours", "view-restore-symbolic", "Remembers where you were", "Tabs, panes and window size come back on the next start.", "", false, "Preferences › Restore tabs on start"),
     f("Make it yours", "view-app-grid-symbolic", "On the Omarchy bar", "The shell plugin puts omafile on the bar: places, running transfers, unlocked vaults, connected phones.", "", false, "omarchy plugin add"),
 ];

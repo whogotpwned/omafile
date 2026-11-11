@@ -2,6 +2,13 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.22.0 — 2026-11-11
+
+### Added
+- **Show in folder from other programs**: omafile implements `org.freedesktop.FileManager1` (ShowItems, ShowFolders, ShowItemProperties). A browser's *Show in folder* opens the folder in a new tab with the file selected. A switch in Preferences turns it off.
+- **Make Default** (Preferences › Default file manager): folders from other programs open in omafile, and a D-Bus service file in the user's data directory starts omafile for *Show in folder* when it is not running. *Undo* restores the previous default.
+- **No sleep in the middle of a transfer**: while files are copied or moved, omafile holds a sleep and idle inhibitor with systemd-logind.
+
 ## 0.21.0 — 2026-11-11
 
 ### Added
