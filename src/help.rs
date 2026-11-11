@@ -64,6 +64,7 @@ pub const FEATURES: &[Feature] = &[
     f("Devices and servers", "network-server-symbolic", "Servers in two panes", "SFTP and SCP with local files on the left and the server on the right. Connections are saved in the sidebar, passwords in the system keyring.", "connect", true, ""),
     // ----- privacy
     f("Privacy", "changes-prevent-symbolic", "Vaults", "Encrypted folders with their own master password in the sidebar. A padlock guards them; one file takes them to another computer.", "vault-add", true, "Sidebar › Vaults"),
+    f("Privacy", "document-revert-symbolic", "Backup to another drive", "Complete, browsable copies of your folders on an external disk or stick, made by themselves on a schedule. Unchanged files take no extra space; the sidebar shows when the last backup ran.", "backup", true, ""),
     f("Privacy", "dialog-password-symbolic", "Secrets stay out of sight", "Keys and credential files are never shown in previews or thumbnails.", "", false, "Preview pane"),
     f("Privacy", "emblem-ok-symbolic", "Checksums", "Verify a download against its SHA-256 sum.", "verify-checksum", false, "Context menu › Verify Checksum"),
     // ----- development

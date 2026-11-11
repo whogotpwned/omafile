@@ -50,6 +50,8 @@ pub enum PlaceKind {
     Nearby(String),
     /// A drive or phone that is plugged in but not mounted yet.
     Volume(gio::Volume),
+    /// The backup page.
+    Backup,
     /// A news feed (its address; empty for all feeds together).
     Feed(String),
     /// A saved server connection (its name); the entry's file is the address.
@@ -99,6 +101,9 @@ pub struct Window {
     pub now_playing: RefCell<Option<Rc<crate::nowplaying::NowPlaying>>>,
     pub vault_page: RefCell<Option<Rc<crate::vaults::VaultPage>>>,
     pub feed_page: RefCell<Option<Rc<crate::feedsui::FeedPage>>>,
+    pub backup_page: RefCell<Option<Rc<crate::backupui::BackupPage>>>,
+    /// What the sidebar's Backup row says right now.
+    pub backup_label: RefCell<String>,
     /// Unread articles per feed, until something changes.
     pub feed_counts: RefCell<Option<std::collections::HashMap<String, usize>>>,
     /// Held while files are being copied, so the computer does not go to sleep half way.
@@ -342,6 +347,8 @@ impl Window {
             now_playing: RefCell::new(None),
             vault_page: RefCell::new(None),
             feed_page: RefCell::new(None),
+            backup_page: RefCell::new(None),
+            backup_label: RefCell::new(String::new()),
             feed_counts: RefCell::new(None),
             split_tools,
             sleep_guard: RefCell::new(None),
@@ -389,6 +396,7 @@ impl Window {
         let _ = this.nearby();
         crate::nowplaying::NowPlaying::install(&this);
         this.start_feed_updates();
+        this.start_backup_watch();
         if std::env::args().any(|a| a == "--import-photos") {
             let weak = Rc::downgrade(&this);
             glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
@@ -1045,6 +1053,7 @@ impl Window {
                     PlaceKind::Volume(v) => w.mount_volume(&v, true),
                     PlaceKind::Vault(v) => w.open_vault(&v),
                     PlaceKind::Feed(url) => w.open_feed(&url),
+                    PlaceKind::Backup => w.open_backup(),
                     _ => w.navigate(file),
                 }
             }
@@ -1064,6 +1073,7 @@ impl Window {
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_eject() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Eject", "win.sidebar-unmount")]),
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_unmount() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Unmount", "win.sidebar-unmount")]),
                     Some(Place::Entry { kind: PlaceKind::Volume(_), .. }) => menu_of(&[("Mount", "win.sidebar-mount")]),
+                    Some(Place::Entry { kind: PlaceKind::Backup, .. }) => menu_of(&[("Back Up Now", "win.backup-now"), ("Open Backup", "win.backup")]),
                     Some(Place::Entry { kind: PlaceKind::Feed(url), .. }) if url.is_empty() => menu_of(&[("Fetch New Articles", "win.sidebar-feed-refresh")]),
                     Some(Place::Entry { kind: PlaceKind::Feed(_), .. }) => menu_of(&[("Fetch New Articles", "win.sidebar-feed-refresh"), ("Mark All as Read", "win.sidebar-feed-read"), ("Copy Address", "win.sidebar-feed-copy"), ("Remove", "win.sidebar-feed-remove")]),
                     Some(Place::Entry { kind: PlaceKind::Connection(_), .. }) => menu_of(&[("Connect", "win.sidebar-connect"), ("Open in New Tab", "win.sidebar-new-tab"), ("Edit…", "win.sidebar-connection-edit"), ("Remove", "win.sidebar-connection-remove")]),
@@ -1105,7 +1115,7 @@ impl Window {
                             spring2.borrow_mut().take();
                             let Some(w) = this2.upgrade() else { return };
                             let file = match w.state.borrow().places.get(i as usize) {
-                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_)) => Some(file.clone()),
+                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Backup | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_)) => Some(file.clone()),
                                 _ => None,
                             };
                             if let Some(f) = file {
@@ -1150,7 +1160,7 @@ impl Window {
                     }
                     file
                 }
-                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file,
+                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Backup | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file,
                 _ => return false,
             };
             if let Some(p) = w.active_pane() {
@@ -1307,6 +1317,19 @@ impl Window {
                 places.push(Place::Entry { name: crate::vaults::display_name(&vault), icon: if open { "changes-allow-symbolic" } else { "changes-prevent-symbolic" }.into(), file: gio::File::for_path(mount), kind: PlaceKind::Vault(vault) });
             }
             places.push(Place::Action { name: tr("Add Vault…"), icon: "list-add-symbolic".into(), action: "vault-add" });
+        }
+
+        // Backup: when the last one ran, at a glance.
+        {
+            let (label, mood) = crate::backupui::summary(&crate::backup::Config::load(), &crate::backup::Status::load());
+            let icon = match mood {
+                crate::backupui::Mood::Late | crate::backupui::Mood::Bad => "dialog-warning-symbolic",
+                crate::backupui::Mood::Busy => "emblem-synchronizing-symbolic",
+                _ => "document-open-recent-symbolic",
+            };
+            places.push(Place::Header(tr("Backup")));
+            places.push(Place::Entry { name: label.clone(), icon: icon.into(), file: gio::File::for_uri("omafile-backup:///"), kind: PlaceKind::Backup });
+            self.backup_label.replace(label);
         }
 
         // Feeds: news to read where the files are.
@@ -1649,7 +1672,7 @@ impl Window {
                     PlaceKind::Tag(_) => continue,
                     PlaceKind::Smart(_) => (tr("Smart folder"), PaletteTarget::Action(format!("smart-open::{name}"))),
                     PlaceKind::Bookmark => (tr("Bookmark"), PaletteTarget::Folder(file.clone())),
-                    PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_) | PlaceKind::Feed(_) => continue,
+                    PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_) | PlaceKind::Feed(_) | PlaceKind::Backup => continue,
                     PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
                 };

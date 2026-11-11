@@ -1,6 +1,6 @@
 pkgbase = omafile
 	pkgdesc = Native GTK4/libadwaita file manager that follows the Omarchy theme
-	pkgver = 0.23.0
+	pkgver = 0.24.0
 	pkgrel = 1
 	url = https://github.com/whogotpwned/omafile
 	arch = x86_64
@@ -42,7 +42,7 @@ pkgbase = omafile
 	optdepends = uv: fast Python venv creation and installs from the Python menu
 	optdepends = xdg-desktop-portal-hyprland: "Open With" chooser
 	optdepends = uwsm: launch terminals and readers as session apps
-	source = omafile-0.23.0.tar.gz::https://github.com/whogotpwned/omafile/archive/v0.23.0.tar.gz
+	source = omafile-0.24.0.tar.gz::https://github.com/whogotpwned/omafile/archive/v0.24.0.tar.gz
 	sha256sums = SKIP
 
 pkgname = omafile

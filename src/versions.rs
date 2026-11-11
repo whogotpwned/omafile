@@ -83,7 +83,7 @@ pub fn locked_store_for(path: &Path) -> Option<PathBuf> {
     None
 }
 
-fn tag<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
+pub(crate) fn tag<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
     let open = format!("<{name}>");
     let start = xml.find(&open)? + open.len();
     let end = xml[start..].find(&format!("</{name}>"))? + start;

@@ -2,6 +2,16 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.24.0 — 2026-11-11
+
+### Added
+- **Backup to another drive** (`Ctrl+Alt+K`, sidebar › Backup): complete, browsable copies of chosen folders on an external disk or stick. Unchanged files are hard links to the previous backup; old backups thin out (all of the last day, one a day for a month, one a week beyond). An interrupted run is continued.
+- **Always in view**: the sidebar's Backup row says when the last backup ran, shows progress while one runs and warns when backups are overdue or failed. The page lists the recent backups with what each copied, the drive with its free space, and lets every backup be opened or deleted.
+- **Automatic**: hourly, daily or weekly through a systemd user timer that runs `omafile --backup --scheduled`, also when omafile is closed; missed runs are made up for, and a drive that is away is waited for (it is recognised by its file system id). While omafile is open it also starts a due backup when the drive appears.
+- **Settings**: which folders, exclusions by name or folder, and a switch that leaves out caches, the trash and folders marked with `CACHEDIR.TAG`. Other file systems mounted inside a folder (an unlocked vault, a network share) are not followed. Warnings for a destination on the same disk and for FAT / exFAT drives.
+- *Earlier Versions* also reads the backups on the drive, so files are restored from there with the same dialog.
+- `omafile --backup` for scripts and the timer.
+
 ## 0.23.0 — 2026-11-11
 
 ### Added

@@ -85,6 +85,8 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("vault-lock-all", "Lock All Encrypted Folders", "changes-prevent-symbolic"),
     ("vault-add", "Add Vault (encrypted folder in the sidebar)", "changes-prevent-symbolic"),
     ("versions", "Earlier Versions (snapshots)", "document-open-recent-symbolic"),
+    ("backup", "Backup: Status, History and Settings", "document-open-recent-symbolic"),
+    ("backup-now", "Back Up Now", "document-open-recent-symbolic"),
     ("feeds", "Feeds: Read the News", "application-rss+xml-symbolic"),
     ("feed-add", "Add Feed (RSS / Atom)", "application-rss+xml-symbolic"),
     ("new-folder-with-selection", "New Folder with Selection", "folder-new-symbolic"),
@@ -158,6 +160,7 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.nearby", &["<Control><Alt>p"]),
     ("win.feeds", &["<Control><Alt>w"]),
     ("win.versions", &["<Control><Alt>h"]),
+    ("win.backup", &["<Control><Alt>k"]),
     ("win.now-playing", &["F8"]),
     ("win.git-commit", &["<Control><Alt>c"]),
     ("win.git-branch", &["<Control><Alt>b"]),
@@ -644,6 +647,8 @@ impl Window {
             }
         }));
         simple("versions", Box::new(|w| w.versions_selected()));
+        simple("backup", Box::new(|w| w.open_backup()));
+        simple("backup-now", Box::new(|w| w.backup_now()));
         simple("feed-add", Box::new(|w| w.feed_add_dialog()));
         simple("feeds", Box::new(|w| {
             if crate::feeds::list().is_empty() {

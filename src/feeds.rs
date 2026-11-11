@@ -486,6 +486,13 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (if m <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 }, m, d)
 }
 
+/// "2026-11-11 12:00:00" in UTC for a time in seconds since 1970, as snapper writes dates.
+pub fn utc_stamp(unix: i64) -> String {
+    let (y, m, d) = civil_from_days(unix.div_euclid(86400));
+    let s = unix.rem_euclid(86400);
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}", s / 3600, s % 3600 / 60, s % 60)
+}
+
 fn zone_offset(zone: &str) -> i64 {
     let zone = zone.trim();
     let sign = match zone.chars().next() {
@@ -894,6 +901,8 @@ mod tests {
         assert_eq!(parse_date("2026-11-10T14:30:00.123+01:00"), parse_date("2026-11-10T13:30:00Z"));
         assert_eq!(parse_date("2026-11-10"), parse_date("2026-11-10T00:00:00Z"));
         assert_eq!(parse_date("yesterday"), 0);
+        assert_eq!(utc_stamp(parse_date("2026-11-10T13:30:05Z")), "2026-11-10 13:30:05");
+        assert_eq!(utc_stamp(0), "1970-01-01 00:00:00");
         let now = parse_date("2026-11-11T12:00:00Z");
         assert_eq!(friendly_date(parse_date("2026-11-11T08:05:00Z"), now, 3600), "09:05");
         assert_eq!(friendly_date(parse_date("2026-11-09T08:05:00Z"), now, 0), "Mon 08:05");

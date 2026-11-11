@@ -40,12 +40,21 @@ impl Window {
     }
 
     pub fn show_versions(self: &Rc<Self>, path: &Path) {
-        match versions::readiness(path) {
-            Readiness::Ready => {
-                if let Some(store) = versions::store_for(path) {
-                    self.versions_dialog(&store, path);
-                }
+        // Two places can hold earlier versions: Btrfs snapshots here, and the backups on
+        // another drive when it is connected. Both are read the same way.
+        let mut stores: Vec<Store> = versions::store_for(path).into_iter().collect();
+        if let crate::backup::Destination::Ready(dir) = crate::backup::destination(&crate::backup::Config::load()) {
+            let snapshots = crate::backup::store_dir(&dir).join(".snapshots");
+            if snapshots.is_dir() {
+                stores.push(Store { root: PathBuf::from("/"), snapshots });
             }
+        }
+        if !stores.is_empty() {
+            self.versions_dialog(&stores, path);
+            return;
+        }
+        match versions::readiness(path) {
+            Readiness::Ready => {}
             Readiness::Locked(root) => self.versions_setup(&root, true),
             Readiness::CanSetUp(root) => self.versions_setup(&root, false),
             Readiness::Unavailable(why) => self.toast_error(&match why.as_str() {
@@ -91,15 +100,27 @@ impl Window {
         });
     }
 
-    fn versions_dialog(self: &Rc<Self>, store: &Store, path: &Path) {
+    fn versions_dialog(self: &Rc<Self>, stores: &[Store], path: &Path) {
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.display().to_string());
         let is_dir = path.is_dir();
         let page = adw::PreferencesPage::new();
-        let all = versions::snapshots(store);
+        let mut all: Vec<versions::Snapshot> = stores.iter().flat_map(versions::snapshots).collect();
+        all.sort_by_key(|s| std::cmp::Reverse(s.date));
+        let store = &stores[0];
         let dialog = adw::Dialog::builder().title(tr("Earlier Versions")).content_width(720).content_height(660).build();
 
         // ----- the item's own history
-        let mut found = versions::versions_of(store, path);
+        let mut found: Vec<versions::Version> = Vec::new();
+        for s in stores {
+            for v in versions::versions_of(s, path) {
+                // The same state kept in a snapshot and in a backup is one version.
+                match found.iter_mut().find(|f| !is_dir && f.modified == v.modified && f.size == v.size) {
+                    Some(f) => f.kept_in += v.kept_in,
+                    None => found.push(v),
+                }
+            }
+        }
+        found.sort_by_key(|v| std::cmp::Reverse(if is_dir { v.snapshot.date } else { v.modified }));
         // A folder has one entry per snapshot: the newest thirty are plenty to pick from.
         found.truncate(30);
         let history = adw::PreferencesGroup::builder().title(if is_dir { tr("This folder at earlier times") } else { tr("Versions of this file") }).build();
@@ -179,7 +200,14 @@ impl Window {
 
         // ----- what is gone from a folder
         if is_dir {
-            let gone = versions::deleted_in(store, path);
+            let mut gone: Vec<versions::Deleted> = Vec::new();
+            for s in stores {
+                for d in versions::deleted_in(s, path) {
+                    if !gone.iter().any(|g| g.name == d.name) {
+                        gone.push(d);
+                    }
+                }
+            }
             let deleted = adw::PreferencesGroup::builder().title(tr("Deleted from this folder")).description(if gone.is_empty() { tr("Nothing that was here in a snapshot is missing now.") } else { tr("These were here when a snapshot was taken and are gone now.") }).build();
             for item in gone.iter().take(200) {
                 let mut facts = vec![format!("{} {}", tr("last seen in the snapshot of"), when(item.snapshot.date))];
@@ -217,7 +245,9 @@ impl Window {
             (Some(oldest), Some(newest)) => format!("{} {}  ·  {} {}  ·  {} {}", all.len(), tr("snapshots"), tr("oldest"), when(oldest.date), tr("newest"), when(newest.date)),
             _ => tr("No snapshot has been taken yet; the first one comes within the hour"),
         };
-        let row = adw::ActionRow::builder().title(glib::markup_escape_text(&span)).subtitle(glib::markup_escape_text(&format!("{}  ·  {}", crate::window::abbreviate_home(&store.root), tr("taken hourly by snapper, pruned automatically")))).build();
+        // Where they come from: snapshots on this disk, backups on the other drive, or both.
+        let sources: Vec<String> = stores.iter().map(|s| if s.root == Path::new("/") { tr("backups on the other drive") } else { format!("{}  ·  {}", crate::window::abbreviate_home(&s.root), tr("taken hourly by snapper, pruned automatically")) }).collect();
+        let row = adw::ActionRow::builder().title(glib::markup_escape_text(&span)).subtitle(glib::markup_escape_text(&sources.join("  +  "))).build();
         let now_btn = gtk::Button::builder().label(tr("Snapshot Now")).valign(gtk::Align::Center).tooltip_text(tr("Take a snapshot right away, for instance before a risky change")).build();
         let (weak, d2, root) = (Rc::downgrade(self), dialog.clone(), store.root.clone());
         now_btn.connect_clicked(move |_| {
@@ -226,7 +256,10 @@ impl Window {
                 w.versions_snapshot_now(&root);
             }
         });
-        row.add_suffix(&now_btn);
+        // Snapshots can be taken on demand; a backup is started from the Backup page.
+        if store.root != Path::new("/") {
+            row.add_suffix(&now_btn);
+        }
         about.add(&row);
         page.add(&about);
 

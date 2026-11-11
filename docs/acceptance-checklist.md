@@ -139,3 +139,13 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 15.3 Delete a file, open the folder's versions: it is listed under *Deleted from this folder* and *Restore* brings it back.
 - [ ] 15.4 A day later: several hourly snapshots exist, `snapper -c home list` shows old ones being pruned; `sudo btrfs filesystem du -s /home/.snapshots` stays reasonable.
 - [ ] 15.5 On a folder outside Btrfs (a FAT USB stick): the toast says versions need Btrfs.
+
+## 16. Backup
+
+- [ ] 16.1 Sidebar › Backup › *Choose…* an external disk: the first backup of the home folder runs with *Back Up Now*; progress shows in the page and in the sidebar row; the drive holds `omafile-<host>-<user>/.snapshots/1/snapshot/home/...`.
+- [ ] 16.2 Change a file, back up again: the second run copies only that file; `du -sh` of the drive hardly grows; both versions are in *Earlier Versions* of the file.
+- [ ] 16.3 `systemctl --user list-timers` shows `omafile-backup.timer`; close omafile, wait for the timer (or `systemctl --user start omafile-backup.service`): a new backup appears.
+- [ ] 16.4 Unplug the drive: the page says *Not connected*; a scheduled run does not fail. Plug it in with omafile open: within a minute or two a due backup starts by itself.
+- [ ] 16.5 Start a large backup and press *Stop* (or pull the drive): the next run continues instead of starting over.
+- [ ] 16.6 An exFAT stick as destination: the page warns that every backup is a full copy; the backup itself works.
+- [ ] 16.7 The laptop does not suspend while a backup runs (`systemd-inhibit --list` shows omafile with "Backing up").

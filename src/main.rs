@@ -1,6 +1,8 @@
 #[macro_use]
 mod i18n;
 mod actions;
+mod backup;
+mod backupui;
 mod bindings;
 mod bulk;
 mod checksum;
@@ -89,6 +91,7 @@ const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --print-bindings list every shortcut (keys, action, group; tab separated)
        omafile --toggle         Hyprland: show / hide a drop-down omafile on the special workspace files
        omafile --lock-all       unmount every unlocked encrypted folder
+       omafile --backup         back up now to the drive chosen under Backup (what the timer runs)
        omafile --import-photos  open omafile and import the camera roll of a connected iPhone / iPad
        omafile --version";
 
@@ -105,6 +108,7 @@ fn main() -> glib::ExitCode {
             status::print_recent();
             return glib::ExitCode::SUCCESS;
         }
+        Some("--backup") => return glib::ExitCode::from(backup::main_headless(args.iter().any(|a| a == "--scheduled"))),
         Some("--lock-all") => return glib::ExitCode::from(status::lock_all().min(1) as u8),
         Some("--version") | Some("-V") => {
             println!("omafile {}", env!("CARGO_PKG_VERSION"));
