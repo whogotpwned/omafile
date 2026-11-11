@@ -390,6 +390,42 @@ pub fn css(p: &Palette) -> String {
 .omafile-thumb-page {{
   background-color: alpha(currentColor, 0.06);
 }}
+.omafile-feed-page {{
+  background-color: {view_bg};
+}}
+.omafile-feed-list row {{
+  padding: 8px 10px;
+  border-radius: 10px;
+}}
+.omafile-feed-row-title {{
+  font-weight: 500;
+  opacity: 0.72;
+}}
+.omafile-feed-unread .omafile-feed-row-title {{
+  font-weight: 800;
+  opacity: 1;
+}}
+.omafile-feed-dot {{
+  min-width: 8px;
+  min-height: 8px;
+  border-radius: 4px;
+  background-color: transparent;
+}}
+.omafile-feed-unread .omafile-feed-dot {{
+  background-color: {accent};
+}}
+.omafile-feed-title {{
+  font-size: 20pt;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+}}
+.omafile-feed-body {{
+  font-size: 11.5pt;
+  line-height: 1.5;
+}}
+.omafile-feed-image {{
+  border-radius: 12px;
+}}
 .omafile-vault-page {{
   background-color: {view_bg};
 }}

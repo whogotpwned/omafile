@@ -88,6 +88,17 @@ pub fn parse_ssh_config(text: &str) -> Vec<SshHost> {
     hosts
 }
 
+/// An alias from `~/.ssh/config`, alone or followed by a path (`web/srv/www`), as a URI.
+pub fn resolve_alias(hosts: &[SshHost], input: &str) -> Option<String> {
+    let input = input.trim();
+    let (alias, path) = match input.find('/') {
+        Some(i) => (&input[..i], &input[i..]),
+        None => (input, "/"),
+    };
+    let host = hosts.iter().find(|h| h.alias == alias)?;
+    Some(format!("{}{}", host.uri().trim_end_matches('/'), path))
+}
+
 /// Turn user input like `user@host:2222/srv` or `sftp://host/` into a URI.
 pub fn parse_server(input: &str) -> Option<String> {
     let input = input.trim();
@@ -199,6 +210,15 @@ mod tests {
         assert_eq!(hosts[0].uri(), "sftp://deploy@web.example.org:2222/");
         assert_eq!(hosts[1].alias, "db");
         assert_eq!(hosts[1].uri(), "sftp://root@db/");
+    }
+
+    #[test]
+    fn aliases_take_a_path() {
+        let hosts = vec![SshHost { alias: "web".into(), hostname: "web.example.org".into(), user: Some("deploy".into()), port: Some(2222) }];
+        assert_eq!(resolve_alias(&hosts, "web"), Some("sftp://deploy@web.example.org:2222/".into()));
+        assert_eq!(resolve_alias(&hosts, " web/srv/www "), Some("sftp://deploy@web.example.org:2222/srv/www".into()));
+        assert_eq!(resolve_alias(&hosts, "other/srv"), None);
+        assert_eq!(resolve_alias(&hosts, "deploy@web"), None);
     }
 
     #[test]

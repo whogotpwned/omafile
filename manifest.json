@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "whogotpwned.omafile",
   "name": "Omafile",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "author": "whogotpwned",
   "description": "Bar button that opens Omafile, the Omarchy-native file manager",
   "kinds": [

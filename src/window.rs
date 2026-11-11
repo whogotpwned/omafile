@@ -50,6 +50,10 @@ pub enum PlaceKind {
     Nearby(String),
     /// A drive or phone that is plugged in but not mounted yet.
     Volume(gio::Volume),
+    /// A news feed (its address; empty for all feeds together).
+    Feed(String),
+    /// A saved server connection (its name); the entry's file is the address.
+    Connection(String),
     /// An encrypted folder listed under Vaults (its ciphertext folder).
     Vault(std::path::PathBuf),
 }
@@ -94,6 +98,11 @@ pub struct Window {
     pub np_sidebar_slot: gtk::Box,
     pub now_playing: RefCell<Option<Rc<crate::nowplaying::NowPlaying>>>,
     pub vault_page: RefCell<Option<Rc<crate::vaults::VaultPage>>>,
+    pub feed_page: RefCell<Option<Rc<crate::feedsui::FeedPage>>>,
+    /// Unread articles per feed, until something changes.
+    pub feed_counts: RefCell<Option<std::collections::HashMap<String, usize>>>,
+    /// Copy / move to the other pane, shown in the header while the view is split.
+    pub split_tools: gtk::Box,
     pub sidebar_menu: gtk::PopoverMenu,
     pub back_btn: gtk::Button,
     pub forward_btn: gtk::Button,
@@ -192,6 +201,18 @@ impl Window {
         header.pack_end(&search_btn);
         let np_header_slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         header.pack_end(&np_header_slot);
+        // Two panes: copy or move the selection across (the arrow points at the other pane).
+        let split_tools = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        split_tools.add_css_class("linked");
+        split_tools.set_visible(false);
+        for (icon, action, tip) in [("edit-copy-symbolic", "win.copy-other", tr("Copy the selection to the other pane (Shift+F5)")), ("edit-cut-symbolic", "win.move-other", tr("Move the selection to the other pane (Shift+F6)"))] {
+            let content = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+            content.append(&gtk::Image::from_icon_name(icon));
+            content.append(&gtk::Image::from_icon_name("go-next-symbolic"));
+            let button = gtk::Button::builder().child(&content).action_name(action).tooltip_text(tip).build();
+            split_tools.append(&button);
+        }
+        header.pack_end(&split_tools);
 
         // ---- tabs -----------------------------------------------------------
         let mut tab_views = Vec::new();
@@ -318,6 +339,9 @@ impl Window {
             np_sidebar_slot,
             now_playing: RefCell::new(None),
             vault_page: RefCell::new(None),
+            feed_page: RefCell::new(None),
+            feed_counts: RefCell::new(None),
+            split_tools,
             sidebar_menu,
             back_btn,
             forward_btn,
@@ -361,6 +385,7 @@ impl Window {
         crate::rules::watch(&this);
         let _ = this.nearby();
         crate::nowplaying::NowPlaying::install(&this);
+        this.start_feed_updates();
         if std::env::args().any(|a| a == "--import-photos") {
             let weak = Rc::downgrade(&this);
             glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
@@ -654,6 +679,7 @@ impl Window {
         }
         self.ending_split.set(false);
         self.split_boxes[1].set_visible(false);
+        self.sync_split_tools();
         for b in &self.split_boxes {
             b.remove_css_class("omafile-split-active");
         }
@@ -752,6 +778,7 @@ impl Window {
 
     /// Refresh header, sidebar and preview for the active tab.
     pub fn sync_active(self: &Rc<Self>) {
+        self.sync_split_tools();
         let Some(pane) = self.active_pane() else { return };
         let cwd = pane.cwd();
         self.back_btn.set_sensitive(pane.can_go_back());
@@ -1000,7 +1027,7 @@ impl Window {
             };
             if let Some((file, kind)) = place {
                 match kind {
-                    PlaceKind::Ssh(_) => w.connect_to(file, true),
+                    PlaceKind::Ssh(_) | PlaceKind::Connection(_) => w.connect_remote(file, Default::default()),
                     PlaceKind::Tag(color) => {
                         if let Some(p) = w.active_pane() {
                             p.show_tag(&color);
@@ -1014,6 +1041,7 @@ impl Window {
                     PlaceKind::Nearby(_) => w.open_nearby(),
                     PlaceKind::Volume(v) => w.mount_volume(&v, true),
                     PlaceKind::Vault(v) => w.open_vault(&v),
+                    PlaceKind::Feed(url) => w.open_feed(&url),
                     _ => w.navigate(file),
                 }
             }
@@ -1033,10 +1061,14 @@ impl Window {
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_eject() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Eject", "win.sidebar-unmount")]),
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_unmount() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Unmount", "win.sidebar-unmount")]),
                     Some(Place::Entry { kind: PlaceKind::Volume(_), .. }) => menu_of(&[("Mount", "win.sidebar-mount")]),
+                    Some(Place::Entry { kind: PlaceKind::Feed(url), .. }) if url.is_empty() => menu_of(&[("Fetch New Articles", "win.sidebar-feed-refresh")]),
+                    Some(Place::Entry { kind: PlaceKind::Feed(_), .. }) => menu_of(&[("Fetch New Articles", "win.sidebar-feed-refresh"), ("Mark All as Read", "win.sidebar-feed-read"), ("Copy Address", "win.sidebar-feed-copy"), ("Remove", "win.sidebar-feed-remove")]),
+                    Some(Place::Entry { kind: PlaceKind::Connection(_), .. }) => menu_of(&[("Connect", "win.sidebar-connect"), ("Open in New Tab", "win.sidebar-new-tab"), ("Edit…", "win.sidebar-connection-edit"), ("Remove", "win.sidebar-connection-remove")]),
+                    Some(Place::Entry { kind: PlaceKind::Ssh(_), .. }) => menu_of(&[("Connect", "win.sidebar-connect"), ("Open in New Tab", "win.sidebar-new-tab")]),
                     Some(Place::Entry { file, kind: PlaceKind::Vault(_), .. }) if file.path().map(|m| crate::crypt::is_mounted(&m)).unwrap_or(false) => {
-                        menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Lock", "win.sidebar-vault-lock"), ("Change Password…", "win.sidebar-vault-passwd"), ("Show Encrypted Data", "win.sidebar-vault-reveal"), ("Remove from Sidebar", "win.sidebar-vault-forget")])
+                        menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Lock", "win.sidebar-vault-lock"), ("Change Password…", "win.sidebar-vault-passwd"), ("Export…", "win.sidebar-vault-export"), ("Show Encrypted Data", "win.sidebar-vault-reveal"), ("Remove from Sidebar", "win.sidebar-vault-forget")])
                     }
-                    Some(Place::Entry { kind: PlaceKind::Vault(_), .. }) => menu_of(&[("Unlock…", "win.sidebar-vault-open"), ("Change Password…", "win.sidebar-vault-passwd"), ("Show Encrypted Data", "win.sidebar-vault-reveal"), ("Remove from Sidebar", "win.sidebar-vault-forget")]),
+                    Some(Place::Entry { kind: PlaceKind::Vault(_), .. }) => menu_of(&[("Unlock…", "win.sidebar-vault-open"), ("Change Password…", "win.sidebar-vault-passwd"), ("Export…", "win.sidebar-vault-export"), ("Show Encrypted Data", "win.sidebar-vault-reveal"), ("Remove from Sidebar", "win.sidebar-vault-forget")]),
                     Some(Place::Entry { .. }) => menu_of(&[("Open in New Tab", "win.sidebar-new-tab")]),
                     _ => return,
                 }
@@ -1070,7 +1102,7 @@ impl Window {
                             spring2.borrow_mut().take();
                             let Some(w) = this2.upgrade() else { return };
                             let file = match w.state.borrow().places.get(i as usize) {
-                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_)) => Some(file.clone()),
+                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_)) => Some(file.clone()),
                                 _ => None,
                             };
                             if let Some(f) = file {
@@ -1115,7 +1147,7 @@ impl Window {
                     }
                     file
                 }
-                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file,
+                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file,
                 _ => return false,
             };
             if let Some(p) = w.active_pane() {
@@ -1274,6 +1306,21 @@ impl Window {
             places.push(Place::Action { name: tr("Add Vault…"), icon: "list-add-symbolic".into(), action: "vault-add" });
         }
 
+        // Feeds: news to read where the files are.
+        let feeds = crate::feeds::list();
+        places.push(Place::Header(tr("Feeds")));
+        let unread = if feeds.is_empty() { Default::default() } else { self.feed_unread() };
+        let with_count = |title: &str, n: usize| if n > 0 { format!("{title}  ·  {n}") } else { title.to_string() };
+        if feeds.len() > 1 {
+            let total: usize = unread.values().sum();
+            places.push(Place::Entry { name: with_count(&tr("All Articles"), total), icon: "view-list-symbolic".into(), file: gio::File::for_uri("omafile-feed:///"), kind: PlaceKind::Feed(String::new()) });
+        }
+        for feed in feeds {
+            let n = unread.get(&feed.url).copied().unwrap_or(0);
+            places.push(Place::Entry { name: with_count(&feed.title, n), icon: "application-rss+xml-symbolic".into(), file: gio::File::for_uri(&format!("omafile-feed:///{}", crate::feeds::hash(&feed.url))), kind: PlaceKind::Feed(feed.url) });
+        }
+        places.push(Place::Action { name: tr("Add Feed…"), icon: "list-add-symbolic".into(), action: "feed-add" });
+
         let used = self.tags.colors_in_use();
         if !used.is_empty() {
             places.push(Place::Header(tr("Tags")));
@@ -1301,6 +1348,9 @@ impl Window {
             }
         }
         places.push(Place::Header(tr("Remote")));
+        for c in crate::connections::list() {
+            places.push(Place::Entry { name: c.name.clone(), icon: "network-server-symbolic".into(), file: gio::File::for_uri(&c.uri), kind: PlaceKind::Connection(c.name) });
+        }
         for host in remote::ssh_hosts() {
             places.push(Place::Entry {
                 name: host.alias.clone(),
@@ -1592,10 +1642,11 @@ impl Window {
             if let Place::Entry { name, icon, file, kind } = place {
                 let (detail, target) = match kind {
                     PlaceKind::Ssh(_) => (tr("SSH server"), PaletteTarget::Connect(file.clone())),
+                    PlaceKind::Connection(_) => (tr("Saved connection"), PaletteTarget::Connect(file.clone())),
                     PlaceKind::Tag(_) => continue,
                     PlaceKind::Smart(_) => (tr("Smart folder"), PaletteTarget::Action(format!("smart-open::{name}"))),
                     PlaceKind::Bookmark => (tr("Bookmark"), PaletteTarget::Folder(file.clone())),
-                    PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_) => continue,
+                    PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_) | PlaceKind::Feed(_) => continue,
                     PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
                 };
@@ -1638,7 +1689,7 @@ impl Window {
             PaletteTarget::Folder(file) => self.navigate(file),
             PaletteTarget::Reveal(file) => self.reveal(file),
             PaletteTarget::Bulk(text) => self.run_bulk(&text),
-            PaletteTarget::Connect(file) => self.connect_to(file, true),
+            PaletteTarget::Connect(file) => self.connect_remote(file, Default::default()),
             PaletteTarget::Project(command) | PaletteTarget::Command(command) => self.run_in_terminal(&command),
         }
     }
@@ -2097,6 +2148,8 @@ pub struct MenuFlags {
     pub pdfs: usize,
     /// Every selected item is a local eBook.
     pub ebooks: usize,
+    /// A single exported vault (`Name.gocryptfs.tar`) is selected.
+    pub vault_archive: bool,
     /// LocalSend peers that can receive: (alias, fingerprint).
     pub nearby: Vec<(String, String)>,
     /// A single local video / audio file.
@@ -2157,6 +2210,7 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     if vault != VaultState::None {
         open.append(Some(tr("Change Vault Password…").as_str()), Some("win.vault-passwd"));
         open.append(Some(tr("Show in Sidebar under Vaults").as_str()), Some("win.vault-register"));
+        open.append(Some(tr("Export Vault…").as_str()), Some("win.vault-export"));
     }
     if archive {
         open.append(Some(tr("Extract Here").as_str()), Some("win.extract"));
@@ -2198,6 +2252,9 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
             pdf.append(Some(tr("Extract Pages…").as_str()), Some("win.pdf-extract"));
         }
         open.append_submenu(Some(tr("PDF").as_str()), &pdf);
+    }
+    if f.vault_archive && !in_trash {
+        open.append(Some(tr("Import as Vault…").as_str()), Some("win.vault-import"));
     }
     if f.ebooks > 0 && !in_trash {
         let e = gio::Menu::new();

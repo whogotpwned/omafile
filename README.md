@@ -10,13 +10,13 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.19.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.20.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-78%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-89%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-hero.png" alt="Two omafile windows in Tokyo Night. Front left: grid view with thumbnails for photos, a GIF, a video, eBook covers, a PDF and a song, the preview pane, an unlocked and a locked vault and an iPhone in the sidebar and the mini player at its bottom. Right: the Now Playing view with cover, live spectrum and transport controls." width="900">
@@ -142,7 +142,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | | |
 |---|---|
 | ![vault](docs/screenshot-vault.png) | **Encrypted folders** with gocryptfs: *New Encrypted Folder…* creates `Name.gocryptfs` (ciphertext) next to `Name` (plaintext while unlocked). Unlock, lock, change password from the context menu; the password only travels through a pipe; the master key is shown once. The `.gocryptfs` folder is the thing to back up or sync. Details [below](#encrypted-folders-in-detail). |
-| ![vault page](docs/screenshot-vault-locked.png) | **Vaults in the sidebar**: any number of encrypted folders, each with its own master password, listed under *Vaults*. *Add Vault…* creates a new one (name, place, password; `~/Vaults` unless you choose another folder, a USB stick works too) or lists one that exists already. A click on a locked vault puts a **large padlock** where the files would be and asks for the master password: a wrong one makes it shake its head, the right one swings the shackle open and the files appear. Unlocked vaults show a green open padlock and a button that locks them again; tabs inside step out first. Right click: change password, show the encrypted data, remove from the sidebar (the data stays). Files cannot be dropped on a locked vault. No password or key is stored, only the list of folders. ![unlocking](docs/vault.gif) |
+| ![vault page](docs/screenshot-vault-locked.png) | **Vaults in the sidebar**: any number of encrypted folders, each with its own master password, listed under *Vaults*. *Add Vault…* creates a new one (name, place, password; `~/Vaults` unless you choose another folder, a USB stick works too) or lists one that exists already. A click on a locked vault puts a **large padlock** where the files would be and asks for the master password: a wrong one makes it shake its head, the right one swings the shackle open and the files appear. Unlocked vaults show a green open padlock and a button that locks them again; tabs inside step out first. Right click: change password, show the encrypted data, remove from the sidebar (the data stays). Files cannot be dropped on a locked vault. **Take it along**: *Export…* writes the vault into one file, `Name.gocryptfs.tar`; nothing is decrypted on the way, so the file is protected by the same master password. On the other computer *Add Vault… › Import from File…* (or *Import as Vault…* on the file) unpacks it into `~/Vaults` and shows its padlock. No password or key is stored, only the list of folders. ![unlocking](docs/vault.gif) |
 | ![secrets](docs/screenshot-secrets.png) | **Secrets protection**: `.env`, `id_rsa`, `*.pem`, `*.key`, `*.p12`, `*.kdbx`, `credentials.json`, `.netrc`, `.npmrc`, `kubeconfig`, … get a key badge, a masked preview and a confirmation before they are copied. `.env.example` and `*.pub` are exempt. |
 | ![share](docs/screenshot-share.png) | **Share** on your terms: *Copy scp Command*, or *Share on Local Network…* serves exactly the selection over HTTP from a scratch folder of links with a QR code, until you close the dialog. |
 
@@ -163,6 +163,8 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![themes](docs/screenshot-themes.png) | **Omarchy themes**: an *Omarchy Themes* place, theme folders with their `preview.png` as thumbnail, *Apply Omarchy Theme* (`omarchy-theme-set`), *Set as Wallpaper* (`omarchy-theme-bg-set`), *Export Omarchy Theme…* to `~/Downloads/<name>.tar.gz` and *Install as Omarchy Theme* from such an archive. |
 | ![light](docs/screenshot-light.png) | **Theme following**: the same build after `omarchy theme set "Catppuccin Latte"`, light window and blue folders without a restart. |
 | ![sftp](docs/screenshot-sftp.png) | **SFTP / SCP**: hosts from `~/.ssh/config` in the sidebar, *Connect to Server…* for `user@host[:port]/path`, native credential prompts, mounted servers under *Devices*. Copy, paste, drag and drop, rename and preview work on remote files like on local ones. |
+| ![two panes](docs/screenshot-scp.png) | **Servers the WinSCP way**: connecting splits the view, **local on the left, the server on the right**. Two arrows in the header copy or move the selection across (they point at the other pane; `Shift+F5` / `Shift+F6`), dragging works too, conflicts ask as usual. *Connect to Server…* takes a name and a password: **saved connections** appear under *Remote* in the sidebar (right click: Connect, Open in New Tab, Edit…, Remove). The **password goes to the system keyring** (the Secret Service, e.g. GNOME Keyring, encrypted with your login) through GVFS, never into omafile's own files; the next connect does not ask, and *Remove* deletes it from the keyring again. SSH keys work without any of that. An alias from `~/.ssh/config` may be followed by a path (`web/srv/www`). The two-pane behaviour can be switched off in Preferences › Servers. |
+| ![feeds](docs/screenshot-feeds.png) | **Feeds** (`Ctrl+Alt+W`): RSS and Atom news to read where the files are. *Add Feed…* in the sidebar takes the address of a feed or simply of a site (omafile follows the page's feed link). Each feed shows its number of unread articles; *All Articles* merges them by date. The reader has the list on the left and the article on the right: lead picture, headings, emphasis, lists, quotes, code and links survive, scripts and trackers do not (no web engine is involved). `↑` `↓` or `J` `K` step through, `O` opens the page in the browser, `M` marks unread, `R` fetches, `Space` scrolls, `Esc` returns to the files. Feeds are fetched with `curl` (http and https only) shortly after start and twice an hour, kept on disk for offline reading. |
 | ![preferences](docs/screenshot-prefs.png) | **Preferences** (`Ctrl+,`): icon theme override, thumbnails, default view, hidden files, session restore, archives in place, venv activation, trash auto-empty. |
 
 Also: *Copy To…* / *Move To…* with a folder picker, *Duplicate* (`Ctrl+Shift+D`), bookmarks shared with the GTK file chooser (`Ctrl+D`), *Recent*, drag and drop onto sidebar places, cut/copy/paste shared with other apps, *Open With…*, copy path, open a terminal window here, and `omafile --toggle` for a Hyprland drop-down window.
@@ -218,6 +220,7 @@ Panels move the way the rest of Omarchy moves instead of snapping: the terminal 
 | `Ctrl+Alt+F` `Ctrl+Alt+R` | Find duplicates, folder rules |
 | `Ctrl+Shift+S` / `Ctrl+Shift+B` | Add the selection to the shelf / show or hide the shelf |
 | `Ctrl+Alt+P` | Nearby devices (LocalSend): send the selection to a phone, receive settings |
+| `Ctrl+Alt+W` | Feeds: read the news (in the reader: `J` `K`, `O`, `M`, `R`, `Space`, `Esc`) |
 | `F8` | Now Playing: full media view (in it: `Space`, `←` `→`, `↑` `↓`, `N` / `P`, `Esc`) |
 | `Ctrl+Alt+C` / `Ctrl+Alt+B` | Git commit / switch branch (click a badge to stage) |
 | `Ctrl+Alt+D` `Ctrl+Alt+M` `Ctrl+Alt+S` `Ctrl+Alt+V` | Compare, note, save smart folder, activate venv |
@@ -315,6 +318,8 @@ omafile is built for a stock Omarchy install and uses what is already there. Onl
 | `bat` | syntax highlighting in previews | yes | code shows as plain text |
 | `jq` | JSON formatting in previews, `plugin/validate.sh` | yes | JSON shows as plain text |
 | `gvfs-afc`, `libimobiledevice` | iPhone / iPad over USB (sidebar entry, photo import) | no | only wireless via LocalSend or the share page |
+| `gnome-keyring` (or another Secret Service) | remembering server passwords | optional | the password is asked on every connect; SSH keys are not affected |
+| `curl` | fetching news feeds | yes (base) | feeds cannot be fetched |
 | `libheif` (`heif-convert`) or ImageMagick | HEIC → JPEG when importing photos | ImageMagick yes | HEIC files are imported as they are |
 | `libpulse` (`parec`) or `pipewire` (`pw-record`) | Now Playing: spectrum that follows the real sound | yes | a generated animation runs instead; the controls work regardless |
 | `poppler` (`pdfunite`, `pdfseparate`) | PDF merge / split / extract | yes | the PDF menu reports it |
@@ -409,7 +414,7 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 
 - **Format.** gocryptfs: AES-256-GCM per file, encrypted file names (EME), scrypt-derived keys. `Name.gocryptfs` holds only ciphertext plus `gocryptfs.conf` (the wrapped master key).
 - **Vaults in the sidebar.** The list is `~/.config/omafile/vaults`, one ciphertext folder per line; it holds no password and no key. Every vault made with omafile is added to it, others through *Add Vault… › Add Existing…* or *Show in Sidebar under Vaults* in the context menu. Unlocking through the padlock page, the context menu or `gocryptfs` on the command line all end in the same mount, and the sidebar follows.
-- **Migration and backup.** Copy or sync `Name.gocryptfs` with any tool (rsync, USB, cloud folder, `scp`). Elsewhere, put it next to an empty `Name` folder and use *Unlock Encrypted Folder…*, or `gocryptfs Name.gocryptfs Name`. Changing the password rewraps the master key, so copies made before still open with the old one. The master key shown once at creation opens the folder without a password; keep it in a password manager.
+- **Migration and backup.** *Export…* (sidebar, padlock page or context menu) packs a vault into one file, `Name.gocryptfs.tar`: a plain tar archive of the ciphertext folder, so it is protected by the same master password and nothing has to be decrypted for it. *Import from File…* unpacks it into `~/Vaults` (a number is added when the name is taken) and lists it in the sidebar; without omafile, `tar -xf Name.gocryptfs.tar && mkdir Name && gocryptfs Name.gocryptfs Name` does the same. The folder itself can also be copied or synced with any tool (rsync, USB, cloud folder, `scp`). Changing the password rewraps the master key, so copies and exports made before still open with the old one.
 - **Handling.** Unlocking mounts for your user only (FUSE, no root). Lock from the menu or the bar button, or it stays unlocked until logout. The password is piped to gocryptfs, never written to disk or a command line.
 - **Scope.** Local file systems only.
 
@@ -450,6 +455,8 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 | `~/.config/omafile/rules` | Folder rules: folder, glob, older-than-days, action, argument, enabled |
 | `~/.config/omafile/views` | Remembered view per folder: uri, view, sort, order, group, grid |
 | `~/.config/omafile/vaults` | Vaults listed in the sidebar: one encrypted folder (`Name.gocryptfs`) per line, no secrets |
+| `~/.config/omafile/connections` | Saved server connections: name and address per line; passwords are in the system keyring, not here |
+| `~/.config/omafile/feeds` | News feeds: title and address per line (articles are cached under `~/.cache/omafile/feeds`, read marks in `~/.local/state/omafile/feeds-read`) |
 | `~/.cache/thumbnails/` | freedesktop thumbnail cache, shared with other apps |
 | `~/.local/state/omafile/shelf` | Files currently on the shelf, one URI per line |
 | `~/.local/state/omafile/iphone-imported` | Photos already imported from a device (name and size) |
@@ -472,11 +479,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.19.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.20.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 78 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 89 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

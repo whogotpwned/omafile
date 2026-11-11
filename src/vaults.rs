@@ -217,11 +217,12 @@ impl VaultPage {
         let error = gtk::Label::builder().css_classes(["error", "caption"]).build();
         let passwd = gtk::Button::builder().label(tr("Change Password…")).build();
         let reveal = gtk::Button::builder().label(tr("Show Encrypted Data")).build();
+        let export = gtk::Button::builder().label(tr("Export…")).tooltip_text(tr("Save the vault as one file to take it to another computer; it stays protected by its master password")).build();
         let forget = gtk::Button::builder().label(tr("Remove from Sidebar")).build();
         let links = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         links.set_halign(gtk::Align::Center);
         links.set_margin_top(18);
-        for b in [&passwd, &reveal, &forget] {
+        for b in [&passwd, &export, &reveal, &forget] {
             b.add_css_class("flat");
             b.add_css_class("omafile-dim");
             links.append(b);
@@ -307,6 +308,12 @@ impl VaultPage {
             if let (Some(p), Some(w)) = (weak.upgrade(), wweak.upgrade()) {
                 let vault = p.vault.borrow().clone();
                 w.navigate(gio::File::for_path(vault));
+            }
+        });
+        let (weak, wweak) = (Rc::downgrade(&page), Rc::downgrade(window));
+        export.connect_clicked(move |_| {
+            if let (Some(p), Some(w)) = (weak.upgrade(), wweak.upgrade()) {
+                w.vault_export(p.vault.borrow().clone());
             }
         });
         let (weak, wweak) = (Rc::downgrade(&page), Rc::downgrade(window));
@@ -480,7 +487,7 @@ impl Window {
     pub fn show_files(self: &Rc<Self>) {
         match self.content_stack.visible_child_name().as_deref() {
             Some("nowplaying") => self.show_now_playing(false),
-            Some("vault") => self.content_stack.set_visible_child_name("files"),
+            Some("vault") | Some("feeds") => self.content_stack.set_visible_child_name("files"),
             _ => {}
         }
     }
@@ -572,7 +579,7 @@ impl Window {
             return;
         }
         let dialog = adw::AlertDialog::new(Some(tr("Add Vault").as_str()), Some(tr("A vault is an encrypted folder with its own master password. It stays in the sidebar; a click asks for the password and shows the files, the lock button closes it again.").as_str()));
-        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("existing", tr("Add Existing…").as_str()), ("new", tr("Create New…").as_str())]);
+        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("import", tr("Import from File…").as_str()), ("existing", tr("Add Existing…").as_str()), ("new", tr("Create New…").as_str())]);
         dialog.set_response_appearance("new", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("new"));
         dialog.set_close_response("cancel");
@@ -582,6 +589,7 @@ impl Window {
             match response.as_str() {
                 "new" => w.vault_create_dialog(default_dir(), true),
                 "existing" => w.vault_add_existing(),
+                "import" => w.vault_import(None),
                 _ => w.refocus(),
             }
         });
@@ -596,6 +604,83 @@ impl Window {
             let Some(w) = this.upgrade() else { return };
             let Some(picked) = result.ok().and_then(|f| f.path()) else { return };
             w.vault_register(&picked);
+        });
+    }
+
+    /// Save a vault as one file to take along. The file is the encrypted folder in a tar
+    /// archive: nothing is decrypted, the master password protects it as it protects the vault.
+    pub fn vault_export(self: &Rc<Self>, vault: PathBuf) {
+        if !crypt::is_vault(&vault) {
+            self.toast_error(&tr("That folder is not a vault (no gocryptfs.conf inside)"));
+            return;
+        }
+        let name = display_name(&vault);
+        let chooser = gtk::FileDialog::builder().title(tr("Export Vault")).modal(true).initial_name(format!("{name}{}", crypt::ARCHIVE_SUFFIX)).build();
+        chooser.set_initial_folder(Some(&gio::File::for_path(glib::home_dir())));
+        let this = Rc::downgrade(self);
+        chooser.save(Some(&self.window), gio::Cancellable::NONE, move |result| {
+            let Some(w) = this.upgrade() else { return };
+            let Some(target) = result.ok().and_then(|f| f.path()) else { return };
+            w.toast(&tr("Exporting the vault…"));
+            let this = Rc::downgrade(&w);
+            glib::spawn_future_local(async move {
+                let (v, t) = (vault.clone(), target.clone());
+                let result = gio::spawn_blocking(move || crypt::export(&v, &t)).await.unwrap_or_else(|_| Err("export stopped".into()));
+                let Some(w) = this.upgrade() else { return };
+                match result {
+                    Ok(_) => {
+                        let toast = adw::Toast::builder().title(format!("{}: {}", tr("Exported, still protected by its master password"), crate::window::abbreviate_home(&target))).timeout(8).button_label(tr("Show")).build();
+                        let weak = Rc::downgrade(&w);
+                        toast.connect_button_clicked(move |_| {
+                            let (Some(w), Some(dir)) = (weak.upgrade(), target.parent()) else { return };
+                            w.navigate(gio::File::for_path(dir));
+                            if let Some(p) = w.active_pane() {
+                                p.select_file_later(gio::File::for_path(&target));
+                            }
+                        });
+                        w.toast.add_toast(toast);
+                        if let Some(p) = w.active_pane() {
+                            p.reload();
+                        }
+                    }
+                    Err(e) => w.toast_error(&format!("{}: {e}", tr("Cannot export the vault"))),
+                }
+            });
+        });
+    }
+
+    /// Bring in an exported vault (`Name.gocryptfs.tar`): unpack it into ~/Vaults, list it in
+    /// the sidebar and show its padlock. `archive`: the file, or None to ask for one.
+    pub fn vault_import(self: &Rc<Self>, archive: Option<PathBuf>) {
+        let Some(archive) = archive else {
+            let filter = gtk::FileFilter::new();
+            filter.set_name(Some(&tr("Exported vaults (*.gocryptfs.tar)")));
+            filter.add_pattern("*.tar");
+            let filters = gio::ListStore::new::<gtk::FileFilter>();
+            filters.append(&filter);
+            let chooser = gtk::FileDialog::builder().title(tr("Import Vault")).modal(true).filters(&filters).build();
+            chooser.set_initial_folder(Some(&gio::File::for_path(glib::home_dir())));
+            let this = Rc::downgrade(self);
+            chooser.open(Some(&self.window), gio::Cancellable::NONE, move |result| {
+                if let (Some(w), Some(path)) = (this.upgrade(), result.ok().and_then(|f| f.path())) {
+                    w.vault_import(Some(path));
+                }
+            });
+            return;
+        };
+        let this = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let result = gio::spawn_blocking(move || crypt::import(&archive, &default_dir())).await.unwrap_or_else(|_| Err("import stopped".into()));
+            let Some(w) = this.upgrade() else { return };
+            match result {
+                Ok(vault) => {
+                    add(&vault);
+                    w.refresh_sidebar();
+                    w.toast(&format!("{}: {}", tr("Imported; it opens with the password it had"), crate::window::abbreviate_home(&vault)));
+                    w.open_vault(&vault);
+                }
+                Err(e) => w.toast_error(&format!("{}: {e}", tr("Cannot import the vault"))),
+            }
         });
     }
 

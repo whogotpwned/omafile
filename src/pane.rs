@@ -2002,6 +2002,7 @@ impl Pane {
                 media: items.len() == 1 && items[0].is_media(),
                 py_script: items.len() == 1 && items[0].name().ends_with(".py") && items[0].target_file().is_native(),
                 pdfs: if !items.is_empty() && items.iter().all(|i| i.is_pdf() && i.target_file().is_native()) { items.len() } else { 0 },
+                vault_archive: items.len() == 1 && items[0].file().basename().map(|n| n.to_string_lossy().ends_with(crate::crypt::ARCHIVE_SUFFIX)).unwrap_or(false),
                 ebooks: if !items.is_empty() && items.iter().all(|i| i.is_ebook() && i.target_file().is_native()) { items.len() } else { 0 },
                 nearby: self.window.upgrade().map(|w| w.nearby_peers().into_iter().filter(|p| p.protocol == "http").map(|p| (p.alias, p.fingerprint)).collect()).unwrap_or_default(),
                 video: items.len() == 1 && items[0].is_video() && items[0].target_file().is_native(),

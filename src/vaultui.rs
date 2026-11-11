@@ -243,6 +243,21 @@ impl Window {
         }
     }
 
+    /// Context menu › Export Vault…
+    pub fn vault_export_selected(self: &Rc<Self>) {
+        if let Some(vault) = self.selected_vault() {
+            self.vault_export(vault);
+        }
+    }
+
+    /// Context menu › Import as Vault… on an exported vault file.
+    pub fn vault_import_selected(self: &Rc<Self>) {
+        let archive = self.selected_items().into_iter().next().and_then(|i| i.file().path());
+        if let Some(archive) = archive.filter(|p| p.to_string_lossy().ends_with(crypt::ARCHIVE_SUFFIX)) {
+            self.vault_import(Some(archive));
+        }
+    }
+
     pub fn vault_passwd_for(self: &Rc<Self>, vault: PathBuf) {
         if !self.require_gocryptfs() {
             return;

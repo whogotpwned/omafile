@@ -83,6 +83,8 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("image-to-webp", "Image: Convert to WebP", "image-x-generic-symbolic"),
     ("vault-lock-all", "Lock All Encrypted Folders", "changes-prevent-symbolic"),
     ("vault-add", "Add Vault (encrypted folder in the sidebar)", "changes-prevent-symbolic"),
+    ("feeds", "Feeds: Read the News", "application-rss+xml-symbolic"),
+    ("feed-add", "Add Feed (RSS / Atom)", "application-rss+xml-symbolic"),
     ("new-folder-with-selection", "New Folder with Selection", "folder-new-symbolic"),
     ("make-alias", "Make Alias (symbolic link)", "insert-link-symbolic"),
     ("show-original", "Show Original of Alias", "go-jump-symbolic"),
@@ -152,6 +154,7 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.shelf-add", &["<Control><Shift>s"]),
     ("win.shelf-show", &["<Control><Shift>b"]),
     ("win.nearby", &["<Control><Alt>p"]),
+    ("win.feeds", &["<Control><Alt>w"]),
     ("win.now-playing", &["F8"]),
     ("win.git-commit", &["<Control><Alt>c"]),
     ("win.git-branch", &["<Control><Alt>b"]),
@@ -519,6 +522,13 @@ impl Window {
         simple("vault-passwd", Box::new(|w| w.vault_passwd()));
         simple("vault-register", Box::new(|w| w.vault_register_selected()));
         simple("vault-add", Box::new(|w| w.vault_add()));
+        simple("vault-export", Box::new(|w| w.vault_export_selected()));
+        simple("vault-import", Box::new(|w| w.vault_import_selected()));
+        simple("sidebar-vault-export", Box::new(|w| {
+            if let Some((_, PlaceKind::Vault(v))) = w.sidebar_target_place() {
+                w.vault_export(v);
+            }
+        }));
         simple("sidebar-vault-open", Box::new(|w| {
             if let Some((_, PlaceKind::Vault(v))) = w.sidebar_target_place() {
                 w.open_vault(&v);
@@ -616,7 +626,7 @@ impl Window {
         simple("sidebar-new-tab", Box::new(|w| {
             if let Some((file, kind)) = w.sidebar_target_place() {
                 match kind {
-                    PlaceKind::Ssh(_) => w.connect_to(file, true),
+                    PlaceKind::Ssh(_) | PlaceKind::Connection(_) => w.connect_remote(file, crate::connectui::ConnectOpts { plain_tab: true, ..Default::default() }),
                     _ => w.open_in_new_tab(file, true),
                 }
             }
@@ -627,6 +637,50 @@ impl Window {
                     w.toast_error(&trf!("Cannot update bookmarks: {e}", e = e));
                 }
                 w.refresh_sidebar();
+            }
+        }));
+        simple("feed-add", Box::new(|w| w.feed_add_dialog()));
+        simple("feeds", Box::new(|w| {
+            if crate::feeds::list().is_empty() {
+                w.feed_add_dialog();
+            } else {
+                w.open_feed(crate::feedsui::ALL);
+            }
+        }));
+        simple("sidebar-feed-refresh", Box::new(|w| {
+            if let Some((_, PlaceKind::Feed(url))) = w.sidebar_target_place() {
+                w.feed_refresh(if url.is_empty() { None } else { Some(url) }, true);
+            }
+        }));
+        simple("sidebar-feed-read", Box::new(|w| {
+            if let Some((_, PlaceKind::Feed(url))) = w.sidebar_target_place() {
+                w.feed_mark_read(&url);
+            }
+        }));
+        simple("sidebar-feed-copy", Box::new(|w| {
+            if let Some((_, PlaceKind::Feed(url))) = w.sidebar_target_place() {
+                w.window.clipboard().set_text(&url);
+                w.toast(&tr("Address copied"));
+            }
+        }));
+        simple("sidebar-feed-remove", Box::new(|w| {
+            if let Some((_, PlaceKind::Feed(url))) = w.sidebar_target_place() {
+                w.feed_remove(&url);
+            }
+        }));
+        simple("sidebar-connect", Box::new(|w| {
+            if let Some((file, PlaceKind::Ssh(_) | PlaceKind::Connection(_))) = w.sidebar_target_place() {
+                w.connect_remote(file, Default::default());
+            }
+        }));
+        simple("sidebar-connection-edit", Box::new(|w| {
+            if let Some((file, PlaceKind::Connection(name))) = w.sidebar_target_place() {
+                w.prompt_connection(Some(crate::connections::Connection { name, uri: file.uri().to_string() }));
+            }
+        }));
+        simple("sidebar-connection-remove", Box::new(|w| {
+            if let Some((_, PlaceKind::Connection(name))) = w.sidebar_target_place() {
+                w.connection_remove(&name);
             }
         }));
         simple("sidebar-mount", Box::new(|w| {
@@ -1139,48 +1193,6 @@ impl Window {
     }
 
     // ----- dialogs ------------------------------------------------------------------------
-
-    fn prompt_connect(self: &Rc<Self>) {
-        let entry = gtk::Entry::builder().placeholder_text(tr("user@host[:port][/path]  or  sftp://host/")).activates_default(true).build();
-        let hosts = remote::ssh_hosts();
-        let body = if hosts.is_empty() {
-            tr("Connect over SSH (SFTP). Hosts from ~/.ssh/config appear under Remote in the sidebar.")
-        } else {
-            format!("Connect over SSH (SFTP). Known hosts: {}", hosts.iter().map(|h| h.alias.as_str()).collect::<Vec<_>>().join(", "))
-        };
-        let dialog = adw::AlertDialog::new(Some(tr("Connect to Server").as_str()), Some(&body));
-        dialog.set_extra_child(Some(&entry));
-        dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("connect", tr("Connect").as_str())]);
-        dialog.set_response_appearance("connect", adw::ResponseAppearance::Suggested);
-        dialog.set_default_response(Some("connect"));
-        dialog.set_close_response("cancel");
-        let this = Rc::downgrade(self);
-        let entry2 = entry.clone();
-        let refocus = Rc::downgrade(self);
-        dialog.connect_closed(move |_| {
-            if let Some(w) = refocus.upgrade() {
-                w.refocus();
-            }
-        });
-        dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |response| {
-            let Some(w) = this.upgrade() else { return };
-            if response != "connect" {
-                return;
-            }
-            let text = entry2.text().to_string();
-            // Allow typing an alias from ~/.ssh/config.
-            let uri = hosts
-                .iter()
-                .find(|h| h.alias == text.trim())
-                .map(|h| h.uri())
-                .or_else(|| remote::parse_server(&text));
-            match uri {
-                Some(uri) => w.connect_to(gio::File::for_uri(&uri), true),
-                None => w.toast_error(&tr("Enter a host to connect to")),
-            }
-        });
-        entry.grab_focus();
-    }
 
     fn prompt_create(self: &Rc<Self>, folder: bool) {
         let Some(pane) = self.active_pane() else { return };

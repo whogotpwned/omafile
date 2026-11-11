@@ -117,3 +117,11 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 12.3 A vault on a USB stick: unplugged, its page says *Not found*; plugged in again it unlocks as usual.
 - [ ] 12.4 Reboot with a vault unlocked: it is locked afterwards (nothing is mounted automatically, no password is stored).
 - [ ] 12.5 Grid and list in a mixed folder (photos, PDFs, eBooks, archives): every icon and thumbnail has the same size.
+
+## 13. Vault export, servers, feeds
+
+- [ ] 13.1 Export a vault, copy the `.gocryptfs.tar` to another machine (or delete the vault), import it: it opens with the same password and holds the same files.
+- [ ] 13.2 Connect to a real server with a password and *Remember the password*: the view splits, a second connect after restarting omafile does not ask. `seahorse` shows the entry; *Remove* in the sidebar deletes it.
+- [ ] 13.3 Copy a folder up and a file down with the header arrows and by dragging between the panes.
+- [ ] 13.4 Add three real feeds (one by giving only the site's address): unread counts appear, articles read well, *Open in Browser* opens the default browser.
+- [ ] 13.5 Go offline: feeds already fetched can still be read.

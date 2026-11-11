@@ -2,6 +2,16 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.20.0 — 2026-11-11
+
+### Added
+- **Vaults travel as one file**: *Export…* (sidebar menu, padlock page, context menu) writes a vault to `Name.gocryptfs.tar`, a tar archive of the encrypted folder. Nothing is decrypted, so the file is protected by the same master password. *Add Vault… › Import from File…* or *Import as Vault…* on such a file unpacks it into `~/Vaults`, lists it in the sidebar and shows its padlock; archives with paths that would leave the folder are refused.
+- **Servers the WinSCP way**: connecting opens the server beside the local files (local left, server right); header arrows copy or move the selection to the other pane. Connections can be **saved in the sidebar** from the new connect dialog (name, password, edit, remove). Passwords are remembered by the **system keyring** through GVFS and never written to omafile's files; removing a connection deletes its password from the keyring. `alias/path` works for hosts from `~/.ssh/config`. Preferences › Servers switches the two-pane behaviour off.
+- **Feeds** (`Ctrl+Alt+W`): RSS 2.0, RSS 1.0 and Atom feeds in the sidebar with unread counts and an *All Articles* view; a reader with the article list on the left and the article (lead picture, formatted text, links) on the right, keyboard driven. *Add Feed…* accepts a site's address and finds its feed. Own XML and HTML handling, no web engine; fetched with curl over http(s) only, cached for offline reading.
+
+### Changed
+- The copy / move buttons for the other pane are shown in the header whenever the view is split.
+
 ## 0.19.0 — 2026-11-11
 
 ### Added

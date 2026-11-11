@@ -186,6 +186,99 @@ pub async fn change_password(vault: &Path, old: &str, new: &str) -> Result<(), g
     }
 }
 
+// ----- taking a vault along: one file out, one file in -----------------------------------
+
+/// What an exported vault is called: the ciphertext folder in a plain tar archive.
+/// Nothing is decrypted or re-encrypted on the way, so the file is protected by the same
+/// master password as the vault, and `tar -xf` plus gocryptfs open it anywhere.
+pub const ARCHIVE_SUFFIX: &str = ".gocryptfs.tar";
+
+fn run(cmd: &mut std::process::Command) -> Result<String, String> {
+    let out = cmd.stdin(std::process::Stdio::null()).output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("tar failed").to_string())
+    }
+}
+
+/// The single top folder of an archive listing, provided it is a vault and nothing in it
+/// could land outside the folder it is unpacked into.
+pub fn vault_in_listing(listing: &str) -> Result<String, String> {
+    let mut top: Option<&str> = None;
+    let mut conf = false;
+    for line in listing.lines().filter(|l| !l.is_empty()) {
+        if line.starts_with('/') || line.split('/').any(|part| part == "..") {
+            return Err("unsafe path in the archive".into());
+        }
+        let first = line.split('/').next().unwrap_or("");
+        match top {
+            None => top = Some(first),
+            Some(t) if t != first => return Err("not a vault archive: more than one top folder".into()),
+            _ => {}
+        }
+        if line.trim_end_matches('/') == format!("{first}/gocryptfs.conf") {
+            conf = true;
+        }
+    }
+    match top {
+        Some(t) if conf && !t.is_empty() && t != "." => Ok(t.to_string()),
+        _ => Err("not a vault archive: no gocryptfs.conf inside".into()),
+    }
+}
+
+/// Pack a vault's ciphertext folder into `target`; returns the number of entries written.
+/// Works while the vault is locked or unlocked. Blocking: run it off the main thread.
+pub fn export(vault: &Path, target: &Path) -> Result<usize, String> {
+    if !is_vault(vault) {
+        return Err("not a vault".into());
+    }
+    let parent = vault.parent().ok_or("no parent folder")?;
+    let name = vault.file_name().ok_or("no folder name")?;
+    // Written next to the target under another name first: a failed export leaves no half file.
+    let partial = target.with_extension("tar.partial");
+    let result = run(std::process::Command::new("tar").arg("-cf").arg(&partial).arg("-C").arg(parent).arg("--").arg(name))
+        .and_then(|_| run(std::process::Command::new("tar").arg("-tf").arg(&partial)))
+        .and_then(|listing| vault_in_listing(&listing).map(|_| listing.lines().count()))
+        .and_then(|count| std::fs::rename(&partial, target).map(|_| count).map_err(|e| e.to_string()));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&partial);
+    }
+    result
+}
+
+/// A folder name that is free in `dir`, for the vault and for the place it appears unlocked.
+fn free_name(dir: &Path, wanted: &str) -> String {
+    let base = wanted.strip_suffix(SUFFIX).unwrap_or(wanted);
+    let mut candidate = base.to_string();
+    let mut n = 2;
+    while dir.join(format!("{candidate}{SUFFIX}")).exists() || dir.join(&candidate).exists() {
+        candidate = format!("{base} {n}");
+        n += 1;
+    }
+    candidate
+}
+
+/// Unpack an exported vault into `dir`; returns the new ciphertext folder. The name gets a
+/// number when a vault of that name is there already. Blocking: run it off the main thread.
+pub fn import(archive: &Path, dir: &Path) -> Result<PathBuf, String> {
+    let listing = run(std::process::Command::new("tar").arg("-tf").arg(archive))?;
+    let top = vault_in_listing(&listing)?;
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let staging = dir.join(format!(".omafile-import-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    let unpacked = run(std::process::Command::new("tar").arg("-xf").arg(archive).arg("-C").arg(&staging).arg("--no-same-owner")).and_then(|_| {
+        let name = free_name(dir, &top);
+        let vault = dir.join(format!("{name}{SUFFIX}"));
+        std::fs::rename(staging.join(&top), &vault).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(dir.join(&name)).map_err(|e| e.to_string())?;
+        Ok(vault)
+    });
+    let _ = std::fs::remove_dir_all(&staging);
+    unpacked
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +288,40 @@ mod tests {
         let out = "Choose a password.\r\nYour master key is:\r\n\r\n    \u{1b}[2m1a2b3c4d-5e6f7a8b-9c0d1e2f-3a4b5c6d-\r\n    7e8f9a0b-1c2d3e4f-5a6b7c8d-9e0f1a2b\u{1b}[0m\r\n\r\nThe gocryptfs filesystem has been created successfully.\n";
         assert_eq!(master_key_from(out), "1a2b3c4d-5e6f7a8b-9c0d1e2f-3a4b5c6d-7e8f9a0b-1c2d3e4f-5a6b7c8d-9e0f1a2b");
         assert_eq!(master_key_from("nothing here"), "");
+    }
+
+    #[test]
+    fn listing_must_be_one_vault_and_stay_inside() {
+        assert_eq!(vault_in_listing("Tax.gocryptfs/\nTax.gocryptfs/gocryptfs.conf\nTax.gocryptfs/abc\n"), Ok("Tax.gocryptfs".to_string()));
+        assert!(vault_in_listing("Tax.gocryptfs/\nTax.gocryptfs/abc\n").is_err(), "no gocryptfs.conf");
+        assert!(vault_in_listing("A/gocryptfs.conf\nB/x\n").is_err(), "two top folders");
+        assert!(vault_in_listing("A/gocryptfs.conf\nA/../../etc/passwd\n").is_err(), "climbs out");
+        assert!(vault_in_listing("/A/gocryptfs.conf\n").is_err(), "absolute path");
+        assert!(vault_in_listing("").is_err());
+    }
+
+    #[test]
+    fn export_and_import_round_trip() {
+        let dir = std::env::temp_dir().join(format!("omafile-crypt-export-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let vault = dir.join("src/Tax 2026.gocryptfs");
+        std::fs::create_dir_all(vault.join("sub")).unwrap();
+        std::fs::write(vault.join("gocryptfs.conf"), "{\"conf\":1}").unwrap();
+        std::fs::write(vault.join("gocryptfs.diriv"), [1u8, 2, 3]).unwrap();
+        std::fs::write(vault.join("sub/cipher"), vec![7u8; 5000]).unwrap();
+        let archive = dir.join("Tax 2026.gocryptfs.tar");
+        assert_eq!(export(&vault, &archive), Ok(5), "folder, conf, diriv, sub, sub/cipher");
+        assert!(!dir.join("Tax 2026.gocryptfs.tar.partial").exists());
+        let dest = dir.join("dest");
+        let first = import(&archive, &dest).unwrap();
+        assert_eq!(first, dest.join("Tax 2026.gocryptfs"));
+        assert!(is_vault(&first) && dest.join("Tax 2026").is_dir());
+        assert_eq!(std::fs::read(first.join("sub/cipher")).unwrap(), vec![7u8; 5000]);
+        // A second import does not overwrite the first.
+        let second = import(&archive, &dest).unwrap();
+        assert_eq!(second, dest.join("Tax 2026 2.gocryptfs"));
+        assert!(export(&dir.join("src"), &dir.join("x.tar")).is_err(), "a plain folder is no vault");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
