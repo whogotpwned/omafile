@@ -209,6 +209,25 @@ impl Window {
         phone.add(&import_dir);
         page.add(&phone);
 
+        let media = adw::PreferencesGroup::builder().title(tr("Now Playing")).build();
+        let np = adw::SwitchRow::builder().title(tr("Show what is playing")).subtitle(tr("A mini player in the sidebar and the Now Playing view (F8) for anything that plays on this computer; takes effect on the next start")).active(self.prefs.get_bool("now-playing", true)).build();
+        let this = Rc::downgrade(self);
+        np.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("now-playing", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        media.add(&np);
+        let live = adw::SwitchRow::builder().title(tr("Spectrum follows the real sound")).subtitle(tr("Listens to the output of this computer while the Now Playing view is open (PipeWire / PulseAudio); nothing is stored. Off: a generated animation")).active(self.prefs.get_bool("now-playing-spectrum", true)).build();
+        let this = Rc::downgrade(self);
+        live.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("now-playing-spectrum", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        media.add(&live);
+        page.add(&media);
+
         let trash = adw::PreferencesGroup::builder().title(tr("Trash")).build();
         let auto = adw::SpinRow::with_range(0.0, 365.0, 1.0);
         auto.set_title(&tr("Delete trashed items after … days"));

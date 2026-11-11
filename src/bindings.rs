@@ -116,6 +116,7 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Tools", "shelf-add", "", "Put the selection on the shelf (a floating window that collects files; drag out or copy / move them in one go)"),
     ("Tools", "shelf-show", "", "Show or hide the shelf"),
     ("Tools", "nearby", "", "Nearby devices (LocalSend): send the selection to a phone or computer, receive files; also drop files on a device in the sidebar"),
+    ("Tools", "now-playing", "", "Now Playing: whatever plays on this computer (browser, Spotify, mpv, …) with cover, live spectrum and full controls; in the view: Space play / pause, ← → seek, ↑ ↓ volume, N / P next / previous, Esc back"),
     ("Tools", "", "Menu › Import Photos from iPhone", "Import the camera roll of a connected iPhone / iPad into Pictures/iPhone/YYYY-MM (HEIC → JPEG); also omafile --import-photos"),
     ("Tools", "", "Context menu › eBook", "Open in Reader, Rename from Metadata (Author - Title), Send to eReader, Convert to EPUB / MOBI / AZW3 / PDF (Calibre)"),
     ("Vim keys", "", "h  j  k  l", "Parent folder, down, up, open (Preferences › Keys › Vim keys)"),

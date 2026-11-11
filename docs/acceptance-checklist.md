@@ -101,3 +101,11 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 10.1 Calibre installed: context menu › eBook › Convert to produces a file next to the original.
 - [ ] 10.2 Folder rules on `~/Downloads`: a new PDF moves on its own a few seconds after the download finishes (not while the browser still writes it).
 - [ ] 10.3 Disk usage map, Find Duplicates on a real project tree: finish in reasonable time, trash from within works.
+
+## 11. Now Playing
+
+- [ ] 11.1 Play a YouTube video in the browser: the equalizer button appears in the header, the mini player in the sidebar shows title and cover; pause / next from omafile reach the browser.
+- [ ] 11.2 `F8`: the full view slides in; the spectrum moves with the actual sound (bass on the left); with the music paused it settles.
+- [ ] 11.3 Spotify or mpv next to the browser: the chooser at the top switches between them; seeking, volume, shuffle and repeat work where the player supports them.
+- [ ] 11.4 Quit the player: mini player and header button disappear, the view says *Nothing is playing*.
+- [ ] 11.5 `pavucontrol` › Recording shows omafile only while the Now Playing view is open.

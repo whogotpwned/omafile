@@ -628,6 +628,112 @@ toast {{
   border-radius: 6px;
   animation: omafile-pulse 900ms ease-in-out infinite alternate;
 }}
+.omafile-np-mini {{
+  margin: 6px 8px 8px 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background-color: alpha(currentColor, 0.06);
+  border: 1px solid alpha(currentColor, 0.08);
+}}
+.omafile-np-mini-cover {{
+  border-radius: 8px;
+  background-color: alpha(currentColor, 0.10);
+}}
+.omafile-np-mini-title {{
+  font-weight: 700;
+}}
+.omafile-np-mini button {{
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+}}
+.omafile-np-mini-play {{
+  background-color: {accent};
+  color: {accent_fg};
+}}
+.omafile-np-progress trough {{
+  min-height: 3px;
+  border-radius: 2px;
+  background-color: alpha(currentColor, 0.12);
+}}
+.omafile-np-progress progress {{
+  min-height: 3px;
+  border-radius: 2px;
+  background-color: {accent};
+}}
+.omafile-np-header {{
+  padding: 4px 8px;
+}}
+.omafile-np-page {{
+  background-color: {view_bg};
+}}
+.omafile-np-backdrop {{
+  opacity: 0.30;
+}}
+.omafile-np-title {{
+  font-size: 22pt;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}}
+.omafile-np-subtitle {{
+  font-size: 12pt;
+  opacity: 0.75;
+}}
+.omafile-np-source {{
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 2px;
+}}
+.omafile-np-play {{
+  min-width: 64px;
+  min-height: 64px;
+  background-color: {accent};
+  color: {accent_fg};
+  box-shadow: 0 6px 22px alpha({accent}, 0.45);
+  transition: transform 160ms cubic-bezier(0.2, 0.9, 0.3, 1.4), box-shadow 200ms ease;
+  -gtk-icon-size: 26px;
+}}
+.omafile-np-play:hover {{
+  transform: scale(1.08);
+  box-shadow: 0 8px 30px alpha({accent}, 0.65);
+}}
+.omafile-np-play:active {{
+  transform: scale(0.94);
+}}
+.omafile-np-skip {{
+  min-width: 44px;
+  min-height: 44px;
+  -gtk-icon-size: 20px;
+  transition: transform 160ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}}
+.omafile-np-skip:hover {{
+  transform: scale(1.12);
+}}
+.omafile-np-on, .omafile-np-page togglebutton:checked {{
+  color: {accent};
+  background-color: alpha({accent}, 0.16);
+}}
+.omafile-np-seek trough {{
+  min-height: 5px;
+  border-radius: 3px;
+  background-color: alpha(currentColor, 0.14);
+}}
+.omafile-np-seek highlight {{
+  min-height: 5px;
+  border-radius: 3px;
+  background-color: {accent};
+}}
+.omafile-np-seek slider {{
+  min-width: 14px;
+  min-height: 14px;
+  margin: -5px;
+  background-color: {fg};
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 120ms ease;
+}}
+.omafile-np-seek:hover slider {{
+  transform: scale(1.25);
+}}
 "#,
         name = p.name,
         bg = p.background.hex(),

@@ -60,6 +60,7 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("shelf-add", "Add to Shelf", "folder-open-symbolic"),
     ("shelf-show", "Show Shelf", "folder-open-symbolic"),
     ("nearby", "Nearby Devices (LocalSend)", "phone-symbolic"),
+    ("now-playing", "Now Playing (media controls)", "audio-x-generic-symbolic"),
     ("import-photos", "Import Photos from iPhone", "camera-photo-symbolic"),
     ("ebook-rename", "eBook: Rename from Metadata", "x-office-address-book-symbolic"),
     ("ebook-send", "eBook: Send to eReader", "send-to-symbolic"),
@@ -150,6 +151,7 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.shelf-add", &["<Control><Shift>s"]),
     ("win.shelf-show", &["<Control><Shift>b"]),
     ("win.nearby", &["<Control><Alt>p"]),
+    ("win.now-playing", &["F8"]),
     ("win.git-commit", &["<Control><Alt>c"]),
     ("win.git-branch", &["<Control><Alt>b"]),
     ("win.delete", &["<Shift>Delete"]),
@@ -332,6 +334,7 @@ impl Window {
             self.window.add_action(&convert);
         }
         simple("nearby", Box::new(|w| w.open_nearby()));
+        simple("now-playing", Box::new(|w| w.toggle_now_playing()));
         simple("nearby-show-received", Box::new(|w| w.nearby_show_received()));
         simple("import-photos", Box::new(|w| w.import_photos()));
         {

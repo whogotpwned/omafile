@@ -80,6 +80,11 @@ pub struct Window {
     pub containers: RefCell<Vec<crate::containers::Volume>>,
     session_saved: Cell<bool>,
     pub sidebar_list: gtk::ListBox,
+    /// "files" (the panes) and, once opened, "nowplaying".
+    pub content_stack: gtk::Stack,
+    pub np_header_slot: gtk::Box,
+    pub np_sidebar_slot: gtk::Box,
+    pub now_playing: RefCell<Option<Rc<crate::nowplaying::NowPlaying>>>,
     pub sidebar_menu: gtk::PopoverMenu,
     pub back_btn: gtk::Button,
     pub forward_btn: gtk::Button,
@@ -176,6 +181,8 @@ impl Window {
         header.pack_end(&view_btn);
         header.pack_end(&hidden_btn);
         header.pack_end(&search_btn);
+        let np_header_slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        header.pack_end(&np_header_slot);
 
         // ---- tabs -----------------------------------------------------------
         let mut tab_views = Vec::new();
@@ -220,7 +227,11 @@ impl Window {
         let content = adw::ToolbarView::new();
         content.set_top_bar_style(adw::ToolbarStyle::Flat);
         content.add_top_bar(&header);
-        content.set_content(Some(&preview_split));
+        let content_stack = gtk::Stack::new();
+        content_stack.set_transition_type(gtk::StackTransitionType::OverUpDown);
+        content_stack.set_transition_duration(320);
+        content_stack.add_named(&preview_split, Some("files"));
+        content.set_content(Some(&content_stack));
 
         // ---- sidebar --------------------------------------------------------
         let sidebar_list = gtk::ListBox::new();
@@ -241,6 +252,9 @@ impl Window {
         sidebar.set_top_bar_style(adw::ToolbarStyle::Flat);
         sidebar.add_top_bar(&sidebar_header);
         sidebar.set_content(Some(&sidebar_scroll));
+        let np_sidebar_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        np_sidebar_slot.set_visible(false);
+        sidebar.add_bottom_bar(&np_sidebar_slot);
         let sidebar_menu = gtk::PopoverMenu::from_model(None::<&gio::MenuModel>);
         sidebar_menu.set_has_arrow(false);
         sidebar_menu.set_parent(&sidebar_list);
@@ -291,6 +305,10 @@ impl Window {
             containers: RefCell::new(Vec::new()),
             session_saved: Cell::new(false),
             sidebar_list,
+            content_stack,
+            np_header_slot,
+            np_sidebar_slot,
+            now_playing: RefCell::new(None),
             sidebar_menu,
             back_btn,
             forward_btn,
@@ -333,6 +351,7 @@ impl Window {
         crate::trashauto::run_auto_empty(&this);
         crate::rules::watch(&this);
         let _ = this.nearby();
+        crate::nowplaying::NowPlaying::install(&this);
         if std::env::args().any(|a| a == "--import-photos") {
             let weak = Rc::downgrade(&this);
             glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
@@ -738,6 +757,8 @@ impl Window {
     }
 
     pub fn navigate(self: &Rc<Self>, file: gio::File) {
+        // Going somewhere means looking at files again.
+        self.show_now_playing_quiet(false);
         if let Some(pane) = self.active_pane() {
             pane.navigate(file, true);
         }
@@ -1947,6 +1968,7 @@ fn main_menu() -> gio::Menu {
     s2.append(Some(tr("Folder Rules…").as_str()), Some("win.rules"));
     s2.append(Some(tr("Shelf").as_str()), Some("win.shelf-show"));
     s2.append(Some(tr("Nearby Devices…").as_str()), Some("win.nearby"));
+    s2.append(Some(tr("Now Playing").as_str()), Some("win.now-playing"));
     s2.append(Some(tr("Import Photos from iPhone").as_str()), Some("win.import-photos"));
     s2.append(Some(tr("Save Search as Smart Folder…").as_str()), Some("win.save-smart"));
     menu.append_section(None, &s2);

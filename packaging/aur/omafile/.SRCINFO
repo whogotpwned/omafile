@@ -1,6 +1,6 @@
 pkgbase = omafile
 	pkgdesc = Native GTK4/libadwaita file manager that follows the Omarchy theme
-	pkgver = 0.17.1
+	pkgver = 0.18.0
 	pkgrel = 1
 	url = https://github.com/whogotpwned/omafile
 	arch = x86_64
@@ -30,6 +30,7 @@ pkgbase = omafile
 	optdepends = libheif: HEIC to JPEG when importing iPhone photos
 	optdepends = ffmpegthumbnailer: video thumbnails
 	optdepends = ffmpeg: cover art, video tools, media facts
+	optdepends = libpulse: Now Playing spectrum that follows the real sound (parec)
 	optdepends = gst-plugins-good: play MP3, FLAC, Ogg and common video in the preview
 	optdepends = gst-plugins-bad: more video codecs for the preview player
 	optdepends = gst-libav: H.264 / AAC playback in the preview
@@ -41,7 +42,7 @@ pkgbase = omafile
 	optdepends = uv: fast Python venv creation and installs from the Python menu
 	optdepends = xdg-desktop-portal-hyprland: "Open With" chooser
 	optdepends = uwsm: launch terminals and readers as session apps
-	source = omafile-0.17.1.tar.gz::https://github.com/whogotpwned/omafile/archive/v0.17.1.tar.gz
+	source = omafile-0.18.0.tar.gz::https://github.com/whogotpwned/omafile/archive/v0.18.0.tar.gz
 	sha256sums = SKIP
 
 pkgname = omafile

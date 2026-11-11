@@ -2,6 +2,12 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.18.0 — 2026-11-11
+
+### Added
+- **Now Playing**: whatever plays on this computer (a browser tab on YouTube, Spotify, mpv, any MPRIS player) shows up in omafile. A live equalizer button in the header and a mini player at the bottom of the sidebar (cover, title, previous / play-pause / next, progress) appear while a player exists and vanish with it. `F8` slides in the full view: cover art with a halo that breathes with the bass, a blurred backdrop in the cover's colours, a 44-band spectrum with falling peaks and reflection, seek bar, shuffle, repeat, volume, a chooser when several players run and a button that brings the player to the front. Keys in the view: Space, ← →, ↑ ↓, N / P, Esc.
+- The spectrum follows the real sound: omafile listens to the output monitor through `parec` or `pw-record` only while the view is open (own FFT, nothing stored); without them, or with the switch off, a generated animation runs instead. Preferences › Now Playing has switches for the feature and for the live spectrum.
+
 ## 0.17.1 — 2026-11-10
 
 ### Fixed
