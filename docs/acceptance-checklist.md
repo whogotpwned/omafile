@@ -149,3 +149,10 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 16.5 Start a large backup and press *Stop* (or pull the drive): the next run continues instead of starting over.
 - [ ] 16.6 An exFAT stick as destination: the page warns that every backup is a full copy; the backup itself works.
 - [ ] 16.7 The laptop does not suspend while a backup runs (`systemd-inhibit --list` shows omafile with "Backing up").
+- [ ] 16.8 *Every day* at an hour that has just passed: within ten minutes the timer starts a backup (omafile closed). Set the hour to one later today: nothing runs before it; `systemctl --user cat omafile-backup.timer` shows `OnCalendar=*:0/10`.
+- [ ] 16.9 *Only on mains power*, laptop unplugged, a backup due: none starts and the page says it waits for mains power; plug in: it starts within ten minutes. *Back Up Now* works on battery.
+- [ ] 16.10 *Tell me when a backup has finished*: a mako notification appears after a run; a failed run (pull the drive) is reported also with the switch off.
+- [ ] 16.11 The newest backup folder on the drive holds `packages.txt` and `packages-aur.txt`; `pacman -S --needed - < packages.txt` (as root) offers nothing new on the same system.
+- [ ] 16.12 *Keep backups › For a month* with older backups on the drive: after the next run they are gone, the newest three stay. A nearly full stick with *Make room* on: the oldest backups go before the run.
+- [ ] 16.13 On Omarchy the page ends with *Omarchy looks after the system* and a plausible time for the last system snapshot (compare `sudo snapper -c root list`). `omarchy-snapshot create` and an `omarchy-update` behave as before; `/.snapshots` and `~/.snapshots` do not appear inside a backup.
+- [ ] 16.14 Choosing a folder under `/` on the system disk (for instance `/var/backups`) as destination shows the warning that snapshots are taken of this place.

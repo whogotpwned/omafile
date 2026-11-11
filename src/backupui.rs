@@ -304,9 +304,19 @@ impl BackupPage {
             }
             if !connected {
                 parts.push(tr("the drive is not connected"));
-            } else if let Some(interval) = config.schedule.interval() {
-                let next = (last + interval - now()).max(0);
-                parts.push(if next < 120 { tr("next backup: soon") } else if next < 7200 { trf!("next backup in {n} min", n = next / 60) } else { trf!("next backup in {n} h", n = next / 3600) });
+            } else if let Some(at) = backup::next_run(&config, last, now(), backup::utc_offset()) {
+                let next = (at - now()).max(0);
+                parts.push(if config.ac_only && backup::on_battery() {
+                    tr("on battery: the next backup waits for mains power")
+                } else if next < 120 {
+                    tr("next backup: soon")
+                } else if next < 7200 {
+                    trf!("next backup in {n} min", n = next / 60)
+                } else if next < 2 * 86400 {
+                    trf!("next backup in {n} h", n = next / 3600)
+                } else {
+                    trf!("next backup in {n} days", n = next / 86400)
+                });
             } else {
                 parts.push(tr("automatic backups are off"));
             }
@@ -386,6 +396,11 @@ impl BackupPage {
             let dest_fs = backup::mount_info(dir).map(|m| m.3);
             if home_fs.is_some() && home_fs == dest_fs {
                 let warn = adw::ActionRow::builder().title(tr("This folder is on the same disk as your files")).subtitle(tr("It protects against deleting and overwriting, not against the disk failing or the laptop being lost")).build();
+                warn.add_prefix(&gtk::Image::from_icon_name("dialog-warning-symbolic"));
+                place.add(&warn);
+            }
+            if backup::inside_snapshotted(dir) {
+                let warn = adw::ActionRow::builder().title(tr("Snapshots are taken of this place")).subtitle(tr("The backups would end up inside the system's snapshots, and deleting an old backup would free nothing until those are gone. Another drive avoids that.")).build();
                 warn.add_prefix(&gtk::Image::from_icon_name("dialog-warning-symbolic"));
                 place.add(&warn);
             }
@@ -515,12 +530,30 @@ impl BackupPage {
         self.groups.append(&what);
 
         // ----- how often
-        let often = adw::PreferencesGroup::builder().title(tr("Automatic backups")).description(tr("A systemd timer starts the backup, also when omafile is closed. If the drive is away, the backup is made up for when it comes back. Old backups thin out: all of the last day, one a day for a month, one a week beyond.")).build();
+        // One switch row that writes one setting.
+        let switch = |title: String, subtitle: String, on: bool, set: fn(&mut Config, bool)| {
+            let row = adw::SwitchRow::builder().title(title).subtitle(glib::markup_escape_text(&subtitle)).active(on).build();
+            row.connect_active_notify(move |row| {
+                let mut config = Config::load();
+                set(&mut config, row.is_active());
+                config.save();
+            });
+            row
+        };
+        let combo = |title: String, labels: &[String], selected: usize| {
+            let model = gtk::StringList::new(&labels.iter().map(String::as_str).collect::<Vec<_>>());
+            adw::ComboRow::builder().title(title).model(&model).selected(selected as u32).build()
+        };
+        let often = adw::PreferencesGroup::builder().title(tr("Automatic backups")).description(tr("A systemd timer asks every ten minutes whether a backup is due, also when omafile is closed. One that could not run (computer off, drive away, on battery) is made up for as soon as it can.")).build();
         let choices = [Schedule::Manual, Schedule::Hourly, Schedule::Daily, Schedule::Weekly];
-        let labels = [tr("Off (only by hand)"), tr("Every hour"), tr("Every day"), tr("Every week")];
-        let model = gtk::StringList::new(&labels.iter().map(String::as_str).collect::<Vec<_>>());
-        let schedule = adw::ComboRow::builder().title(tr("Back up")).model(&model).selected(choices.iter().position(|s| *s == config.schedule).unwrap_or(0) as u32).build();
-        let (weak, wweak) = (Rc::downgrade(self), Rc::downgrade(window));
+        let schedule = combo(tr("Back up"), &[tr("Off (only by hand)"), tr("Every hour"), tr("Every day"), tr("Every week")], choices.iter().position(|s| *s == config.schedule).unwrap_or(0));
+        let hours: Vec<String> = (0..24).map(|h| format!("{h:02}:00")).collect();
+        let hour = combo(tr("Time of day"), &hours, config.hour as usize);
+        hour.set_subtitle(&tr("Or as soon after as the computer is on and the drive is connected"));
+        hour.set_visible(matches!(config.schedule, Schedule::Daily | Schedule::Weekly));
+        let weekday = combo(tr("Day of the week"), &[tr("Monday"), tr("Tuesday"), tr("Wednesday"), tr("Thursday"), tr("Friday"), tr("Saturday"), tr("Sunday")], config.weekday as usize);
+        weekday.set_visible(config.schedule == Schedule::Weekly);
+        let (weak, wweak, hour_row, weekday_row) = (Rc::downgrade(self), Rc::downgrade(window), hour.clone(), weekday.clone());
         schedule.connect_selected_notify(move |row| {
             let (Some(p), Some(w)) = (weak.upgrade(), wweak.upgrade()) else { return };
             let chosen = choices.get(row.selected() as usize).copied().unwrap_or(Schedule::Manual);
@@ -530,12 +563,74 @@ impl BackupPage {
             }
             config.schedule = chosen;
             config.save();
+            hour_row.set_visible(matches!(chosen, Schedule::Daily | Schedule::Weekly));
+            weekday_row.set_visible(chosen == Schedule::Weekly);
             w.backup_apply_schedule(&config, row);
             p.update_status(&w);
             w.refresh_sidebar();
         });
         often.add(&schedule);
+        for (row, set) in [(&hour, (|c, n| c.hour = n) as fn(&mut Config, u8)), (&weekday, |c, n| c.weekday = n)] {
+            let (weak, wweak) = (Rc::downgrade(self), Rc::downgrade(window));
+            row.connect_selected_notify(move |row| {
+                let mut config = Config::load();
+                set(&mut config, row.selected() as u8);
+                config.save();
+                if let (Some(p), Some(w)) = (weak.upgrade(), wweak.upgrade()) {
+                    p.update_status(&w);
+                }
+            });
+            often.add(row);
+        }
+        let mains = switch(tr("Only on mains power"), tr("On battery, automatic backups wait. Back Up Now always works."), config.ac_only, |c, on| c.ac_only = on);
+        let (weak, wweak) = (Rc::downgrade(self), Rc::downgrade(window));
+        mains.connect_active_notify(move |_| {
+            if let (Some(p), Some(w)) = (weak.upgrade(), wweak.upgrade()) {
+                p.update_status(&w);
+            }
+        });
+        often.add(&mains);
         self.groups.append(&often);
+
+        // ----- how long
+        let keeping = adw::PreferencesGroup::builder().title(tr("Keeping backups")).description(tr("Backups thin out by themselves: all of the last day, one a day for a month, one a week beyond. The newest three always stay.")).build();
+        let spans: [u32; 5] = [0, 31, 92, 183, 366];
+        let keep = combo(tr("Keep backups"), &[tr("As long as there is room"), tr("For a month"), tr("For three months"), tr("For six months"), tr("For a year")], spans.iter().position(|d| *d == config.keep_days).unwrap_or(0));
+        keep.connect_selected_notify(move |row| {
+            let mut config = Config::load();
+            config.keep_days = spans.get(row.selected() as usize).copied().unwrap_or(0);
+            config.save();
+        });
+        keeping.add(&keep);
+        keeping.add(&switch(tr("Make room when the drive runs full"), tr("Before a backup, the oldest ones are deleted until a twentieth of the drive (10 GB at most) is free"), config.make_room, |c, on| c.make_room = on));
+        self.groups.append(&keeping);
+
+        // ----- what else
+        let extras = adw::PreferencesGroup::builder().title(tr("With every backup")).build();
+        extras.add(&switch(tr("Tell me when a backup has finished"), tr("A notification on the desktop. A backup that failed is always reported."), config.notify_done, |c, on| c.notify_done = on));
+        if backup::has_pacman() {
+            extras.add(&switch(tr("Note which programs are installed"), tr("packages.txt and packages-aur.txt beside each backup, in the form pacman reads: a fresh install gets its programs back"), config.package_list, |c, on| c.package_list = on));
+        }
+        self.groups.append(&extras);
+
+        // ----- who looks after the system
+        if let Some(system) = backup::system_snapshots() {
+            let group = adw::PreferencesGroup::builder().title(tr("The system itself")).build();
+            let title = if system.omarchy { tr("Omarchy looks after the system") } else { tr("Snapshots look after the system") };
+            let mut text = Vec::new();
+            if system.newest > 0 {
+                text.push(format!("{} {}.", tr("Last system snapshot"), ago(system.newest)));
+            }
+            text.push(if system.omarchy {
+                tr("Omarchy takes a snapshot before every update and keeps the last few; the boot menu goes back to one. They live on this disk and leave your home folder alone on purpose. Your own files, on another drive, are what this backup is for: the two do not overlap.")
+            } else {
+                tr("Snapshots of the system live on this disk and are for going back after a change. Your own files, on another drive, are what this backup is for: the two do not overlap.")
+            });
+            let row = adw::ActionRow::builder().title(title).subtitle(glib::markup_escape_text(&text.join(" "))).build();
+            row.add_prefix(&gtk::Image::from_icon_name("emblem-system-symbolic"));
+            group.add(&row);
+            self.groups.append(&group);
+        }
     }
 }
 
@@ -666,6 +761,12 @@ impl Window {
     /// Watch the status file: move the page along while a backup runs, keep the sidebar's
     /// "… ago" fresh, and start a backup that is due when the drive is there.
     pub fn start_backup_watch(self: &Rc<Self>) {
+        // A timer written by an older version (it fired once a day and could miss a drive
+        // that was away) is replaced by the current one.
+        let schedule = Config::load().schedule;
+        if backup::units_outdated(schedule) {
+            let _ = backup::apply_schedule(schedule);
+        }
         let this = Rc::downgrade(self);
         let seen = Rc::new(Cell::new(std::time::UNIX_EPOCH));
         let ticks = Rc::new(Cell::new(0u32));
@@ -696,7 +797,7 @@ impl Window {
             // where the timer could not be installed, and a drive that was just plugged in.)
             if ticks.get() % 120 == 60 {
                 let config = Config::load();
-                if config.is_set_up() && backup::due(config.schedule, backup::last_success(), now()) && Status::load().state != "running" && matches!(backup::destination(&config), Destination::Ready(_)) {
+                if backup::should_start(&config) && Status::load().state != "running" && matches!(backup::destination(&config), Destination::Ready(_)) {
                     let _ = spawn_backup(&["--scheduled"]);
                 }
                 w.backup_sidebar_sync();

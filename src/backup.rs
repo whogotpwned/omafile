@@ -10,7 +10,14 @@
 //! reads Btrfs snapshots. No rsync, no other tool: the copying is done here,
 //! with nothing but the standard library, so `omafile --backup` runs without a
 //! window from a systemd timer.
+//!
+//! Where this stands next to Omarchy: Omarchy snapshots the system (snapper,
+//! root only, before every update, a handful kept, on the same disk) and leaves
+//! `/home` alone on purpose. This is the other half: the user's own files, on
+//! another drive, with a history. The two do not touch: snapshot folders are
+//! never copied, nothing here calls snapper, and the page says who does what.
 
+use crate::i18n::tr;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -68,11 +75,25 @@ pub struct Config {
     pub sources: Vec<PathBuf>,
     /// Names (with `*`) or absolute paths to leave out.
     pub excludes: Vec<String>,
+    /// Daily and weekly backups: not before this hour of the day (local time).
+    pub hour: u8,
+    /// Weekly backups: the day, Monday = 0.
+    pub weekday: u8,
+    /// Backups older than this many days are deleted; 0 keeps them as long as there is room.
+    pub keep_days: u32,
+    /// Delete the oldest backups before a run when the drive is nearly full.
+    pub make_room: bool,
+    /// Automatic backups wait while the computer runs on battery.
+    pub ac_only: bool,
+    /// A notification when a backup has finished (a failed one is always reported).
+    pub notify_done: bool,
+    /// Note the installed packages next to each backup.
+    pub package_list: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { schedule: Schedule::Daily, dest: PathBuf::new(), uuid: String::new(), subdir: String::new(), skip_caches: true, sources: Vec::new(), excludes: Vec::new() }
+        Config { schedule: Schedule::Daily, dest: PathBuf::new(), uuid: String::new(), subdir: String::new(), skip_caches: true, sources: Vec::new(), excludes: Vec::new(), hour: 12, weekday: 0, keep_days: 0, make_room: true, ac_only: false, notify_done: false, package_list: true }
     }
 }
 
@@ -88,6 +109,13 @@ impl Config {
                 "uuid" => c.uuid = value.to_string(),
                 "subdir" => c.subdir = value.to_string(),
                 "skip_caches" => c.skip_caches = value != "false",
+                "hour" => c.hour = value.parse::<u8>().unwrap_or(12).min(23),
+                "weekday" => c.weekday = value.parse::<u8>().unwrap_or(0).min(6),
+                "keep_days" => c.keep_days = value.parse().unwrap_or(0),
+                "make_room" => c.make_room = value != "false",
+                "ac_only" => c.ac_only = value == "true",
+                "notify_done" => c.notify_done = value == "true",
+                "package_list" => c.package_list = value != "false",
                 "source" if !value.is_empty() => c.sources.push(PathBuf::from(value)),
                 "exclude" if !value.is_empty() => c.excludes.push(value.to_string()),
                 _ => {}
@@ -98,6 +126,7 @@ impl Config {
 
     pub fn serialize(&self) -> String {
         let mut out = format!("schedule={}\ndest={}\nuuid={}\nsubdir={}\nskip_caches={}\n", self.schedule.id(), self.dest.display(), self.uuid, self.subdir, self.skip_caches);
+        out.push_str(&format!("hour={}\nweekday={}\nkeep_days={}\nmake_room={}\nac_only={}\nnotify_done={}\npackage_list={}\n", self.hour, self.weekday, self.keep_days, self.make_room, self.ac_only, self.notify_done, self.package_list));
         for s in &self.sources {
             out.push_str(&format!("source={}\n", s.display()));
         }
@@ -184,7 +213,7 @@ pub fn glob(pattern: &str, name: &str) -> bool {
     true
 }
 
-const CACHE_NAMES: &[&str] = &[".cache", "node_modules", "__pycache__", ".snapshots", "lost+found", ".Trash-1000", ".thumbnails"];
+const CACHE_NAMES: &[&str] = &[".cache", "node_modules", "__pycache__", "lost+found", ".Trash-1000", ".thumbnails"];
 
 /// Whether a file or folder stays out of the backup.
 pub fn excluded(path: &Path, is_dir: bool, config: &Config) -> bool {
@@ -204,6 +233,11 @@ pub fn excluded(path: &Path, is_dir: bool, config: &Config) -> bool {
                 }
             }
         }
+    }
+    // Snapshots (snapper's, so Omarchy's, and other backups in this layout) are never copied,
+    // whatever the settings say: each one is a whole copy of the folder it sits in.
+    if is_dir && name == ".snapshots" {
+        return true;
     }
     if config.skip_caches && is_dir {
         if CACHE_NAMES.contains(&name.as_str()) {
@@ -251,14 +285,19 @@ pub fn entries(store: &Path) -> Vec<Entry> {
 }
 
 /// Which backups to delete so that all of the last day stay, then the newest of each day
-/// for thirty days, then the newest of each week. The newest three always stay.
-pub fn to_prune(backups: &[(u32, i64)], now: i64) -> Vec<u32> {
+/// for thirty days, then the newest of each week. With `keep_days`, nothing older than that
+/// stays. The newest three always stay.
+pub fn to_prune(backups: &[(u32, i64)], now: i64, keep_days: u32) -> Vec<u32> {
     let mut sorted: Vec<(u32, i64)> = backups.to_vec();
     sorted.sort_by_key(|(_, date)| std::cmp::Reverse(*date));
     let mut keep_slots: std::collections::HashSet<(u8, i64)> = std::collections::HashSet::new();
     let mut prune = Vec::new();
     for (i, (number, date)) in sorted.iter().enumerate() {
         let age = now - date;
+        if i >= 3 && keep_days > 0 && age > keep_days as i64 * 86400 {
+            prune.push(*number);
+            continue;
+        }
         let slot = if i < 3 || age < 86400 {
             None
         } else if age < 30 * 86400 {
@@ -703,13 +742,61 @@ pub fn last_success() -> i64 {
     journal().iter().find(|r| r.ok).map(|r| r.time).unwrap_or(0)
 }
 
-/// Whether the schedule calls for a backup now.
-pub fn due(schedule: Schedule, last_success: i64, now: i64) -> bool {
-    match schedule.interval() {
-        // A little slack, so an hourly timer that fires a minute early still counts.
-        Some(interval) => now - last_success >= interval - interval / 20,
-        None => false,
-    }
+/// The moment the schedule last called for a backup: the top of the hour, today's (or
+/// yesterday's) chosen hour, or the chosen weekday's. `offset` is local time minus UTC.
+pub fn latest_slot(config: &Config, now: i64, offset: i64) -> Option<i64> {
+    let local = now + offset;
+    let day = local.div_euclid(86400);
+    let at = config.hour.min(23) as i64 * 3600;
+    let slot = match config.schedule {
+        Schedule::Manual => return None,
+        Schedule::Hourly => local - local.rem_euclid(3600),
+        Schedule::Daily => {
+            let today = day * 86400 + at;
+            if today > local { today - 86400 } else { today }
+        }
+        Schedule::Weekly => {
+            // 1 January 1970 was a Thursday; Monday is 0 here.
+            let weekday = (day + 3).rem_euclid(7);
+            let back = (weekday - config.weekday.min(6) as i64).rem_euclid(7);
+            let this_week = (day - back) * 86400 + at;
+            if this_week > local { this_week - 7 * 86400 } else { this_week }
+        }
+    };
+    Some(slot - offset)
+}
+
+/// Whether the schedule calls for a backup now: none has worked since the last moment one
+/// was due. A run that was missed (computer off, drive away, on battery) stays due.
+pub fn due(config: &Config, last_success: i64, now: i64, offset: i64) -> bool {
+    latest_slot(config, now, offset).is_some_and(|slot| last_success < slot)
+}
+
+/// When the next automatic backup starts: `now` when one is due.
+pub fn next_run(config: &Config, last_success: i64, now: i64, offset: i64) -> Option<i64> {
+    let slot = latest_slot(config, now, offset)?;
+    Some(if last_success < slot { now } else { slot + config.schedule.interval().unwrap_or(0) })
+}
+
+/// Local time minus UTC, in seconds.
+pub fn utc_offset() -> i64 {
+    gtk::glib::DateTime::now_local().map(|d| d.utc_offset().as_seconds()).unwrap_or(0)
+}
+
+/// Whether the computer runs on battery: a battery of its own (not a mouse's) is discharging.
+pub fn on_battery() -> bool {
+    on_battery_in(Path::new("/sys/class/power_supply"))
+}
+
+pub fn on_battery_in(dir: &Path) -> bool {
+    let Ok(supplies) = std::fs::read_dir(dir) else { return false };
+    let read = |p: PathBuf| std::fs::read_to_string(p).map(|s| s.trim().to_string()).unwrap_or_default();
+    supplies.flatten().any(|s| read(s.path().join("type")) == "Battery" && read(s.path().join("scope")) != "Device" && read(s.path().join("status")) == "Discharging")
+}
+
+/// Whether an automatic backup should start now: one is due, and the settings allow it.
+pub fn should_start(config: &Config) -> bool {
+    config.is_set_up() && due(config, last_success(), now(), utc_offset()) && !(config.ac_only && on_battery())
 }
 
 /// Ask a running backup to stop after the file it is on.
@@ -722,18 +809,27 @@ pub fn request_stop() {
 
 // ----- running by itself -------------------------------------------------------------------
 
-/// The systemd user units that run `omafile --backup --scheduled` on a schedule, also when
-/// omafile is closed. `Persistent` makes up for runs missed while the computer was off.
+/// The systemd user units that run `omafile --backup --scheduled`, also when omafile is
+/// closed. The timer only asks, every ten minutes; whether a backup is due is decided by
+/// `due`, so a run that could not happen (drive away, on battery) is made up for soon after.
 pub fn units(exe: &str, schedule: Schedule) -> Option<(String, String)> {
-    let calendar = match schedule {
-        Schedule::Manual => return None,
-        Schedule::Hourly => "hourly",
-        Schedule::Daily => "daily",
-        Schedule::Weekly => "weekly",
-    };
+    if schedule == Schedule::Manual {
+        return None;
+    }
     let service = format!("[Unit]\nDescription=omafile backup\n\n[Service]\nType=oneshot\nExecStart={exe} --backup --scheduled\nNice=10\nIOSchedulingClass=idle\n");
-    let timer = format!("[Unit]\nDescription=omafile backup ({calendar})\n\n[Timer]\nOnCalendar={calendar}\nPersistent=true\nRandomizedDelaySec=180\n\n[Install]\nWantedBy=timers.target\n");
+    let timer = "[Unit]\nDescription=omafile backup (asks every ten minutes whether one is due)\n\n[Timer]\nOnCalendar=*:0/10\nPersistent=true\nRandomizedDelaySec=60\n\n[Install]\nWantedBy=timers.target\n".to_string();
     Some((service, timer))
+}
+
+/// Whether the installed timer is one an older version wrote: then it is written again.
+pub fn units_outdated(schedule: Schedule) -> bool {
+    let Ok(exe) = std::env::current_exe() else { return false };
+    let Some((service, timer)) = units(&exe.to_string_lossy(), schedule) else { return false };
+    let dir = unit_dir();
+    match (std::fs::read_to_string(dir.join("omafile-backup.service")), std::fs::read_to_string(dir.join("omafile-backup.timer"))) {
+        (Ok(s), Ok(t)) => s != service || t != timer,
+        _ => false,
+    }
 }
 
 fn unit_dir() -> PathBuf {
@@ -752,7 +848,7 @@ pub fn apply_schedule(schedule: Schedule) -> Result<(), String> {
             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
             std::fs::write(&service, service_text).map_err(|e| e.to_string())?;
             std::fs::write(&timer, timer_text).map_err(|e| e.to_string())?;
-            if systemctl(&["daemon-reload"]) && systemctl(&["enable", "--now", "omafile-backup.timer"]) {
+            if systemctl(&["daemon-reload"]) && systemctl(&["enable", "omafile-backup.timer"]) && systemctl(&["restart", "omafile-backup.timer"]) {
                 Ok(())
             } else {
                 Err("systemd would not start the timer".into())
@@ -766,6 +862,96 @@ pub fn apply_schedule(schedule: Schedule) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+fn notify(icon: &str, title: &str, body: &str) {
+    let _ = std::process::Command::new("notify-send").args(["-a", "omafile", "-i", icon, title, body]).stdin(std::process::Stdio::null()).status();
+}
+
+/// Delete the oldest backups until a twentieth of the drive (10 GB at most) is free. The
+/// newest three always stay. Returns how many went.
+pub fn make_room(store: &Path, space: &dyn Fn() -> Option<(u64, u64)>) -> u32 {
+    let mut removed = 0;
+    while let Some((free, total)) = space() {
+        if total == 0 || free >= (total / 20).min(10 << 30) {
+            break;
+        }
+        let list = entries(store);
+        let Some(oldest) = list.last().filter(|_| list.len() > 3) else { break };
+        if remove(&oldest.dir).is_err() {
+            break;
+        }
+        removed += 1;
+    }
+    removed
+}
+
+/// What is installed, next to a backup: `packages.txt` (from the repositories) and
+/// `packages-aur.txt` (everything else), each in the form `pacman -S --needed - <` reads.
+/// A backup holds the user's files; with these lists a fresh system gets its programs back.
+pub fn write_package_lists(backup_dir: &Path, pacman: &dyn Fn(&[&str]) -> Option<String>) -> u32 {
+    let mut written = 0;
+    for (file, flags) in [("packages.txt", "-Qqen"), ("packages-aur.txt", "-Qqem")] {
+        if let Some(list) = pacman(&[flags]).filter(|l| !l.trim().is_empty()) {
+            if std::fs::write(backup_dir.join(file), list).is_ok() {
+                written += 1;
+            }
+        }
+    }
+    written
+}
+
+fn in_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
+}
+
+pub fn has_pacman() -> bool {
+    in_path("pacman")
+}
+
+// ----- what the system does by itself ------------------------------------------------------
+
+/// Snapshots of the system (snapper's; on Omarchy taken before every update). They are a
+/// different thing from this backup: on the same disk, of the system, for going back after an
+/// update. The page shows them so that it is clear who looks after what.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SystemSnapshots {
+    pub omarchy: bool,
+    /// How many, when the folder may be read (it usually may not); 0 otherwise.
+    pub count: usize,
+    /// When the newest was made, as far as can be told without being root.
+    pub newest: i64,
+}
+
+pub fn system_snapshots() -> Option<SystemSnapshots> {
+    let omarchy = in_path("omarchy-snapshot") || home().join(".local/share/omarchy/bin/omarchy-snapshot").is_file();
+    system_snapshots_in(Path::new("/"), omarchy)
+}
+
+pub fn system_snapshots_in(root: &Path, omarchy: bool) -> Option<SystemSnapshots> {
+    let dir = root.join(".snapshots");
+    let meta = std::fs::metadata(&dir).ok().filter(|m| m.is_dir())?;
+    let (mut count, mut newest) = (0, 0);
+    if let Ok(dirs) = std::fs::read_dir(&dir) {
+        for entry in dirs.flatten() {
+            if entry.file_name().to_str().is_some_and(|n| n.parse::<u32>().is_ok()) {
+                count += 1;
+                let date = std::fs::read_to_string(entry.path().join("info.xml")).map(|xml| crate::versions::parse_info(&xml).0).unwrap_or(0);
+                newest = newest.max(date);
+            }
+        }
+    }
+    if newest == 0 {
+        // The folder is root's: its date still tells when a snapshot was last added or removed.
+        newest = mtime(&meta);
+    }
+    Some(SystemSnapshots { omarchy, count, newest })
+}
+
+/// Whether a folder lies in an area snapper takes snapshots of. Backups kept there end up
+/// inside those snapshots: deleting an old backup frees nothing until the snapshots are gone.
+pub fn inside_snapshotted(dir: &Path) -> bool {
+    mount_info(dir).is_some_and(|(_, target, _, _)| target.join(".snapshots").is_dir())
 }
 
 fn lock_path() -> PathBuf {
@@ -796,7 +982,7 @@ pub fn main_headless(scheduled: bool) -> u8 {
         eprintln!("omafile: no backup is set up (open omafile › Backup)");
         return 2;
     }
-    if scheduled && !due(config.schedule, last_success(), now()) {
+    if scheduled && !should_start(&config) {
         return 0;
     }
     if !take_lock() {
@@ -814,6 +1000,9 @@ pub fn main_headless(scheduled: bool) -> u8 {
         Destination::Ready(dir) => {
             let store = store_dir(&dir);
             let _awake = crate::inhibit::take("Backing up");
+            if config.make_room {
+                make_room(&store, &|| space(&dir));
+            }
             let started = now();
             let mut status = Status { state: "running".into(), started, ..Default::default() };
             status.save();
@@ -829,8 +1018,14 @@ pub fn main_headless(scheduled: bool) -> u8 {
             match result {
                 Ok(outcome) => {
                     let all: Vec<(u32, i64)> = entries(&store).iter().map(|e| (e.number, e.date)).collect();
-                    for number in to_prune(&all, finished) {
+                    for number in to_prune(&all, finished, config.keep_days) {
                         let _ = std::fs::remove_dir_all(store.join(".snapshots").join(number.to_string()));
+                    }
+                    if config.package_list {
+                        write_package_lists(&store.join(".snapshots").join(outcome.number.to_string()), &|args| command_output("pacman", args));
+                    }
+                    if config.notify_done {
+                        notify("emblem-ok-symbolic", &tr("Backup finished"), &format!("{} {}  ·  {} {}", outcome.files, tr("files"), outcome.changed, tr("new or changed")));
                     }
                     journal_add(&Record { time: finished, ok: true, files: outcome.files, changed: outcome.changed, bytes: outcome.bytes, seconds: outcome.seconds, message: if outcome.errors > 0 { format!("{} could not be read", outcome.errors) } else { String::new() } });
                     Status { state: "ok".into(), started, finished, files_done: outcome.files, files_total: outcome.files, bytes_copied: outcome.bytes, message: String::new() }.save();
@@ -841,7 +1036,7 @@ pub fn main_headless(scheduled: bool) -> u8 {
                     journal_add(&Record { time: finished, ok: false, files: 0, changed: 0, bytes: 0, seconds: (finished - started).max(0) as u64, message: e.clone() });
                     Status { state: "failed".into(), started, finished, message: e.clone(), ..Default::default() }.save();
                     if !stopped {
-                        let _ = std::process::Command::new("notify-send").args(["-a", "omafile", "-i", "dialog-warning", "Backup failed", &e]).status();
+                        notify("dialog-warning", &tr("Backup failed"), &e);
                     }
                     1
                 }
@@ -891,11 +1086,16 @@ mod tests {
 
     #[test]
     fn config_round_trips() {
-        let c = Config { schedule: Schedule::Hourly, dest: "/run/media/me/T7/Backups".into(), uuid: "1234-ABCD".into(), subdir: "Backups".into(), skip_caches: false, sources: vec!["/home/me".into(), "/etc".into()], excludes: vec!["*.iso".into(), "~/Downloads/big".into()] };
+        let c = Config { schedule: Schedule::Hourly, dest: "/run/media/me/T7/Backups".into(), uuid: "1234-ABCD".into(), subdir: "Backups".into(), skip_caches: false, sources: vec!["/home/me".into(), "/etc".into()], excludes: vec!["*.iso".into(), "~/Downloads/big".into()], ..Default::default() };
         assert_eq!(Config::parse(&c.serialize()), c);
         assert!(c.is_set_up());
         let empty = Config::parse("");
         assert_eq!((empty.schedule, empty.skip_caches, empty.is_set_up()), (Schedule::Daily, true, false));
+        assert_eq!((empty.hour, empty.weekday, empty.keep_days, empty.make_room, empty.ac_only, empty.notify_done, empty.package_list), (12, 0, 0, true, false, false, true));
+        let tuned = Config::parse("hour=7\nweekday=6\nkeep_days=92\nmake_room=false\nac_only=true\nnotify_done=true\npackage_list=false\n");
+        assert_eq!((tuned.hour, tuned.weekday, tuned.keep_days, tuned.make_room, tuned.ac_only, tuned.notify_done, tuned.package_list), (7, 6, 92, false, true, true, false));
+        assert_eq!(Config::parse(&tuned.serialize()), tuned);
+        assert_eq!(Config::parse("hour=99\nweekday=9\n").hour, 23);
         assert_eq!(Schedule::from_id("nonsense"), Schedule::Manual);
     }
 
@@ -913,6 +1113,7 @@ mod tests {
         assert!(!excluded(Path::new("/home/me/.cache"), false, &config), "a file that happens to be called .cache is kept");
         config.skip_caches = false;
         assert!(!excluded(Path::new("/home/me/.cache"), true, &config));
+        assert!(excluded(Path::new("/home/.snapshots"), true, &config), "snapshots stay out whatever the settings say");
     }
 
     #[test]
@@ -1020,7 +1221,7 @@ mod tests {
             n += 1;
             all.push((n, now - d * day));
         }
-        let pruned = to_prune(&all, now);
+        let pruned = to_prune(&all, now, 0);
         let kept: Vec<(u32, i64)> = all.iter().filter(|(n, _)| !pruned.contains(n)).cloned().collect();
         let within_day = kept.iter().filter(|(_, d)| now - d < day).count();
         assert_eq!(within_day, 24, "everything from the last day stays");
@@ -1031,17 +1232,104 @@ mod tests {
         let older = kept.iter().filter(|(_, d)| now - d >= 30 * day).count();
         assert!((4..=6).contains(&older), "one a week beyond a month: {older}");
         // Few backups: nothing is deleted, however old.
-        assert!(to_prune(&[(1, 0), (2, 10), (3, 20)], now).is_empty());
-        assert_eq!(to_prune(&[(1, 5 * day), (2, 5 * day + 60), (3, 6 * day), (4, 7 * day), (5, 8 * day)], 1_000 * day), vec![1], "the newest three stay; of two old ones in the same week the newer stays");
+        assert!(to_prune(&[(1, 0), (2, 10), (3, 20)], now, 0).is_empty());
+        assert_eq!(to_prune(&[(1, 5 * day), (2, 5 * day + 60), (3, 6 * day), (4, 7 * day), (5, 8 * day)], 1_000 * day, 0), vec![1], "the newest three stay; of two old ones in the same week the newer stays");
+        // Kept for a month only: nothing older stays, except that the newest three always do.
+        let month = to_prune(&all, now, 31);
+        assert!(all.iter().filter(|(n, _)| !month.contains(n)).all(|(_, d)| now - d <= 31 * day));
+        assert!(month.len() > pruned.len());
+        assert!(to_prune(&[(1, 0), (2, 10), (3, 20)], now, 31).is_empty());
+    }
+
+    #[test]
+    fn a_backup_is_due_from_the_chosen_time_until_one_has_worked() {
+        let (hour, day) = (3600, 86400);
+        // Day 19996 is a Monday (30 September 2024); local time is UTC+2.
+        let (monday, offset) = (19_996 * day, 2 * hour);
+        let at = |d: i64, h: i64, m: i64| monday + d * day + h * hour + m * 60 - offset;
+        let daily = Config { schedule: Schedule::Daily, hour: 18, ..Default::default() };
+        assert!(!due(&daily, at(0, 9, 0), at(0, 17, 59), offset), "not before the chosen hour");
+        assert!(due(&daily, at(0, 9, 0), at(0, 18, 0), offset), "from then on");
+        assert!(due(&daily, at(0, 9, 0), at(1, 7, 0), offset), "and still the next morning, when the drive was away in the evening");
+        assert!(!due(&daily, at(0, 18, 5), at(1, 7, 0), offset), "not again once it has worked");
+        assert!(due(&daily, 0, at(0, 3, 0), offset), "never backed up: due at once");
+        assert_eq!(next_run(&daily, at(0, 18, 5), at(1, 7, 0), offset), Some(at(1, 18, 0)));
+        assert_eq!(next_run(&daily, at(0, 9, 0), at(0, 19, 0), offset), Some(at(0, 19, 0)), "due: now");
+
+        let weekly = Config { schedule: Schedule::Weekly, hour: 10, weekday: 4, ..Default::default() };
+        assert_eq!(latest_slot(&weekly, at(5, 0, 0), offset), Some(at(4, 10, 0)), "Saturday: last Friday at ten");
+        assert_eq!(latest_slot(&weekly, at(4, 9, 0), offset), Some(at(-3, 10, 0)), "Friday before ten: the Friday before");
+        assert!(!due(&weekly, at(4, 11, 0), at(6, 12, 0), offset) && due(&weekly, at(3, 11, 0), at(4, 10, 1), offset));
+        assert_eq!(next_run(&weekly, at(4, 11, 0), at(6, 12, 0), offset), Some(at(11, 10, 0)));
+
+        let hourly = Config { schedule: Schedule::Hourly, ..Default::default() };
+        assert!(due(&hourly, at(0, 9, 50), at(0, 10, 0), offset) && !due(&hourly, at(0, 10, 1), at(0, 10, 59), offset));
+        assert!(!due(&Config { schedule: Schedule::Manual, ..Default::default() }, 0, at(0, 10, 0), offset));
+    }
+
+    #[test]
+    fn battery_room_packages_and_the_system_snapshots() {
+        let root = scratch("extras");
+        // On battery: only a discharging battery of the computer itself counts.
+        let power = root.join("power");
+        let supply = |name: &str, kind: &str, status: &str, scope: &str| {
+            for (file, text) in [("type", kind), ("status", status), ("scope", scope)] {
+                put(&power.join(name).join(file), text, 1);
+            }
+        };
+        supply("AC", "Mains", "", "");
+        supply("hidpp_battery_0", "Battery", "Discharging", "Device");
+        assert!(!on_battery_in(&power), "a mouse's battery is not the computer's");
+        supply("BAT0", "Battery", "Charging", "");
+        assert!(!on_battery_in(&power));
+        supply("BAT0", "Battery", "Discharging", "");
+        assert!(on_battery_in(&power));
+        assert!(!on_battery_in(&root.join("no-such-folder")), "a desktop has none");
+
+        // Making room: the oldest go until enough is free; three always stay.
+        let store = root.join("store");
+        for n in 1..=6 {
+            put(&store.join(format!(".snapshots/{n}/info.xml")), &format!("<snapshot><num>{n}</num><date>2026-01-0{n} 10:00:00</date></snapshot>"), 1);
+            put(&store.join(format!(".snapshots/{n}/snapshot/file")), "x", 1);
+        }
+        let free = std::cell::Cell::new(10u64);
+        let removed = make_room(&store, &|| {
+            free.set(free.get() + 20);
+            Some((free.get(), 1000))
+        });
+        assert_eq!(removed, 1, "30 of 1000 is too little, 50 is enough");
+        assert_eq!(entries(&store).iter().map(|e| e.number).collect::<Vec<_>>(), vec![6, 5, 4, 3, 2]);
+        assert_eq!(make_room(&store, &|| Some((0, 1000))), 2);
+        assert_eq!(entries(&store).len(), 3, "the newest three stay however full the drive is");
+        assert_eq!(make_room(&store, &|| Some((900, 1000))), 0);
+        // A big drive: 10 GB free is enough, not a twentieth.
+        assert_eq!(make_room(&store, &|| Some((11 << 30, 4000 << 30))), 0);
+
+        // The package lists, in the form pacman reads back.
+        let dir = store.join(".snapshots/6");
+        let pacman = |args: &[&str]| Some(if args == ["-Qqen"] { "firefox\nhelix\n".to_string() } else { "omafile-git\n".to_string() });
+        assert_eq!(write_package_lists(&dir, &pacman), 2);
+        assert_eq!(std::fs::read_to_string(dir.join("packages.txt")).unwrap(), "firefox\nhelix\n");
+        assert_eq!(std::fs::read_to_string(dir.join("packages-aur.txt")).unwrap(), "omafile-git\n");
+        assert_eq!(write_package_lists(&dir, &|_| None), 0, "no pacman: nothing is written");
+        assert_eq!(entries(&store).first().map(|e| e.number), Some(6), "the lists do not disturb the backup");
+
+        // The system's own snapshots are only looked at.
+        let system = root.join("system");
+        assert_eq!(system_snapshots_in(&system, true), None);
+        put(&system.join(".snapshots/41/info.xml"), "<snapshot><num>41</num><date>2026-03-01 08:00:00</date></snapshot>", 1);
+        put(&system.join(".snapshots/42/info.xml"), "<snapshot><num>42</num><date>2026-03-09 08:00:00</date></snapshot>", 1);
+        let seen = system_snapshots_in(&system, true).unwrap();
+        assert_eq!((seen.omarchy, seen.count), (true, 2));
+        assert_eq!(seen.newest, crate::versions::parse_info("<date>2026-03-09 08:00:00</date>").0);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn schedule_units_status_and_journal() {
-        assert!(due(Schedule::Hourly, 0, 10_000) && !due(Schedule::Hourly, 9_000, 10_000) && due(Schedule::Hourly, 6_500, 10_000));
-        assert!(!due(Schedule::Manual, 0, 10_000));
         let (service, timer) = units("/usr/bin/omafile", Schedule::Daily).unwrap();
         assert!(service.contains("ExecStart=/usr/bin/omafile --backup --scheduled") && service.contains("Type=oneshot"));
-        assert!(timer.contains("OnCalendar=daily") && timer.contains("Persistent=true") && timer.contains("WantedBy=timers.target"));
+        assert!(timer.contains("OnCalendar=*:0/10") && timer.contains("Persistent=true") && timer.contains("WantedBy=timers.target"));
         assert!(units("/usr/bin/omafile", Schedule::Manual).is_none());
         let status = Status { state: "running".into(), started: 5, finished: 0, files_done: 10, files_total: 40, bytes_copied: 1234, message: "a\nb".into() };
         let back = Status::parse(&status.serialize());

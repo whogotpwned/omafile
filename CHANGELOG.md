@@ -2,6 +2,17 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.25.0 — 2026-11-11
+
+### Added
+- **How backups are made** is set on the Backup page: the **time of day** for daily and weekly backups and the **day of the week**, **only on mains power** (automatic backups wait while the laptop runs on battery), **how long backups are kept** (a month, three, six, a year, or as long as there is room), **making room** when the drive runs full (the oldest go first, the newest three always stay), and a **notification** when a backup has finished.
+- **Package lists**: `packages.txt` and `packages-aur.txt` beside each backup, in the form `pacman -S --needed - <` reads. With a fresh Omarchy install, the home folder from the backup and these lists, a computer is back.
+- **Next to Omarchy, not across it**: the page shows that Omarchy's snapshots look after the system (and when the last one was made) and that this backup is for your own files on another drive. Snapshot folders are never copied, whatever the settings; nothing here calls snapper or changes Omarchy's snapshots; a destination that would end up inside the system's snapshots gets a warning.
+
+### Changed
+- The timer now asks every ten minutes whether a backup is due instead of firing once per interval. A backup that could not run (computer off, drive away, on battery) is made up for soon after, also when omafile is closed. A timer written by 0.24.0 is replaced on the next start.
+- Hourly backups start at the top of the hour.
+
 ## 0.24.0 — 2026-11-11
 
 ### Added

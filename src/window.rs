@@ -1286,7 +1286,7 @@ impl Window {
         }
         places.push(Place::Entry { name: tr("Recent"), icon: "document-open-recent-symbolic".into(), file: gio::File::for_uri("recent:///"), kind: PlaceKind::Builtin });
         let trash_name = match *self.trash_summary.borrow() {
-            Some((n, bytes)) if n > 0 => format!("Trash  ·  {n} {}, {}", if n == 1 { tr("item") } else { tr("items") }, crate::ops::human_size(bytes)),
+            Some((n, bytes)) if n > 0 => format!("{}  ·  {n} {}, {}", tr("Trash"), if n == 1 { tr("item") } else { tr("items") }, crate::ops::human_size(bytes)),
             _ => tr("Trash"),
         };
         places.push(Place::Entry { name: trash_name, icon: if self.trash_summary.borrow().map(|(n, _)| n > 0).unwrap_or(false) { "user-trash-full-symbolic".into() } else { "user-trash-symbolic".into() }, file: gio::File::for_uri("trash:///"), kind: PlaceKind::Builtin });
