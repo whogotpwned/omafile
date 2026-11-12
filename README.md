@@ -10,13 +10,13 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.28.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.28.1-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-124%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-125%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-hero.png" alt="Two omafile windows in Tokyo Night. Front left: grid view with thumbnails for photos, a GIF, a video, eBook covers, a PDF and a song, the preview pane, an unlocked and a locked vault and an iPhone in the sidebar and the mini player at its bottom. Right: the Now Playing view with cover, live spectrum and transport controls." width="900">
@@ -503,11 +503,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.28.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.28.1** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 124 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 125 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 scripts/selftest.sh                          # omafile runs every one of its commands against itself
 scripts/check-omarchy.py ~/src/omarchy       # every assumption about Omarchy, against Omarchy's source

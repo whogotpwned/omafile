@@ -2,6 +2,11 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.28.1 — 2026-11-12
+
+### Added
+- Something small is hidden in *Help › About*, for those who cannot leave an icon alone.
+
 ## 0.28.0 — 2026-11-12
 
 Checked against Omarchy's own source (4.5.0 and the development branch), and tested from end to end by omafile itself.

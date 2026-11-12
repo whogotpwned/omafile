@@ -600,6 +600,20 @@ flowboxchild:focus-within .omafile-capture-actions {{
 .omafile-tour-in .omafile-tour-bubble:nth-child(3) {{
   animation-delay: 200ms;
 }}
+@keyframes omafile-egg-turn {{
+  from {{ transform: rotate(0deg) scale(1); }}
+  50% {{ transform: rotate(180deg) scale(1.18); }}
+  to {{ transform: rotate(360deg) scale(1); }}
+}}
+.omafile-egg-spin {{
+  animation: omafile-egg-turn 900ms cubic-bezier(0.22, 1, 0.36, 1);
+}}
+.omafile-egg {{
+  font-size: 1.5em;
+  font-weight: 800;
+  color: {accent};
+  margin-top: 4px;
+}}
 .omafile-vault-page {{
   background-color: {view_bg};
 }}

@@ -1218,9 +1218,9 @@ impl Window {
 
     fn prompt_create(self: &Rc<Self>, folder: bool) {
         let Some(pane) = self.active_pane() else { return };
-        let heading = if folder { "New Folder" } else { "New File" };
+        let heading = if folder { tr("New Folder") } else { tr("New File") };
         let entry = gtk::Entry::builder().text(if folder { tr("Untitled Folder") } else { tr("Untitled.txt") }).activates_default(true).build();
-        let dialog = adw::AlertDialog::new(Some(heading), None);
+        let dialog = adw::AlertDialog::new(Some(heading.as_str()), None);
         dialog.set_extra_child(Some(&entry));
         dialog.add_responses(&[("cancel", tr("Cancel").as_str()), ("create", tr("Create").as_str())]);
         dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);

@@ -249,9 +249,30 @@ fn features_list(window: &Rc<Window>, dialog: &adw::Dialog) -> gtk::ListBox {
     list
 }
 
+/// What the About page says to whoever clicks its icon five times in a row.
+const EGG: &str = "Aylin is fab ✨";
+
+/// The fifth click of a quick series (and every fifth after it).
+fn egg_due(clicks_in_a_row: i32) -> bool {
+    clicks_in_a_row > 0 && clicks_in_a_row % 5 == 0
+}
+
 fn about_page(window: &Rc<Window>) -> gtk::Widget {
     let icon = gtk::Image::from_icon_name("io.github.whogotpwned.Omafile");
     icon.set_pixel_size(96);
+    // Five quick clicks on the icon: it turns a somersault and says something nice.
+    let egg = gtk::Label::builder().label(EGG).css_classes(["omafile-egg"]).build();
+    let egg_reveal = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(crate::motion::PANEL).child(&egg).build();
+    let clicks = gtk::GestureClick::new();
+    let (reveal, spin) = (egg_reveal.clone(), icon.clone());
+    clicks.connect_pressed(move |_, n, _, _| {
+        if egg_due(n) {
+            spin.remove_css_class("omafile-egg-spin");
+            spin.add_css_class("omafile-egg-spin");
+            reveal.set_reveal_child(true);
+        }
+    });
+    icon.add_controller(clicks);
     let name = gtk::Label::builder().label("omafile").css_classes(["title-1"]).build();
     let version = gtk::Label::builder().label(format!("{} {VERSION}", tr("Version"))).selectable(true).css_classes(["omafile-help-version"]).build();
     let tagline = gtk::Label::builder().label(tr("The file manager that feels like part of Omarchy.")).css_classes(["omafile-dim"]).wrap(true).justify(gtk::Justification::Center).build();
@@ -282,7 +303,7 @@ fn about_page(window: &Rc<Window>) -> gtk::Widget {
     }
     let head = gtk::Box::new(gtk::Orientation::Vertical, 6);
     head.set_margin_top(18);
-    for w in [icon.upcast_ref::<gtk::Widget>(), name.upcast_ref(), version.upcast_ref(), tagline.upcast_ref(), counts.upcast_ref(), links.upcast_ref()] {
+    for w in [icon.upcast_ref::<gtk::Widget>(), egg_reveal.upcast_ref(), name.upcast_ref(), version.upcast_ref(), tagline.upcast_ref(), counts.upcast_ref(), links.upcast_ref()] {
         head.append(w);
     }
 
@@ -417,6 +438,12 @@ impl Window {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_egg_waits_for_the_fifth_click_and_is_kind() {
+        assert!(!egg_due(0) && !egg_due(1) && !egg_due(4) && egg_due(5) && !egg_due(6) && egg_due(10));
+        assert!(EGG.starts_with("Aylin is fab"));
+    }
 
     #[test]
     fn features_point_at_real_actions() {
