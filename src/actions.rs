@@ -1321,7 +1321,7 @@ impl Window {
         let page = adw::PreferencesPage::new();
         let group = adw::PreferencesGroup::new();
         let row = |title: &str, subtitle: &str| {
-            let r = adw::ActionRow::builder().title(tr(title)).subtitle(subtitle).build();
+            let r = adw::ActionRow::builder().title(tr(title)).subtitle(glib::markup_escape_text(subtitle)).build();
             r.add_css_class("property");
             r.set_subtitle_selectable(true);
             r

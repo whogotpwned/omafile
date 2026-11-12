@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 
 /// Where the user's Omarchy themes live (first existing wins).
 pub fn themes_dir() -> Option<PathBuf> {
-    let home = glib::home_dir();
-    [home.join(".config/omarchy/themes"), home.join(".local/share/omarchy/themes")].into_iter().find(|p| p.is_dir())
+    [install_dir(), stock_themes_dir()].into_iter().find(|p| p.is_dir())
 }
 
 /// A folder is a theme when it carries the palette files Omarchy reads.
@@ -94,11 +93,34 @@ pub fn install_dir() -> PathBuf {
     glib::home_dir().join(".config/omarchy/themes")
 }
 
+// ----- for scripts and for checking against Omarchy ------------------------------------------
+
+/// `omafile --describe-theme <folder>`: what omafile reads out of a theme, one `key<TAB>value`
+/// per line. `scripts/check-omarchy.py` compares this with the theme's own file for every
+/// theme Omarchy ships, so a change of format upstream is noticed.
+pub fn describe_theme(dir: Option<&String>) -> u8 {
+    let Some(dir) = dir.map(PathBuf::from).filter(|d| is_theme_dir(d)) else {
+        eprintln!("usage: omafile --describe-theme <theme folder>");
+        return 2;
+    };
+    let p = crate::theme::load_from(&dir);
+    println!("mode\t{}", if p.light { "light" } else { "dark" });
+    for (key, value) in [("accent", p.accent), ("background", p.background), ("foreground", p.foreground), ("red", p.red), ("green", p.green), ("yellow", p.yellow), ("blue", p.blue), ("magenta", p.magenta), ("cyan", p.cyan), ("orange", p.orange)] {
+        println!("{key}\t{}", value.hex());
+    }
+    0
+}
+
 // ----- the themes that are installed -------------------------------------------------------
 
-/// Omarchy's own folder (`$OMARCHY_PATH`, by default `~/.local/share/omarchy`).
+/// Omarchy's own folder: `$OMARCHY_PATH`, else where the package puts it
+/// (`/usr/share/omarchy`), else the checkout older releases kept in the home folder.
 pub fn omarchy_path() -> PathBuf {
-    std::env::var_os("OMARCHY_PATH").map(PathBuf::from).filter(|p| p.is_dir()).unwrap_or_else(|| glib::home_dir().join(".local/share/omarchy"))
+    omarchy_path_from(std::env::var_os("OMARCHY_PATH").map(PathBuf::from), &[PathBuf::from("/usr/share/omarchy"), glib::home_dir().join(".local/share/omarchy")])
+}
+
+pub fn omarchy_path_from(env: Option<PathBuf>, known: &[PathBuf]) -> PathBuf {
+    env.filter(|p| p.is_dir()).or_else(|| known.iter().find(|p| p.join("themes").is_dir()).cloned()).unwrap_or_else(|| known[0].clone())
 }
 
 /// The themes Omarchy ships.
@@ -127,14 +149,31 @@ pub fn display_name(name: &str) -> String {
         .join(" ")
 }
 
-/// A folder name `omarchy-theme-set` finds again: it lowercases what it is given and turns
-/// spaces into dashes, so the folder must be lowercase without spaces. Everything that is
-/// not a letter or a digit becomes a dash here.
+/// A folder name Omarchy can hand around: lowercase, starting with a letter or a digit,
+/// then letters, digits and dashes (its manual allows a few more signs; these are the safe
+/// ones, and `omarchy-theme-set` finds the folder again from the name it shows). Umlauts
+/// are written out; anything else that is not a letter or a digit becomes a dash.
 pub fn folder_name(wanted: &str) -> String {
     let mut out = String::new();
     for c in wanted.trim().to_lowercase().chars() {
-        if c.is_alphanumeric() {
+        let written = match c {
+            'ä' => "ae",
+            'ö' => "oe",
+            'ü' => "ue",
+            'ß' => "ss",
+            'à' | 'á' | 'â' | 'ã' | 'å' => "a",
+            'è' | 'é' | 'ê' | 'ë' => "e",
+            'ì' | 'í' | 'î' | 'ï' => "i",
+            'ò' | 'ó' | 'ô' | 'õ' | 'ø' => "o",
+            'ù' | 'ú' | 'û' => "u",
+            'ç' => "c",
+            'ñ' => "n",
+            _ => "",
+        };
+        if c.is_ascii_alphanumeric() {
             out.push(c);
+        } else if !written.is_empty() {
+            out.push_str(written);
         } else if !out.ends_with('-') && !out.is_empty() {
             out.push('-');
         }
@@ -144,8 +183,10 @@ pub fn folder_name(wanted: &str) -> String {
 
 /// The name of the theme that is on, as `omarchy-theme-set` recorded it.
 pub fn current_theme_name() -> Option<String> {
+    // Omarchy 4 keeps it under the state folder; older releases under the configuration.
+    // The newer place first: an upgraded system may still have the old one lying around.
     let home = glib::home_dir();
-    current_theme_name_in(&[home.join(".config/omarchy/current"), home.join(".local/state/omarchy/current")])
+    current_theme_name_in(&[home.join(".local/state/omarchy/current"), home.join(".config/omarchy/current")])
 }
 
 pub fn current_theme_name_in(current_dirs: &[PathBuf]) -> Option<String> {
@@ -284,7 +325,11 @@ mod tests {
         assert_eq!(display_name("white"), "White");
         assert_eq!(folder_name("Lake at Dusk"), "lake-at-dusk");
         assert_eq!(folder_name("  IMG_2041 (1).JPG "), "img-2041-1-jpg");
-        assert_eq!(folder_name("Über—Nacht"), "über-nacht");
+        assert_eq!(folder_name("Über—Nacht"), "ueber-nacht");
+        assert_eq!(folder_name("Café Señor"), "cafe-senor");
+        assert_eq!(folder_name("日本"), "", "nothing Omarchy could hand around is left");
+        assert!(folder_name("--Tokyo  Night!!").chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+        assert_eq!(folder_name("--Tokyo  Night!!"), "tokyo-night");
         assert_eq!(folder_name("!!!"), "");
         // What omarchy-theme-set makes of the display name leads back to the folder.
         assert_eq!(display_name(&folder_name("Lake at Dusk")).to_lowercase().replace(' ', "-"), "lake-at-dusk");
@@ -314,6 +359,11 @@ mod tests {
         assert_eq!(white.backgrounds.iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect::<Vec<_>>(), vec!["mine.webp", "1.jpg", "2.png"], "the user's own backgrounds first, as Omarchy cycles them");
         assert_eq!(white.preview.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).as_deref(), Some("mine.webp"));
 
+        // Omarchy's own folder: the variable, else the first known place that has themes.
+        assert_eq!(omarchy_path_from(Some(stock.clone()), &[root.join("nowhere")]), stock);
+        assert_eq!(omarchy_path_from(Some(root.join("gone")), &[root.join("nowhere"), root.clone()]), root.join("nowhere"), "no place has themes: the packaged one is named");
+        std::fs::create_dir_all(root.join("share/themes")).unwrap();
+        assert_eq!(omarchy_path_from(None, &[root.join("nowhere"), root.join("share")]), root.join("share"));
         // The current theme: the name file, or the link of older releases.
         assert_eq!(current_theme_name_in(std::slice::from_ref(&current)), None);
         std::fs::create_dir_all(&current).unwrap();

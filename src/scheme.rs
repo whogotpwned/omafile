@@ -197,6 +197,8 @@ pub struct Scheme {
     pub background: Rgb,
     pub selection_foreground: Rgb,
     pub selection_background: Rgb,
+    /// Between red and yellow; Omarchy's palette names it.
+    pub orange: Rgb,
     /// color0..color15: black, red, green, yellow, blue, magenta, cyan, white, then the bright ones.
     pub colors: [Rgb; 16],
 }
@@ -280,6 +282,7 @@ pub fn scheme(analysis: &Analysis, light: bool, accent: Option<Rgb>) -> Scheme {
         (normal, bright)
     };
     let (red, green, yellow, blue, magenta, cyan) = (named(2.0), named(125.0), named(45.0), named(218.0), named(300.0), named(182.0));
+    let orange = named(24.0).0;
     let colors = [
         if light { grey(0.84) } else { grey(0.20) },
         red.0,
@@ -305,62 +308,101 @@ pub fn scheme(analysis: &Analysis, light: bool, accent: Option<Rgb>) -> Scheme {
             None => as_accent(from_hsl(if analysis.colourfulness < 0.01 { 215.0 } else { tone_hue }, 0.35, 0.6), background, light),
         },
     };
-    // Text on a selection: whichever of the two base colours reads better on the accent.
-    let selection_foreground = if contrast(background, accent) >= contrast(foreground, accent) { background } else { foreground };
-    Scheme { light, accent, cursor: foreground, foreground, background, selection_foreground, selection_background: accent, colors }
+    // A selection is a quiet tint of the accent, as in Omarchy's own themes, with the
+    // brightest text colour on it.
+    let selection_background = background.mix(accent, 0.24);
+    let selection_foreground = readable(colors[15], selection_background, 7.0);
+    Scheme { light, accent, cursor: colors[15], foreground, background, selection_foreground, selection_background, orange, colors }
 }
 
 impl Scheme {
-    /// The file Omarchy's templates read: one `key = "#rrggbb"` per line.
+    /// The theme's `colors.toml`. First the palette Omarchy 4 names (`mode`, `accent`,
+    /// `background`, `red`, …), then the keys older releases read (`cursor`, the selection
+    /// pair and `color0` … `color15`), so that one file serves both: Omarchy 4 takes the
+    /// named colours, an older one finds every key its templates ask for.
     pub fn colors_toml(&self) -> String {
-        let mut out = String::new();
-        for (key, value) in [("accent", self.accent), ("cursor", self.cursor), ("foreground", self.foreground), ("background", self.background), ("selection_foreground", self.selection_foreground), ("selection_background", self.selection_background)] {
+        let c = &self.colors;
+        let (black, white) = (Rgb(0, 0, 0), Rgb(255, 255, 255));
+        let shade = |amount: f32| self.background.mix(black, amount);
+        let mut out = format!("mode = \"{}\"\n\n", if self.light { "light" } else { "dark" });
+        let groups: [&[(&str, Rgb)]; 5] = [
+            &[("accent", self.accent), ("selection", self.selection_background), ("muted", c[8])],
+            &[("background", self.background), ("dark_background", shade(if self.light { 0.05 } else { 0.25 })), ("darker_background", shade(if self.light { 0.1 } else { 0.5 })), ("lighter_background", c[0])],
+            &[("foreground", self.foreground), ("dark_foreground", self.foreground.mix(self.background, 0.45)), ("light_foreground", self.foreground.mix(if self.light { black } else { white }, 0.12)), ("bright_foreground", c[15])],
+            &[("red", c[1]), ("yellow", c[3]), ("orange", self.orange), ("green", c[2]), ("cyan", c[6]), ("blue", c[4]), ("magenta", c[5]), ("brown", self.orange.mix(black, 0.5))],
+            &[("bright_red", c[9]), ("bright_yellow", c[11]), ("bright_green", c[10]), ("bright_cyan", c[14]), ("bright_blue", c[12]), ("bright_magenta", c[13])],
+        ];
+        for group in groups {
+            for (key, value) in group {
+                out.push_str(&format!("{key} = \"{}\"\n", value.hex()));
+            }
+            out.push('\n');
+        }
+        out.push_str("# For Omarchy releases before 4: the same colours under the names they read.\n");
+        for (key, value) in [("cursor", self.cursor), ("selection_foreground", self.selection_foreground), ("selection_background", self.selection_background)] {
             out.push_str(&format!("{key} = \"{}\"\n", value.hex()));
         }
-        out.push('\n');
-        for (i, c) in self.colors.iter().enumerate() {
-            out.push_str(&format!("color{i} = \"{}\"\n", c.hex()));
+        for (i, color) in c.iter().enumerate() {
+            out.push_str(&format!("color{i} = \"{}\"\n", color.hex()));
         }
         out
     }
 
-    /// The scheme a `colors.toml` holds; None when the base colours are missing.
+    /// The scheme a `colors.toml` holds, in either form: the named palette of Omarchy 4 or
+    /// the `color0` … `color15` of older releases. None when the base colours are missing.
     pub fn from_colors_toml(text: &str) -> Option<Scheme> {
-        let (colors, _) = crate::theme::parse_colors(text);
+        let (colors, strings) = crate::theme::parse_colors(text);
         let get = |key: &str| colors.get(key).copied();
+        let either = |a: &str, b: &str| get(a).or_else(|| get(b));
         let (background, foreground) = (get("background")?, get("foreground")?);
-        let accent = get("accent").or_else(|| get("color4"))?;
+        let accent = get("accent").or_else(|| either("blue", "color4"))?;
+        let light = match strings.get("mode").or_else(|| strings.get("theme_type")).map(String::as_str) {
+            Some("light") => true,
+            Some("dark") => false,
+            _ => background.luminance() > 0.6,
+        };
+        let names = ["lighter_background", "red", "green", "yellow", "blue", "magenta", "cyan", "light_foreground", "muted", "bright_red", "bright_green", "bright_yellow", "bright_blue", "bright_magenta", "bright_cyan", "bright_foreground"];
         let mut sixteen = [foreground; 16];
         for (i, slot) in sixteen.iter_mut().enumerate() {
-            *slot = get(&format!("color{i}")).unwrap_or(if i == 0 || i == 8 { background.mix(foreground, 0.25) } else { foreground });
+            let own = either(&format!("color{i}"), names[i]);
+            *slot = own.unwrap_or(match i {
+                0 | 8 => background.mix(foreground, if i == 0 { 0.18 } else { 0.4 }),
+                // A bright colour that is not given is its normal one.
+                9..=14 => either(&format!("color{}", i - 8), names[i - 8]).unwrap_or(foreground),
+                _ => foreground,
+            });
         }
+        let orange = get("orange").unwrap_or_else(|| sixteen[1].mix(sixteen[3], 0.5));
+        let selection_background = either("selection_background", "selection").unwrap_or_else(|| background.mix(accent, 0.24));
         Some(Scheme {
-            light: background.luminance() > 0.6,
+            light,
             accent,
-            cursor: get("cursor").unwrap_or(foreground),
+            cursor: either("cursor", "bright_foreground").unwrap_or(sixteen[15]),
             foreground,
             background,
-            selection_foreground: get("selection_foreground").unwrap_or(background),
-            selection_background: get("selection_background").unwrap_or(accent),
+            selection_foreground: either("selection_foreground", "bright_foreground").unwrap_or(sixteen[15]),
+            selection_background,
+            orange,
             colors: sixteen,
         })
     }
 }
 
-/// The Yaru icon set whose folder colour is nearest to an accent (Omarchy's `icons.theme`).
-/// Only sets that every Yaru release ships; plain "Yaru" is the orange one.
+/// The icon set whose folders are nearest to an accent, out of the ones Omarchy's manual
+/// names for a theme's `icons.theme`. Plain "Yaru" is the orange one.
 pub fn icon_theme_for(accent: Rgb) -> &'static str {
     let (h, s, _) = to_hsl(accent);
     if s < 0.12 {
-        return "Yaru-bark";
+        return "Yaru-dark";
     }
     match h as u32 {
-        0..=18 | 346..=360 => "Yaru-red",
-        19..=68 => "Yaru",
+        0..=14 | 346..=360 => "Yaru-red",
+        15..=27 => "Yaru",
+        28..=40 => "Yaru-wartybrown",
+        41..=68 => "Yaru-yellow",
         69..=95 => "Yaru-olive",
-        96..=150 => "Yaru-sage",
-        151..=175 => "Yaru-viridian",
-        176..=200 => "Yaru-prussiangreen",
+        96..=160 => "Yaru-sage",
+        161..=200 => "Yaru-prussiangreen",
         201..=252 => "Yaru-blue",
         253..=292 => "Yaru-purple",
         _ => "Yaru-magenta",
@@ -455,20 +497,46 @@ mod tests {
         let a = analyse(&picture(&[([14, 20, 44], 800), ([240, 140, 40], 200)]));
         let s = scheme(&a, false, None);
         let text = s.colors_toml();
-        assert!(text.starts_with("accent = \"#"));
-        for key in ["accent", "cursor", "foreground", "background", "selection_foreground", "selection_background", "color0", "color15"] {
+        assert!(text.starts_with("mode = \"dark\"\n"));
+        // Every name Omarchy 4's own themes define, and every key older templates ask for.
+        let named = ["accent", "selection", "muted", "background", "dark_background", "darker_background", "lighter_background", "foreground", "dark_foreground", "light_foreground", "bright_foreground", "red", "yellow", "orange", "green", "cyan", "blue", "magenta", "brown", "bright_red", "bright_yellow", "bright_green", "bright_cyan", "bright_blue", "bright_magenta"];
+        let legacy = ["cursor", "selection_foreground", "selection_background", "color0", "color7", "color15"];
+        for key in named.iter().chain(legacy.iter()) {
             assert!(text.lines().any(|l| l.starts_with(&format!("{key} = \"#")) && l.len() == key.len() + 12), "{key}");
         }
         assert_eq!(text.lines().filter(|l| l.starts_with("color")).count(), 16);
-        assert_eq!(Scheme::from_colors_toml(&text), Some(s));
-        // Tokyo Night as Omarchy ships it.
-        let stock = "accent = \"#7aa2f7\"\ncursor = \"#c0caf5\"\nforeground = \"#a9b1d6\"\nbackground = \"#1a1b26\"\nselection_foreground = \"#c0caf5\"\nselection_background = \"#7aa2f7\"\ncolor0 = \"#32344a\"\ncolor1 = \"#f7768e\"\n";
+        // Only characters Omarchy's parser accepts in a value, and no key twice.
+        let keys: Vec<&str> = text.lines().filter_map(|l| l.split_once(" = ").map(|(k, _)| k)).collect();
+        let mut unique = keys.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(keys.len(), unique.len());
+        assert_eq!(Scheme::from_colors_toml(&text), Some(s.clone()), "what is written is read back the same");
+        assert!(contrast(s.selection_foreground, s.selection_background) >= 7.0, "text on a selection can be read");
+        let light = scheme(&a, true, None);
+        assert!(light.colors_toml().starts_with("mode = \"light\"\n"));
+        assert_eq!(Scheme::from_colors_toml(&light.colors_toml()), Some(light));
+
+        // Tokyo Night as Omarchy 4 ships it: named colours, no colorN.
+        let stock = "mode = \"dark\"\naccent = \"#7aa2f7\"\nselection = \"#292e42\"\nmuted = \"#414868\"\nbackground = \"#1a1b26\"\nlighter_background = \"#24283b\"\nforeground = \"#a9b1d6\"\nbright_foreground = \"#c0caf5\"\nred = \"#f7768e\"\ngreen = \"#9ece6a\"\norange = \"#eb927b\"\nbright_red = \"#ff7a93\"\n";
         let tokyo = Scheme::from_colors_toml(stock).unwrap();
-        assert_eq!((tokyo.accent, tokyo.background, tokyo.colors[1], tokyo.light), (Rgb(0x7a, 0xa2, 0xf7), Rgb(0x1a, 0x1b, 0x26), Rgb(0xf7, 0x76, 0x8e), false));
+        assert_eq!((tokyo.accent, tokyo.background, tokyo.light), (Rgb(0x7a, 0xa2, 0xf7), Rgb(0x1a, 0x1b, 0x26), false));
+        assert_eq!((tokyo.colors[1], tokyo.colors[2], tokyo.colors[8], tokyo.colors[9], tokyo.colors[15]), (Rgb(0xf7, 0x76, 0x8e), Rgb(0x9e, 0xce, 0x6a), Rgb(0x41, 0x48, 0x68), Rgb(0xff, 0x7a, 0x93), Rgb(0xc0, 0xca, 0xf5)));
+        assert_eq!((tokyo.selection_background, tokyo.orange, tokyo.colors[0]), (Rgb(0x29, 0x2e, 0x42), Rgb(0xeb, 0x92, 0x7b), Rgb(0x24, 0x28, 0x3b)));
+        assert_eq!(tokyo.colors[10], tokyo.colors[2], "a bright colour that is not given is its normal one");
+        // The same theme the way a release before 4 wrote it.
+        let old = "accent = \"#7aa2f7\"\ncursor = \"#c0caf5\"\nforeground = \"#a9b1d6\"\nbackground = \"#1a1b26\"\nselection_foreground = \"#c0caf5\"\nselection_background = \"#7aa2f7\"\ncolor0 = \"#32344a\"\ncolor1 = \"#f7768e\"\n";
+        let before = Scheme::from_colors_toml(old).unwrap();
+        assert_eq!((before.accent, before.colors[0], before.colors[1], before.selection_background), (Rgb(0x7a, 0xa2, 0xf7), Rgb(0x32, 0x34, 0x4a), Rgb(0xf7, 0x76, 0x8e), Rgb(0x7a, 0xa2, 0xf7)));
+        assert!(Scheme::from_colors_toml("mode = \"light\"\nbackground = \"#101010\"\nforeground = \"#eeeeee\"\naccent = \"#ff0000\"\n").unwrap().light, "the mode key decides, not the brightness");
         assert_eq!(Scheme::from_colors_toml("nothing = 1\n"), None);
+        // Icon sets: only names from Omarchy's own list.
+        let offered = ["Yaru", "Yaru-blue", "Yaru-dark", "Yaru-magenta", "Yaru-olive", "Yaru-prussiangreen", "Yaru-purple", "Yaru-red", "Yaru-sage", "Yaru-wartybrown", "Yaru-yellow"];
+        for hue in (0..360).step_by(5) {
+            assert!(offered.contains(&icon_theme_for(from_hsl(hue as f32, 0.6, 0.6))), "hue {hue}");
+        }
         assert_eq!(icon_theme_for(Rgb(0x7a, 0xa2, 0xf7)), "Yaru-blue");
         assert_eq!(icon_theme_for(Rgb(230, 60, 50)), "Yaru-red");
-        assert_eq!(icon_theme_for(Rgb(120, 120, 124)), "Yaru-bark");
-        assert_eq!(icon_theme_for(Rgb(248, 194, 117)), "Yaru", "orange is the plain set");
+        assert_eq!(icon_theme_for(Rgb(120, 120, 124)), "Yaru-dark");
     }
 }

@@ -160,7 +160,7 @@ impl Window {
             }
         });
         for (id, keys_text, what) in crate::vimkeys::GROUPS {
-            let row = adw::SwitchRow::builder().title(keys_text.to_string()).subtitle(tr(what)).active(!crate::vimkeys::disabled(&self.prefs).iter().any(|g| g == id)).build();
+            let row = adw::SwitchRow::builder().title(glib::markup_escape_text(keys_text)).subtitle(tr(what)).active(!crate::vimkeys::disabled(&self.prefs).iter().any(|g| g == id)).build();
             row.add_css_class("monospace");
             let this = Rc::downgrade(self);
             row.connect_active_notify(move |r| {
@@ -173,7 +173,7 @@ impl Window {
         keys.add(&vim);
         page.add(&keys);
 
-        let phone = adw::PreferencesGroup::builder().title(tr("iPhone & Nearby")).build();
+        let phone = adw::PreferencesGroup::builder().title(glib::markup_escape_text(&tr("iPhone & Nearby"))).build();
         let automount = adw::SwitchRow::builder().title(tr("Mount drives and phones when plugged in")).subtitle(tr("USB sticks, cards and iPhones appear in the sidebar at once and are mounted; the eject button makes them safe to unplug")).active(self.prefs.get_bool("auto-mount", true)).build();
         let this = Rc::downgrade(self);
         automount.connect_active_notify(move |row| {
@@ -344,10 +344,13 @@ impl Window {
         content.append(&hint);
         content.append(&flow);
         content.append(&buttons);
+        // In a small window (a tile on a full workspace) the icons scroll instead of
+        // pushing the dialog beyond the window.
+        let scroll = gtk::ScrolledWindow::builder().child(&content).hscrollbar_policy(gtk::PolicyType::Never).propagate_natural_height(true).build();
         let view = adw::ToolbarView::new();
         view.add_top_bar(&adw::HeaderBar::new());
-        view.set_content(Some(&content));
-        let dialog = adw::Dialog::builder().title(format!("Icon for {}", item.display_name())).content_width(420).child(&view).build();
+        view.set_content(Some(&scroll));
+        let dialog = adw::Dialog::builder().title(trf!("Icon for {name}", name = item.display_name())).content_width(420).child(&view).build();
 
         let this = Rc::downgrade(self);
         let file2 = file.clone();

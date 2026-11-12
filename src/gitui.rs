@@ -166,7 +166,7 @@ impl Window {
             list.set_selection_mode(gtk::SelectionMode::None);
             let dialog = adw::Dialog::builder().title(tr("Switch Branch")).content_width(380).build();
             for (name, current) in &branches {
-                let row = adw::ActionRow::builder().title(name).activatable(!current).build();
+                let row = adw::ActionRow::builder().title(glib::markup_escape_text(name)).activatable(!current).build();
                 if *current {
                     let check = gtk::Image::from_icon_name("object-select-symbolic");
                     row.add_suffix(&check);

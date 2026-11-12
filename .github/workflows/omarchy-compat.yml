@@ -1,0 +1,51 @@
+name: Omarchy compatibility
+
+# Omarchy moves on by itself. Once a week omafile is checked against Omarchy's latest
+# release and its development branch, without any change here: when Omarchy renames a
+# command, moves a folder, changes the theme format or the shell's plugin interface, this
+# run fails and says which of omafile's assumptions no longer holds.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compat:
+    name: omafile against Omarchy
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: System packages
+        run: pacman -Syu --noconfirm --needed rust gtk4 libadwaita vte4 pkgconf git jq python qt6-declarative
+
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: arch-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: arch-cargo-
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Latest release
+        run: |
+          latest=$(git ls-remote --tags --refs https://github.com/basecamp/omarchy.git 'v*' | awk -F/ '{print $3}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "Latest Omarchy release: $latest"
+          git clone -q --depth 1 --branch "$latest" https://github.com/basecamp/omarchy.git "$RUNNER_TEMP/omarchy-release"
+          VERBOSE=1 python scripts/check-omarchy.py "$RUNNER_TEMP/omarchy-release"
+
+      - name: Development branch
+        if: always()
+        run: |
+          git clone -q --depth 1 https://github.com/basecamp/omarchy.git "$RUNNER_TEMP/omarchy-dev"
+          VERBOSE=1 python scripts/check-omarchy.py "$RUNNER_TEMP/omarchy-dev"

@@ -7,7 +7,10 @@ import qs.Ui
 
 // Omafile bar button, built like the first-party widgets: a BarIconButton in
 // a BarWidget, colours and font from the bar, commands run through bar.run,
-// and a PopupCard with PopupMenuRows for the right-click menu.
+// and a PopupCard with menu rows for the right-click menu. The row is defined
+// here (MenuRow) rather than taken from the shell: the shell's own
+// PopupMenuRow came after Omarchy 4.5, and a type a release does not know
+// keeps the whole widget from loading.
 //
 // Settings live inline on the shell.json layout entry:
 //   omarchy bar set whogotpwned.omafile path ~/Projects   folder for a left click
@@ -93,6 +96,37 @@ BarWidget {
     { label: i18n.t("New window"), target: root.folder }
   ]
 
+  // One row of the menu: a label that lights up under the pointer.
+  component MenuRow: Rectangle {
+    id: row
+    property string text: ""
+    signal triggered()
+
+    width: parent ? parent.width : 0
+    height: visible ? Style.spacing.popupRowHeight : 0
+    radius: Style.cornerRadius
+    color: rowMouse.containsMouse ? Style.hoverFill : "transparent"
+
+    Text {
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.left: parent.left
+      anchors.leftMargin: Style.spacing.controlPaddingX
+      textFormat: Text.PlainText
+      text: row.text
+      color: Commons.Color.popups.text
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
+    }
+
+    MouseArea {
+      id: rowMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: row.triggered()
+    }
+  }
+
   BarIconButton {
     id: button
     anchors.fill: parent
@@ -137,7 +171,7 @@ BarWidget {
 
       Repeater {
         model: root.places
-        delegate: PopupMenuRow {
+        delegate: MenuRow {
           required property var modelData
           text: modelData.label
           onTriggered: {
@@ -147,7 +181,7 @@ BarWidget {
         }
       }
 
-      PopupMenuRow {
+      MenuRow {
         text: i18n.t("Screenshots and recordings")
         onTriggered: {
           root.menuOpen = false
@@ -155,7 +189,7 @@ BarWidget {
         }
       }
 
-      PopupMenuRow {
+      MenuRow {
         text: i18n.t("Copy the newest capture")
         onTriggered: {
           root.menuOpen = false
@@ -163,7 +197,7 @@ BarWidget {
         }
       }
 
-      PopupMenuRow {
+      MenuRow {
         visible: root.iphones > 0
         text: i18n.t("Import photos from iPhone")
         onTriggered: {
@@ -172,7 +206,7 @@ BarWidget {
         }
       }
 
-      PopupMenuRow {
+      MenuRow {
         visible: root.nearby > 0
         text: i18n.t("Nearby devices") + " (" + root.nearby + ")"
         onTriggered: {
@@ -181,7 +215,7 @@ BarWidget {
         }
       }
 
-      PopupMenuRow {
+      MenuRow {
         visible: root.vaults > 0
         text: i18n.t("Lock all encrypted folders") + " (" + root.vaults + ")"
         onTriggered: {

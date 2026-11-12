@@ -10,13 +10,13 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.27.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.28.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-122%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-124%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-hero.png" alt="Two omafile windows in Tokyo Night. Front left: grid view with thumbnails for photos, a GIF, a video, eBook covers, a PDF and a song, the preview pane, an unlocked and a locked vault and an iPhone in the sidebar and the mini player at its bottom. Right: the Now Playing view with cover, live spectrum and transport controls." width="900">
@@ -104,7 +104,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![help](docs/screenshot-help.png) | **Help** (`F1`): one dialog with three pages and one search field. **Features** is a tour of what omafile can do, grouped by area; every entry says how to reach it (its shortcut or the menu it lives in) and, where nothing can go wrong, has an *Open* button that takes you there. **Shortcuts** is the full list of bindings. **About** shows the **version**, what is new in it (taken from the changelog built into the program), which optional tools were found on this computer with a tick or a cross, and where settings, state and caches are kept. The version is also in the corner of the dialog and in `omafile --version`. ![about](docs/screenshot-help-about.png) |
 | ![bindings](docs/screenshot-bindings.png) | **All bindings in one place** (`Ctrl+?`, or the *Shortcuts* page of Help): a searchable overlay of every shortcut, gesture and menu entry with keycaps, starting with the Hyprland key that opens omafile. Generated from the accelerator table, kept complete by a test, printable with `omafile --print-bindings`. |
 
-| ![captures](docs/screenshot-captures.png) | **Captures** (`Ctrl+Alt+G`, sidebar › *Captures*): the **screenshots and screen recordings Omarchy makes**, as a film strip by day (*Today*, *Yesterday*, …). omafile reads the folders Omarchy's own scripts write to (`OMARCHY_SCREENSHOT_DIR` / Pictures, `OMARCHY_SCREENRECORD_DIR` / Videos) and watches them: **a new capture pops in by itself**. Every card can be **dragged straight into another program** (a chat, a mail, a document). The buttons that appear under the pointer: **Copy** (a screenshot goes to the clipboard as a picture *and* as a file), **Draw on it** (Satty, started exactly the way Omarchy's screenshot script starts it, or `OMARCHY_SCREENSHOT_EDITOR`), **Save as GIF** for a recording, **Share** on the local network, **Trash** (with Undo). A recording **flips through its stills** while the pointer rests on it and shows its length. Right click adds Open, Trim…, Create Theme from Picture…, Add to Shelf and Show in Folder. `omafile --copy-capture` puts the newest capture on the clipboard (for a key binding or the bar button). Taking the captures stays Omarchy's job: `Print` and `Alt+Print` as before. |
+| ![captures](docs/screenshot-captures.png) | **Captures** (`Ctrl+Alt+G`, sidebar › *Captures*): the **screenshots and screen recordings Omarchy makes**, as a film strip by day (*Today*, *Yesterday*, …). omafile reads the folders Omarchy writes to (`~/Pictures/Screenshots` or `OMASNAP_SCREENSHOT_DIR` on Omarchy 4, the Pictures folder itself and `OMARCHY_SCREENSHOT_DIR` on older releases; `OMARCHY_SCREENRECORD_DIR` or Videos for recordings) and watches them: **a new capture pops in by itself**. Every card can be **dragged straight into another program** (a chat, a mail, a document). The buttons that appear under the pointer: **Copy** (a screenshot goes to the clipboard as a picture *and* as a file), **Draw on it** (Omasnap, Omarchy 4's own screenshot editor; on older releases Satty, started exactly the way Omarchy's screenshot script started it, or `OMARCHY_SCREENSHOT_EDITOR`), **Save as GIF** for a recording, **Share** on the local network, **Trash** (with Undo). A recording **flips through its stills** while the pointer rests on it and shows its length. Right click adds Open, Trim…, Create Theme from Picture…, Add to Shelf and Show in Folder. `omafile --copy-capture` puts the newest capture on the clipboard (for a key binding or the bar button). Taking the captures stays Omarchy's job: `Print` and `Alt+Print` as before. |
 
 ### Files and operations
 
@@ -167,7 +167,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | | |
 |---|---|
 | ![themes](docs/screenshot-themes.png) | **Omarchy theme folders**: in the file view (the atelier's *Open Folder*) theme folders show their `preview.png` as thumbnail, *Apply Omarchy Theme* (`omarchy-theme-set`), *Set as Wallpaper* (`omarchy-theme-bg-set`), *Export Omarchy Theme…* to `~/Downloads/<name>.tar.gz` and *Install as Omarchy Theme* from such an archive. |
-| ![atelier](docs/screenshot-atelier.png) | **Theme atelier** (`Ctrl+Alt+A`, sidebar › *Omarchy Themes*). Every theme, Omarchy's own and yours, as a **card** with its background and its colours; the one that is on carries a ring and a tick. **One click turns a theme on** (through `omarchy-theme-set`, so the terminal, the bar and Hyprland change with it, and omafile re-skins itself as you watch). Drop pictures on a card, or *Add Backgrounds…*, and they become **backgrounds of that theme** (in `~/.config/omarchy/backgrounds/<theme>`, where Omarchy looks first); for the current theme the first one is shown at once. Right click: Turn On, Next Background, Open Folder, Move to Trash (your own themes). ![theme from picture](docs/screenshot-theme-from-picture.png) **A theme from any picture** (*New from Picture…*, or *Create Theme from Picture…* in a picture's context menu and the command palette): omafile takes the colours out of the picture, the tone of its dark or light areas for background and text, its vivid colours as **accents to choose from**, and sixteen terminal colours that keep their meaning (red stays red) but lean towards the picture's shades. Every colour is shifted in lightness until it is readable on the background. A **small desktop** shows the result live: wallpaper, bar, a terminal with the active border, a selection, the palette; **Dark / Light** switches the whole scheme. *Save* writes `~/.config/omarchy/themes/<name>` with a `colors.toml` (Omarchy's own format, from which **Omarchy's templates build every program's file**), the picture as background, this preview as `preview.png` and a matching Yaru icon set; *Save and Turn On* applies it. Nothing of Omarchy's is replaced or patched; `Ctrl+Z` removes the theme again. |
+| ![atelier](docs/screenshot-atelier.png) | **Theme atelier** (`Ctrl+Alt+A`, sidebar › *Omarchy Themes*). Every theme, Omarchy's own and yours, as a **card** with its background and its colours; the one that is on carries a ring and a tick. **One click turns a theme on** (through `omarchy-theme-set`, so the terminal, the bar and Hyprland change with it, and omafile re-skins itself as you watch). Drop pictures on a card, or *Add Backgrounds…*, and they become **backgrounds of that theme** (in `~/.config/omarchy/backgrounds/<theme>`, where Omarchy looks first); for the current theme the first one is shown at once. Right click: Turn On, Next Background, Open Folder, Move to Trash (your own themes). ![theme from picture](docs/screenshot-theme-from-picture.png) **A theme from any picture** (*New from Picture…*, or *Create Theme from Picture…* in a picture's context menu and the command palette): omafile takes the colours out of the picture, the tone of its dark or light areas for background and text, its vivid colours as **accents to choose from**, and sixteen terminal colours that keep their meaning (red stays red) but lean towards the picture's shades. Every colour is shifted in lightness until it is readable on the background. A **small desktop** shows the result live: wallpaper, bar, a terminal with the active border, a selection, the palette; **Dark / Light** switches the whole scheme. *Save* writes `~/.config/omarchy/themes/<name>` with a `colors.toml` (the palette Omarchy 4 names, `mode`, `accent`, `background`, `red` and so on, followed by the `color0` … `color15` older releases read, so one theme works on both; **Omarchy's templates build every program's file** from it), the picture as background, this preview as `preview.png` and a matching Yaru icon set; *Save and Turn On* applies it. Nothing of Omarchy's is replaced or patched; `Ctrl+Z` removes the theme again. |
 | ![light](docs/screenshot-light.png) | **Theme following**: the same build after `omarchy theme set "Catppuccin Latte"`, light window and blue folders without a restart. |
 | ![sftp](docs/screenshot-sftp.png) | **SFTP / SCP**: hosts from `~/.ssh/config` in the sidebar, *Connect to Server…* for `user@host[:port]/path`, native credential prompts, mounted servers under *Devices*. Copy, paste, drag and drop, rename and preview work on remote files like on local ones. |
 | ![two panes](docs/screenshot-scp.png) | **Servers the WinSCP way**: connecting splits the view, **local on the left, the server on the right**. Two arrows in the header copy or move the selection across (they point at the other pane; `Shift+F5` / `Shift+F6`), dragging works too, conflicts ask as usual. *Connect to Server…* takes a name and a password: **saved connections** appear under *Remote* in the sidebar (right click: Connect, Open in New Tab, Edit…, Remove). The **password goes to the system keyring** (the Secret Service, e.g. GNOME Keyring, encrypted with your login) through GVFS, never into omafile's own files; the next connect does not ask, and *Remove* deletes it from the keyring again. SSH keys work without any of that. An alias from `~/.ssh/config` may be followed by a path (`web/srv/www`). The two-pane behaviour can be switched off in Preferences › Servers. |
@@ -383,13 +383,13 @@ omarchy bar set  whogotpwned.omafile icon "󰉋"               # any Nerd Font g
 | Right | Places menu: Home, Downloads, Documents, Pictures, Projects, Trash, the folder of the active terminal, new window, *Lock all encrypted folders* while any is unlocked |
 | Middle | Opens the folder of the active terminal (like Omarchy's own "File manager (cwd)" binding) |
 
-The button shows `⇅` while a copy or move runs and a lock glyph while encrypted folders are unlocked: omafile writes `~/.local/state/omafile/status` and the widget watches it with Quickshell's `FileView`. The glyph is drawn with the bar's font like the first-party widgets, the popup uses the shell's `PopupCard` and `PopupMenuRow`, so colours and radius follow the theme. Drag and drop in the bar and *Appearance › Menu Bar* work too. `omarchy plugin remove whogotpwned.omafile` disables the widget, drops it from the layout and deletes the checkout.
+The button shows `⇅` while a copy or move runs and a lock glyph while encrypted folders are unlocked: omafile writes `~/.local/state/omafile/status` and the widget watches it with Quickshell's `FileView`. The glyph is drawn with the bar's font like the first-party widgets, the popup uses the shell's `PopupCard` with rows styled from the shell's `Style` and `Color`, so colours and radius follow the theme. (The rows are the widget's own: the shell's `PopupMenuRow` is newer than Omarchy 4.5, and a component a release does not know keeps a widget from loading.) Drag and drop in the bar and *Appearance › Menu Bar* work too. `omarchy plugin remove whogotpwned.omafile` disables the widget, drops it from the layout and deletes the checkout.
 
 ---
 
 ## How it follows Omarchy
 
-- **Palette.** The current theme's `colors.toml` (`~/.config/omarchy/current/theme`, or `~/.local/state/omarchy/current/theme`): `background`, `foreground`, `accent` and the terminal colours `color0` … `color15` (named keys such as `red`, `selection`, `muted` are read too) are mapped onto libadwaita's named colours and omafile's own styles. A legacy `alacritty.toml` is read as well.
+- **Palette.** The current theme's `colors.toml` in `~/.local/state/omarchy/current/theme` (Omarchy 4; `~/.config/omarchy/current/theme` on older releases): `mode`, `accent`, `background`, `foreground`, `selection`, `muted`, the named colours `red` … `cyan` and their bright forms are mapped onto libadwaita's named colours and omafile's own styles. Themes that only define `color0` … `color15`, as releases before 4 did, are read the same way; a legacy `alacritty.toml` too.
 - **Mode.** `mode = "light"` in `colors.toml`, the legacy `light.mode` marker, or background luminance for custom themes.
 - **Icons.** The theme's `icons.theme` names the icon set (Yaru variants); omafile applies it itself, Preferences can override it.
 - **Live.** A `GFileMonitor` on the `current` directory catches the swap `omarchy-theme-set` performs and re-skins open windows.
@@ -425,7 +425,7 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 | Every kind has its entry point, relative path, no `..`, file exists | `plugin/BarWidget.qml` |
 | `barWidget.defaultSection` ∈ left, centerBegin, center, centerEnd, tray, right | `left` |
 | No symlinks anywhere | none |
-| Theme colours via `qs.Commons`, UI via `qs.Ui` | `BarIconButton`, `PopupCard`, `PopupMenuRow` |
+| Theme colours via `qs.Commons`, UI via `qs.Ui` | `BarIconButton`, `PopupCard`, `Style`, `Color` |
 | No install hooks, no sudo | the widget runs `omafile` and `omarchy-launch-or-focus` only |
 
 </details>
@@ -503,13 +503,25 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.27.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.28.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 122 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 124 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
+scripts/selftest.sh                          # omafile runs every one of its commands against itself
+scripts/check-omarchy.py ~/src/omarchy       # every assumption about Omarchy, against Omarchy's source
 ```
+
+### How it is tested
+
+Three layers, all of them in CI on Arch, on every push:
+
+- **Unit tests** (`cargo test`) for what can be decided without a window: parsers, the backup engine on real folders, colours from pictures, theme files, capture names, schedules, the undo journal, and many more.
+- **The self-test** (`scripts/selftest.sh`): with `OMAFILE_SELFTEST=1` omafile walks through **every action its window has** (about 120 of them; the ones that start other programs or leave the sandbox are left out and named in `src/selftest.rs`), five times over: with nothing selected, a text file, a picture, a folder, and a file called `R&D <draft> 100%.txt`. After each one it closes what opened and goes on. The run fails on a crash, a GTK critical, a text that broke as markup, or a dialog that does not fit its window; CI runs it in English at the usual size and in German at 760 × 460, the size of a tile on a busy workspace.
+- **The Omarchy check** (`scripts/check-omarchy.py <checkout>`): every assumption omafile makes about Omarchy, tested against Omarchy's own source: each command it runs exists; folders, file names and hotkeys are where it expects them; **every theme Omarchy ships** reads the same in omafile as in its `colors.toml`; a theme written by omafile holds every key of a shipped one and **every colour each of Omarchy's templates asks for**; the bar button uses only components that shell has (with `qmllint` when installed). CI runs it against Omarchy's **latest release** (must pass) and its development branch (a warning), and a weekly job runs both without any change here, so a change in Omarchy is noticed before it reaches a desktop. Nothing from Omarchy is executed; its files are only read.
+
+What none of this can replace is a real Omarchy session: [docs/acceptance-checklist.md](docs/acceptance-checklist.md) lists what to try by hand.
 
 <details>
 <summary>Module map</summary>

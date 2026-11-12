@@ -215,7 +215,7 @@ impl Window {
         let uid = info.attribute_uint32("unix::uid");
         let gid = info.attribute_uint32("unix::gid");
         let owner_name = users().into_iter().find(|u| u.id == uid).map(|u| u.name).unwrap_or_else(|| uid.to_string());
-        let owner_row = adw::ActionRow::builder().title(tr("Owner")).subtitle(format!("{owner_name} (uid {uid})")).build();
+        let owner_row = adw::ActionRow::builder().title(tr("Owner")).subtitle(glib::markup_escape_text(&format!("{owner_name} (uid {uid})"))).build();
         owner_row.add_css_class("property");
         if libc_getuid() == 0 && native {
             // Only root can give files away; offer the list then.
@@ -232,7 +232,7 @@ impl Window {
                 let Some(acc) = users().into_iter().find(|u| u.name == *name) else { return };
                 match file2.set_attribute_uint32("unix::uid", acc.id, gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) {
                     Ok(()) => {
-                        row2.set_subtitle(&format!("{} (uid {})", acc.name, acc.id));
+                        row2.set_subtitle(&glib::markup_escape_text(&format!("{} (uid {})", acc.name, acc.id)));
                         w.record(Op::Owner(vec![(file2.clone(), (uid, gid), (acc.id, gid))]), &format!("Owner: {}", acc.name));
                     }
                     Err(e) => w.toast_error(&format!("Cannot change owner: {}", e.message())),
@@ -243,7 +243,7 @@ impl Window {
         group.add(&owner_row);
 
         let group_name = groups().into_iter().find(|g| g.id == gid).map(|g| g.name).unwrap_or_else(|| gid.to_string());
-        let group_row = adw::ActionRow::builder().title(tr("Group")).subtitle(format!("{group_name} (gid {gid})")).build();
+        let group_row = adw::ActionRow::builder().title(tr("Group")).subtitle(glib::markup_escape_text(&format!("{group_name} (gid {gid})"))).build();
         group_row.add_css_class("property");
         let mine = my_groups();
         if native && mine.len() > 1 {
@@ -263,7 +263,7 @@ impl Window {
                 }
                 match file2.set_attribute_uint32("unix::gid", acc.id, gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE) {
                     Ok(()) => {
-                        row2.set_subtitle(&format!("{} (gid {})", acc.name, acc.id));
+                        row2.set_subtitle(&glib::markup_escape_text(&format!("{} (gid {})", acc.name, acc.id)));
                         w.record(Op::Owner(vec![(file2.clone(), (uid, gid), (uid, acc.id))]), &format!("Group: {}", acc.name));
                     }
                     Err(e) => w.toast_error(&format!("Cannot change group: {}", e.message())),

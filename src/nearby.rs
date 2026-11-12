@@ -116,7 +116,7 @@ impl Window {
                     }
                 }
                 let msg = trf!("{n} files from {device} are in {folder}", n = files.len(), device = alias, folder = crate::rules::shorten(&dest));
-                let toast = adw::Toast::builder().title(&msg).timeout(8).button_label(tr("Show")).action_name("win.nearby-show-received").build();
+                let toast = adw::Toast::builder().use_markup(false).title(&msg).timeout(8).button_label(tr("Show")).action_name("win.nearby-show-received").build();
                 self.toast.add_toast(toast);
                 if let Some(first) = files.first() {
                     n.last_received.replace(Some(first.clone()));
@@ -182,7 +182,7 @@ impl Window {
         self.nearby_fill_list(&n);
 
         let receive = adw::PreferencesGroup::builder().title(tr("Receiving")).build();
-        let folder = adw::ActionRow::builder().title(tr("Save received files in")).subtitle(crate::rules::shorten(&n.dest.borrow())).activatable(true).build();
+        let folder = adw::ActionRow::builder().title(tr("Save received files in")).subtitle(glib::markup_escape_text(&crate::rules::shorten(&n.dest.borrow()))).activatable(true).build();
         folder.add_suffix(&gtk::Image::from_icon_name("folder-open-symbolic"));
         let this = Rc::downgrade(self);
         let (n2, f2) = (n.clone(), folder.clone());
@@ -197,7 +197,7 @@ impl Window {
                     n3.node.set_dest(p.clone());
                     n3.dest.replace(p.clone());
                     w.prefs.set("nearby-folder", Some(&p.to_string_lossy()));
-                    f3.set_subtitle(&crate::rules::shorten(&p));
+                    f3.set_subtitle(&glib::markup_escape_text(&crate::rules::shorten(&p)));
                 }
             });
         });

@@ -406,6 +406,7 @@ impl Window {
         this.start_feed_updates();
         this.start_backup_watch();
         this.maybe_show_tour();
+        this.maybe_selftest();
         if std::env::args().any(|a| a == "--captures") {
             let weak = Rc::downgrade(&this);
             glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
@@ -1220,7 +1221,7 @@ impl Window {
             }
             let name = mount.name().to_string();
             let location = mount.default_location();
-            let toast = adw::Toast::builder().title(&trf!("{name} is ready", name = name.clone())).timeout(6).button_label(tr("Open")).build();
+            let toast = adw::Toast::builder().use_markup(false).title(&trf!("{name} is ready", name = name.clone())).timeout(6).button_label(tr("Open")).build();
             let weak = Rc::downgrade(&w);
             toast.connect_button_clicked(move |_| {
                 if let Some(w) = weak.upgrade() {
@@ -1306,7 +1307,7 @@ impl Window {
         }
         // Screenshots and recordings: on Omarchy always, elsewhere once there are some.
         if glib::find_program_in_path("omarchy-capture-screenshot").is_some() || !crate::captures::list().is_empty() {
-            places.push(Place::Entry { name: tr("Captures"), icon: "camera-photo-symbolic".into(), file: gio::File::for_path(crate::captures::dirs().0), kind: PlaceKind::Captures });
+            places.push(Place::Entry { name: tr("Captures"), icon: "camera-photo-symbolic".into(), file: gio::File::for_path(crate::captures::screenshot_dir()), kind: PlaceKind::Captures });
         }
         places.push(Place::Entry { name: tr("Recent"), icon: "document-open-recent-symbolic".into(), file: gio::File::for_uri("recent:///"), kind: PlaceKind::Builtin });
         let trash_name = match *self.trash_summary.borrow() {
@@ -1847,7 +1848,7 @@ impl Window {
     /// Record an operation and show a toast with an Undo button.
     pub fn record(&self, op: Op, message: &str) {
         self.journal.record(op);
-        let toast = adw::Toast::builder().title(message).timeout(5).button_label("Undo").action_name("win.undo").build();
+        let toast = adw::Toast::builder().use_markup(false).title(message).timeout(5).button_label(tr("Undo")).action_name("win.undo").build();
         self.toast.add_toast(toast);
     }
 
@@ -1923,7 +1924,7 @@ impl Window {
     }
 
     pub fn toast(&self, text: &str) {
-        self.toast.add_toast(adw::Toast::builder().title(text).timeout(3).build());
+        self.toast.add_toast(adw::Toast::builder().use_markup(false).title(text).timeout(3).build());
     }
 
     /// A toast that replaces the previous one with the same key when it is
@@ -1936,7 +1937,7 @@ impl Window {
                 return;
             }
         }
-        let toast = adw::Toast::builder().title(text).timeout(3).build();
+        let toast = adw::Toast::builder().use_markup(false).title(text).timeout(3).build();
         self.toast.add_toast(toast.clone());
         self.last_toast.replace(Some((key.to_string(), toast, now)));
     }
@@ -1944,7 +1945,7 @@ impl Window {
     /// An error toast with a Retry button.
     pub fn toast_retry(&self, text: &str, retry: RetryFn) {
         self.retry.replace(Some(retry));
-        let toast = adw::Toast::builder().title(text).timeout(8).button_label(tr("Retry")).action_name("win.retry").build();
+        let toast = adw::Toast::builder().use_markup(false).title(text).timeout(8).button_label(tr("Retry")).action_name("win.retry").build();
         self.toast.add_toast(toast);
     }
 
@@ -2003,7 +2004,7 @@ impl Window {
     }
 
     pub fn toast_error(&self, text: &str) {
-        self.toast.add_toast(adw::Toast::builder().title(text).timeout(6).build());
+        self.toast.add_toast(adw::Toast::builder().use_markup(false).title(text).timeout(6).build());
     }
 
     pub fn selected_items(&self) -> Vec<FileItem> {

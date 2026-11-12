@@ -47,6 +47,7 @@ mod render;
 mod remote;
 mod scheme;
 mod search;
+mod selftest;
 mod session;
 mod share;
 mod smart;
@@ -108,6 +109,8 @@ const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --lock-all       unmount every unlocked encrypted folder
        omafile --backup         back up now to the drive chosen under Backup (what the timer runs)
        omafile --import-photos  open omafile and import the camera roll of a connected iPhone / iPad
+       omafile --theme-from-picture <picture> [--name <name>] [--dark | --light]
+                                make an Omarchy theme out of a picture, as the theme atelier does
        omafile --captures       open omafile on the screenshots and screen recordings
        omafile --copy-capture   put the newest screenshot or recording on the clipboard
        omafile --version";
@@ -126,6 +129,8 @@ fn main() -> glib::ExitCode {
             return glib::ExitCode::SUCCESS;
         }
         Some("--backup") => return glib::ExitCode::from(backup::main_headless(args.iter().any(|a| a == "--scheduled"))),
+        Some("--describe-theme") => return glib::ExitCode::from(omarchy::describe_theme(args.get(2))),
+        Some("--theme-from-picture") => return glib::ExitCode::from(atelier::create_headless(&args[2..])),
         Some("--copy-capture") => return glib::ExitCode::from(captures::copy_latest()),
         Some("--lock-all") => return glib::ExitCode::from(status::lock_all().min(1) as u8),
         Some("--version") | Some("-V") => {

@@ -25,7 +25,7 @@ impl Window {
         let glob = adw::EntryRow::builder().title(tr("Name matches (glob, e.g. *.pdf)")).build();
         let age = adw::SpinRow::with_range(0.0, 3650.0, 1.0);
         age.set_title(&tr("Modified within the last … days (0 = any)"));
-        let root_row = adw::ActionRow::builder().title(tr("Search below")).subtitle(crate::window::abbreviate_home(&root)).build();
+        let root_row = adw::ActionRow::builder().title(tr("Search below")).subtitle(glib::markup_escape_text(&crate::window::abbreviate_home(&root))).build();
         root_row.add_css_class("property");
         let group = adw::PreferencesGroup::builder().title(tr("Smart folder")).description(tr("A saved search that lives in the sidebar and lists its matches whenever you open it.")).build();
         for r in [name.clone().upcast::<gtk::Widget>(), term.clone().upcast(), glob.clone().upcast(), age.clone().upcast(), root_row.upcast()] {
@@ -37,7 +37,7 @@ impl Window {
             existing.set_visible(false);
         }
         for s in &list {
-            let row = adw::ActionRow::builder().title(&s.name).subtitle(format!("{}  ·  {}{}{}", crate::window::abbreviate_home(&s.root), s.query, if s.glob.is_empty() { String::new() } else { format!("  ·  {}", s.glob) }, if s.max_age_days > 0 { format!("  ·  {} days", s.max_age_days) } else { String::new() })).build();
+            let row = adw::ActionRow::builder().title(glib::markup_escape_text(&s.name)).subtitle(glib::markup_escape_text(&format!("{}  ·  {}{}{}", crate::window::abbreviate_home(&s.root), s.query, if s.glob.is_empty() { String::new() } else { format!("  ·  {}", s.glob) }, if s.max_age_days > 0 { format!("  ·  {} days", s.max_age_days) } else { String::new() }))).build();
             let del = gtk::Button::from_icon_name("user-trash-symbolic");
             del.add_css_class("flat");
             del.set_valign(gtk::Align::Center);
@@ -184,7 +184,7 @@ impl Window {
             if entries.is_empty() {
                 return;
             }
-            let group = adw::PreferencesGroup::builder().title(title).build();
+            let group = adw::PreferencesGroup::builder().title(glib::markup_escape_text(&title)).build();
             for e in entries.iter().take(300) {
                 let row = adw::ActionRow::builder().title(glib::markup_escape_text(e)).build();
                 let img = gtk::Image::from_icon_name(icon);

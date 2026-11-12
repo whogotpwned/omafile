@@ -210,9 +210,13 @@ fn features_list(window: &Rc<Window>, dialog: &adw::Dialog) -> gtk::ListBox {
         if feature.open {
             let open = gtk::Button::builder().label(tr("Open")).valign(gtk::Align::Center).build();
             open.add_css_class("pill");
-            let (weak, dialog, action) = (Rc::downgrade(window), dialog.clone(), feature.action);
+            // Weak: the button is inside the dialog, and a dialog its own button keeps alive
+            // is never freed.
+            let (weak, dialog, action) = (Rc::downgrade(window), dialog.downgrade(), feature.action);
             open.connect_clicked(move |_| {
-                dialog.close();
+                if let Some(dialog) = dialog.upgrade() {
+                    dialog.close();
+                }
                 let Some(w) = weak.upgrade() else { return };
                 // After the dialog is gone, so the action finds the window in its normal state.
                 glib::idle_add_local_once(move || {
@@ -311,7 +315,7 @@ fn about_page(window: &Rc<Window>) -> gtk::Widget {
     }
     found_all.push((tr("System keyring"), tr("Remembering server passwords"), crate::connections::keyring_available()));
     for (command, what, found) in found_all {
-        let row = adw::ActionRow::builder().title(what).subtitle(command).build();
+        let row = adw::ActionRow::builder().title(glib::markup_escape_text(&what)).subtitle(glib::markup_escape_text(&command)).build();
         let mark = gtk::Image::from_icon_name(if found { "emblem-ok-symbolic" } else { "window-close-symbolic" });
         mark.add_css_class(if found { "omafile-help-found" } else { "omafile-dim" });
         mark.set_tooltip_text(Some(&if found { tr("Installed") } else { tr("Not installed") }));
@@ -322,7 +326,7 @@ fn about_page(window: &Rc<Window>) -> gtk::Widget {
     // Where things are kept.
     let places = adw::PreferencesGroup::builder().title(tr("Where things are kept")).build();
     for (what, path) in [(tr("Settings, tags, rules, vaults, feeds, connections"), glib::user_config_dir().join("omafile")), (tr("Session, read marks, import log"), glib::user_state_dir().join("omafile")), (tr("Thumbnails and fetched feeds"), glib::user_cache_dir())] {
-        let row = adw::ActionRow::builder().title(what).subtitle(crate::window::abbreviate_home(&path)).subtitle_selectable(true).build();
+        let row = adw::ActionRow::builder().title(glib::markup_escape_text(&what)).subtitle(glib::markup_escape_text(&crate::window::abbreviate_home(&path))).subtitle_selectable(true).build();
         let open = gtk::Button::builder().icon_name("folder-open-symbolic").valign(gtk::Align::Center).tooltip_text(tr("Open")).build();
         open.add_css_class("flat");
         let weak = Rc::downgrade(window);
@@ -396,10 +400,12 @@ impl Window {
         dialog.set_child(Some(&content));
         search.set_key_capture_widget(Some(&dialog));
         // Esc in the search field clears it; with an empty field it closes the dialog.
-        let d2 = dialog.clone();
+        let d2 = dialog.downgrade();
         search.connect_stop_search(move |e| {
             if e.text().is_empty() {
-                d2.close();
+                if let Some(dialog) = d2.upgrade() {
+                    dialog.close();
+                }
             } else {
                 e.set_text("");
             }

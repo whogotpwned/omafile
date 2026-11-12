@@ -629,7 +629,7 @@ impl Window {
                 let Some(w) = this.upgrade() else { return };
                 match result {
                     Ok(_) => {
-                        let toast = adw::Toast::builder().title(format!("{}: {}", tr("Exported, still protected by its master password"), crate::window::abbreviate_home(&target))).timeout(8).button_label(tr("Show")).build();
+                        let toast = adw::Toast::builder().use_markup(false).title(format!("{}: {}", tr("Exported, still protected by its master password"), crate::window::abbreviate_home(&target))).timeout(8).button_label(tr("Show")).build();
                         let weak = Rc::downgrade(&w);
                         toast.connect_button_clicked(move |_| {
                             let (Some(w), Some(dir)) = (weak.upgrade(), target.parent()) else { return };

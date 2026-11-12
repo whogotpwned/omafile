@@ -1,11 +1,13 @@
 //! Captures: the screenshots and screen recordings Omarchy makes, found again.
 //!
-//! Omarchy's `omarchy-capture-screenshot` writes `screenshot-<date>_<time>.png` into
-//! `$OMARCHY_SCREENSHOT_DIR` (else the Pictures folder), `omarchy-capture-screenrecording`
-//! writes `screenrecording-<date>_<time>.mp4` into `$OMARCHY_SCREENRECORD_DIR` (else the
-//! Videos folder) with a `-preview.png` beside it. This module only reads those folders
-//! and names the commands Omarchy itself would run (Satty for drawing on a screenshot);
-//! taking the captures stays Omarchy's job.
+//! Omarchy 4 takes screenshots with Omasnap, which saves
+//! `screenshot-<date>_<time>-<app>.png` into `~/Pictures/Screenshots`
+//! (`OMASNAP_SCREENSHOT_DIR`; the older `OMARCHY_SCREENSHOT_DIR` is honoured too) and is
+//! also the editor for drawing on one. Releases before 4 saved
+//! `screenshot-<date>_<time>.png` straight into the Pictures folder and used Satty.
+//! Recordings are `screenrecording-<date>_<time>.mp4` in `OMARCHY_SCREENRECORD_DIR`, else
+//! the Videos folder, in every release. This module only reads those folders and names
+//! the commands Omarchy itself would run; taking the captures stays Omarchy's job.
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -27,15 +29,39 @@ pub struct Capture {
     pub poster: Option<PathBuf>,
 }
 
-/// Where screenshots and recordings go, the way Omarchy's scripts decide it.
-pub fn dirs_from(screenshot_env: Option<String>, recording_env: Option<String>, pictures: Option<PathBuf>, videos: Option<PathBuf>, home: &Path) -> (PathBuf, PathBuf) {
-    let pick = |env: Option<String>, special: Option<PathBuf>, fallback: &str| env.filter(|v| !v.trim().is_empty()).map(PathBuf::from).or(special).unwrap_or_else(|| home.join(fallback));
-    (pick(screenshot_env, pictures, "Pictures"), pick(recording_env, videos, "Videos"))
+/// Where screenshots are looked for, most specific first: the folders the environment
+/// names, then Omarchy 4's `Screenshots` folder, then the Pictures folder itself where
+/// older releases saved. Only files named like screenshots are taken from them.
+pub fn screenshot_dirs_from(omasnap_env: Option<String>, omarchy_env: Option<String>, pictures: Option<PathBuf>, home: &Path) -> Vec<PathBuf> {
+    let pictures = pictures.unwrap_or_else(|| home.join("Pictures"));
+    let mut out: Vec<PathBuf> = Vec::new();
+    for dir in [omasnap_env, omarchy_env].into_iter().flatten().filter(|v| !v.trim().is_empty()).map(PathBuf::from).chain([pictures.join("Screenshots"), pictures]) {
+        if !out.contains(&dir) {
+            out.push(dir);
+        }
+    }
+    out
 }
 
-pub fn dirs() -> (PathBuf, PathBuf) {
+/// Where recordings go, the way Omarchy's script decides it.
+pub fn recording_dir_from(env: Option<String>, videos: Option<PathBuf>, home: &Path) -> PathBuf {
+    env.filter(|v| !v.trim().is_empty()).map(PathBuf::from).or(videos).unwrap_or_else(|| home.join("Videos"))
+}
+
+/// The screenshot folders and the recording folder.
+pub fn dirs() -> (Vec<PathBuf>, PathBuf) {
     use gtk::glib;
-    dirs_from(std::env::var("OMARCHY_SCREENSHOT_DIR").ok(), std::env::var("OMARCHY_SCREENRECORD_DIR").ok(), glib::user_special_dir(glib::UserDirectory::Pictures), glib::user_special_dir(glib::UserDirectory::Videos), &glib::home_dir())
+    let home = glib::home_dir();
+    (
+        screenshot_dirs_from(std::env::var("OMASNAP_SCREENSHOT_DIR").ok(), std::env::var("OMARCHY_SCREENSHOT_DIR").ok(), glib::user_special_dir(glib::UserDirectory::Pictures), &home),
+        recording_dir_from(std::env::var("OMARCHY_SCREENRECORD_DIR").ok(), glib::user_special_dir(glib::UserDirectory::Videos), &home),
+    )
+}
+
+/// The folder screenshots are in: the first one that exists.
+pub fn screenshot_dir() -> PathBuf {
+    let (shots, _) = dirs();
+    shots.iter().find(|d| d.is_dir()).cloned().unwrap_or_else(|| shots[0].clone())
 }
 
 /// What a file name is: a screenshot, a recording, or neither (the preview stills of
@@ -101,7 +127,9 @@ pub fn list_in(folders: &[&Path], offset: i64) -> Vec<Capture> {
 
 pub fn list() -> Vec<Capture> {
     let (shots, recordings) = dirs();
-    list_in(&[&shots, &recordings], crate::backup::utc_offset())
+    let mut folders: Vec<&Path> = shots.iter().map(PathBuf::as_path).collect();
+    folders.push(&recordings);
+    list_in(&folders, crate::backup::utc_offset())
 }
 
 /// Which day a capture belongs to, seen from today.
@@ -139,19 +167,19 @@ pub fn by_day(captures: &[Capture], now: i64, offset: i64) -> Vec<(Day, Vec<Capt
     groups.into_iter().map(|(day, _, list)| (day, list)).collect()
 }
 
-/// The program that draws on a screenshot, as Omarchy picks it.
-pub fn editor() -> String {
-    std::env::var("OMARCHY_SCREENSHOT_EDITOR").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| "satty".into())
-}
-
-/// The command to draw on a screenshot. For Satty it is the one Omarchy's screenshot
-/// script runs: the picture is saved over itself and copied to the clipboard on Enter.
-pub fn annotate_argv(editor: &str, picture: &Path) -> Vec<String> {
+/// The command that opens a screenshot for drawing on it, the way Omarchy would:
+/// `OMARCHY_SCREENSHOT_EDITOR` when it is set (releases before 4), else Omasnap (Omarchy 4,
+/// called as its image viewer binding calls it), else Satty with the arguments the old
+/// screenshot script gave it. None when none of them is installed.
+pub fn annotate_argv(chosen: Option<String>, installed: &dyn Fn(&str) -> bool, picture: &Path) -> Option<Vec<String>> {
     let file = picture.to_string_lossy().to_string();
-    if editor == "satty" {
-        vec!["satty".into(), "--filename".into(), file.clone(), "--output-filename".into(), file, "--actions-on-enter".into(), "save-to-clipboard".into(), "--save-after-copy".into(), "--copy-command".into(), "wl-copy".into()]
-    } else {
-        vec![editor.to_string(), file]
+    let satty = |file: String| vec!["satty".to_string(), "--filename".into(), file.clone(), "--output-filename".into(), file, "--actions-on-enter".into(), "save-to-clipboard".into(), "--save-after-copy".into(), "--copy-command".into(), "wl-copy".into()];
+    match chosen.filter(|e| !e.trim().is_empty() && installed(e)) {
+        Some(editor) if editor == "satty" => Some(satty(file)),
+        Some(editor) => Some(vec![editor, file]),
+        None if installed("omasnap") => Some(vec!["omasnap".into(), file]),
+        None if installed("satty") => Some(satty(file)),
+        None => None,
     }
 }
 
@@ -250,9 +278,17 @@ mod tests {
     #[test]
     fn folders_and_names_follow_omarchy() {
         let home = Path::new("/home/me");
-        assert_eq!(dirs_from(None, None, None, None, home), (home.join("Pictures"), home.join("Videos")));
-        assert_eq!(dirs_from(None, None, Some("/home/me/Bilder".into()), Some("/home/me/Filme".into()), home), (PathBuf::from("/home/me/Bilder"), PathBuf::from("/home/me/Filme")));
-        assert_eq!(dirs_from(Some("/data/shots".into()), Some(" ".into()), Some("/home/me/Bilder".into()), None, home), (PathBuf::from("/data/shots"), home.join("Videos")));
+        let p = |s: &str| PathBuf::from(s);
+        assert_eq!(screenshot_dirs_from(None, None, None, home), vec![p("/home/me/Pictures/Screenshots"), p("/home/me/Pictures")]);
+        assert_eq!(screenshot_dirs_from(None, None, Some(p("/home/me/Bilder")), home), vec![p("/home/me/Bilder/Screenshots"), p("/home/me/Bilder")]);
+        assert_eq!(screenshot_dirs_from(Some("/data/shots".into()), Some(" ".into()), None, home)[0], p("/data/shots"));
+        assert_eq!(screenshot_dirs_from(Some("/a".into()), Some("/b".into()), None, home)[..2], [p("/a"), p("/b")], "Omasnap's own variable first, the older one is still looked at");
+        assert_eq!(screenshot_dirs_from(Some("/home/me/Pictures".into()), None, None, home).len(), 2, "no folder twice");
+        assert_eq!(recording_dir_from(None, None, home), p("/home/me/Videos"));
+        assert_eq!(recording_dir_from(Some("/data/rec".into()), Some(p("/home/me/Filme")), home), p("/data/rec"));
+        assert_eq!(recording_dir_from(Some("".into()), Some(p("/home/me/Filme")), home), p("/home/me/Filme"));
+        assert_eq!(classify("screenshot-2026-08-13_14-22-05-firefox.png"), Some(Kind::Screenshot), "Omasnap adds the program's name");
+        assert_eq!(time_in_name("screenshot-2026-08-13_14-22-05-firefox.png", 0), time_in_name("screenshot-2026-08-13_14-22-05.png", 0));
         assert_eq!(classify("screenshot-2026-11-12_09-15-02.png"), Some(Kind::Screenshot));
         assert_eq!(classify("Screenshot from 2026-11-12.jpg"), Some(Kind::Screenshot));
         assert_eq!(classify("screenrecording-2026-11-12_09-15-02.mp4"), Some(Kind::Recording));
@@ -308,12 +344,20 @@ mod tests {
 
     #[test]
     fn commands_are_omarchy_s_own() {
-        let shot = Path::new("/home/me/Pictures/screenshot-2026-11-12_09-15-02.png");
-        assert_eq!(
-            annotate_argv("satty", shot).join(" "),
-            "satty --filename /home/me/Pictures/screenshot-2026-11-12_09-15-02.png --output-filename /home/me/Pictures/screenshot-2026-11-12_09-15-02.png --actions-on-enter save-to-clipboard --save-after-copy --copy-command wl-copy"
-        );
-        assert_eq!(annotate_argv("swappy", shot), vec!["swappy".to_string(), shot.to_string_lossy().to_string()]);
+        let shot = Path::new("/home/me/Pictures/Screenshots/screenshot-2026-11-12_09-15-02-foot.png");
+        let file = shot.to_string_lossy().to_string();
+        let all = |_: &str| true;
+        // Omarchy 4: Omasnap, as its image viewer binding calls it.
+        assert_eq!(annotate_argv(None, &all, shot), Some(vec!["omasnap".to_string(), file.clone()]));
+        // Before 4: Satty, exactly as the screenshot script started it.
+        let only_satty = |program: &str| program == "satty";
+        let old = format!("satty --filename {file} --output-filename {file} --actions-on-enter save-to-clipboard --save-after-copy --copy-command wl-copy");
+        assert_eq!(annotate_argv(None, &only_satty, shot).map(|a| a.join(" ")), Some(old.clone()));
+        assert_eq!(annotate_argv(Some("satty".into()), &all, shot).map(|a| a.join(" ")), Some(old));
+        // The user's own choice, when it is installed; otherwise what is.
+        assert_eq!(annotate_argv(Some("swappy".into()), &all, shot), Some(vec!["swappy".to_string(), file.clone()]));
+        assert_eq!(annotate_argv(Some("swappy".into()), &only_satty, shot).map(|a| a[0].clone()).as_deref(), Some("satty"));
+        assert_eq!(annotate_argv(None, &|_| false, shot), None);
         let frames = frames_argv(Path::new("/v/a b.mp4"), Path::new("/cache/x"), 24.0, 12);
         assert!(frames.contains(&"fps=12/24.000,scale=480:-2".to_string()) && frames.contains(&"/v/a b.mp4".to_string()) && frames.last().unwrap() == "/cache/x/%02d.jpg");
         assert!(frames_argv(Path::new("/v/a.mp4"), Path::new("/c"), 0.0, 12).contains(&"fps=1,scale=480:-2".to_string()));

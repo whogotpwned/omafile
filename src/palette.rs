@@ -126,6 +126,14 @@ impl Palette {
             }
         });
         this.dialog.add_controller(keys);
+        // The palette is one dialog that is shown again and again: what happens when it
+        // closes is said once, here, not with every opening.
+        let weak = Rc::downgrade(window);
+        this.dialog.connect_closed(move |_| {
+            if let Some(w) = weak.upgrade() {
+                w.refocus();
+            }
+        });
         this
     }
 
@@ -134,7 +142,7 @@ impl Palette {
         self.entry.set_text("");
         self.filter();
         if let Some(w) = self.window.upgrade() {
-            w.present_dialog(&self.dialog);
+            self.dialog.present(Some(&w.window));
         }
         self.entry.grab_focus();
     }

@@ -418,8 +418,11 @@ impl ThemesPage {
             picture.add_css_class("omafile-theme-picture");
             overlay.add_overlay(&picture);
             let weak = picture.downgrade();
+            // The background first; where its format cannot be read (WebP without the
+            // loader), the theme's preview picture; failing both, the drawn desktop stays.
+            let second = omarchy::folder_preview(&info.dir).filter(|p| *p != preview);
             glib::spawn_future_local(async move {
-                let decoded = gio::spawn_blocking(move || crate::thumbs::decode_image(&preview, 640)).await.ok().flatten();
+                let decoded = gio::spawn_blocking(move || crate::thumbs::decode_image(&preview, 640).or_else(|| second.and_then(|p| crate::thumbs::decode_image(&p, 640)))).await.ok().flatten();
                 if let (Some(picture), Some(decoded)) = (weak.upgrade(), decoded) {
                     picture.set_paintable(Some(&decoded.to_paintable()));
                     picture.add_css_class("omafile-theme-loaded");
@@ -898,6 +901,51 @@ impl Window {
         }
         dialog.present(Some(&self.window));
         name.grab_focus();
+    }
+}
+
+/// `omafile --theme-from-picture <picture> [--name <name>] [--dark | --light] [--into <folder>]`:
+/// the same theme the dialog saves, without a window. Prints the theme's folder. The mode
+/// follows the picture unless one is asked for; `--into` names another folder than
+/// `~/.config/omarchy/themes` (the checks use it).
+pub fn create_headless(args: &[String]) -> u8 {
+    let (mut picture, mut name, mut light, mut into) = (None, None, None, omarchy::install_dir());
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--name" => name = rest.next().cloned(),
+            "--into" => into = rest.next().map(PathBuf::from).unwrap_or(into),
+            "--dark" => light = Some(false),
+            "--light" => light = Some(true),
+            other if picture.is_none() && !other.starts_with("--") => picture = Some(PathBuf::from(other)),
+            other => {
+                eprintln!("omafile: unknown argument {other}");
+                return 2;
+            }
+        }
+    }
+    let Some(picture) = picture else {
+        eprintln!("usage: omafile --theme-from-picture <picture> [--name <name>] [--dark | --light] [--into <folder>]");
+        return 2;
+    };
+    let Some(small) = crate::thumbs::decode_image(&picture, 96) else {
+        eprintln!("omafile: cannot read {}", picture.display());
+        return 1;
+    };
+    let analysis = scheme::analyse(&small.pixels());
+    let scheme = scheme::scheme(&analysis, light.unwrap_or_else(|| analysis.suggests_light()), None);
+    let wallpaper = crate::thumbs::decode_image(&picture, 1280).and_then(|d| surface_of(&d.to_pixbuf()));
+    let png = mock_png(&scheme, wallpaper.as_ref());
+    let icons = Some(scheme::icon_theme_for(scheme.accent)).filter(|set| omarchy::icon_theme_installed(set));
+    match omarchy::write_theme(&into, &name.unwrap_or_else(|| suggested_name(&picture)), &scheme, &picture, png.as_deref(), icons) {
+        Ok(dir) => {
+            println!("{}", dir.display());
+            0
+        }
+        Err(e) => {
+            eprintln!("omafile: {e}");
+            1
+        }
     }
 }
 

@@ -2,6 +2,25 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.28.0 — 2026-11-12
+
+Checked against Omarchy's own source (4.5.0 and the development branch), and tested from end to end by omafile itself.
+
+### Fixed
+- **The bar button did not load on Omarchy 4.5**: its menu used a component (`PopupMenuRow`) that only exists in Omarchy's development branch, and a component a shell does not know keeps the whole widget from loading. The rows are the widget's own now; it loads on both.
+- **Themes made from a picture** are written in the palette Omarchy 4 names (`mode`, `accent`, `background`, `selection`, `muted`, `red` … `brown`, the bright colours), followed by the keys releases before 4 read (`cursor`, the selection pair, `color0` … `color15`): one theme, both generations. Until now only the older keys were written; Omarchy 4 accepted them but had to guess the rest. Theme folders get names Omarchy accepts (umlauts are written out). Icon sets come from the list in Omarchy's manual.
+- **The theme that is on** is read from `~/.local/state/omarchy/current` first (Omarchy 4) and only then from the older place, so a leftover from before an upgrade no longer wins. Shipped themes are found in `/usr/share/omarchy`.
+- **Captures** looks in `~/Pictures/Screenshots` and honours `OMASNAP_SCREENSHOT_DIR` (Omarchy 4), besides the older places. *Draw on it* opens Omasnap, Omarchy 4's editor; Satty is used where it is still the one installed.
+- A theme card shows the theme's preview picture when its background is in a format that cannot be read (WebP without the loader).
+- **Names with `&`, `<` or `%`**: a notification about such a file showed nothing, and the Properties dialog and several lists lost the name. Notifications no longer read their text as markup, and rows escape it.
+- The *Change Icon* dialog scrolls in a small window instead of growing past it; its title is translated, and so is the *Undo* button on notifications.
+- 0.26.0's notes called `color0` … `color15` Omarchy's current format; it is the older one. Both are read.
+
+### Added
+- `scripts/selftest.sh`: omafile runs every action of its window against itself, in a throwaway home folder, with five different selections, at two window sizes.
+- `scripts/check-omarchy.py`: every assumption about Omarchy checked against a checkout of it, without running anything from it. CI runs both on every push and the Omarchy check once a week on its own.
+- `omafile --theme-from-picture <picture> [--name <name>] [--dark | --light]` makes a theme without a window; `omafile --describe-theme <folder>` prints what omafile reads from one.
+
 ## 0.27.0 — 2026-11-12
 
 ### Added

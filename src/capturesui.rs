@@ -131,8 +131,7 @@ impl CapturesPage {
             let this = Rc::downgrade(window);
             button.connect_clicked(move |_| {
                 if let Some(w) = this.upgrade() {
-                    let (shots, videos) = captures::dirs();
-                    w.navigate(gio::File::for_path(if which == 0 { shots } else { videos }));
+                    w.navigate(gio::File::for_path(if which == 0 { captures::screenshot_dir() } else { captures::dirs().1 }));
                 }
             });
         }
@@ -159,8 +158,11 @@ impl CapturesPage {
         page.root.add_controller(keys);
 
         // Watch both folders: a capture taken while the page is open appears by itself.
-        let (shots_dir, videos_dir) = captures::dirs();
-        for dir in if shots_dir == videos_dir { vec![shots_dir] } else { vec![shots_dir, videos_dir] } {
+        let (mut watched, videos_dir) = captures::dirs();
+        if !watched.contains(&videos_dir) {
+            watched.push(videos_dir);
+        }
+        for dir in watched {
             let Ok(monitor) = gio::File::for_path(&dir).monitor_directory(gio::FileMonitorFlags::NONE, gio::Cancellable::NONE) else { continue };
             let (weak, this) = (Rc::downgrade(&page), Rc::downgrade(window));
             monitor.connect_changed(move |_, file, _, _| {
@@ -473,14 +475,13 @@ impl Window {
         }
     }
 
-    /// Draw on a screenshot with the editor Omarchy uses (Satty unless set otherwise).
+    /// Draw on a screenshot with the editor Omarchy uses: Omasnap on Omarchy 4, Satty before.
     fn capture_annotate(self: &Rc<Self>, capture: &Capture) {
-        let editor = captures::editor();
-        if glib::find_program_in_path(&editor).is_none() {
-            self.toast_error(&crate::trf!("{program} is not installed", program = editor));
+        let installed = |program: &str| glib::find_program_in_path(program).is_some();
+        let Some(argv) = captures::annotate_argv(std::env::var("OMARCHY_SCREENSHOT_EDITOR").ok(), &installed, &capture.path) else {
+            self.toast_error(&tr("No screenshot editor found (Omasnap or Satty)"));
             return;
-        }
-        let argv = captures::annotate_argv(&editor, &capture.path);
+        };
         let args: Vec<&std::ffi::OsStr> = argv.iter().map(std::ffi::OsStr::new).collect();
         if let Err(e) = gio::Subprocess::newv(&args, gio::SubprocessFlags::NONE) {
             self.toast_error(&e.to_string());

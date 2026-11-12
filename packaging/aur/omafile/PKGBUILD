@@ -1,6 +1,6 @@
 # Maintainer: whogotpwned
 pkgname=omafile
-pkgver=0.27.0
+pkgver=0.28.0
 pkgrel=1
 pkgdesc="Native GTK4/libadwaita file manager that follows the Omarchy theme"
 arch=('x86_64' 'aarch64')
@@ -25,11 +25,12 @@ optdepends=(
   'libheif: HEIC to JPEG when importing iPhone photos'
   'ffmpegthumbnailer: video thumbnails'
   'ffmpeg: cover art, video tools, media facts'
+  'wl-clipboard: copy the newest screenshot or recording (omafile --copy-capture)'
   'libpulse: Now Playing spectrum that follows the real sound (parec)'
   'gst-plugins-good: play MP3, FLAC, Ogg and common video in the preview'
   'gst-plugins-bad: more video codecs for the preview player'
   'gst-libav: H.264 / AAC playback in the preview'
-  'webp-pixbuf-loader: animated WebP in the preview'
+  'webp-pixbuf-loader: WebP pictures: theme backgrounds in the atelier, previews'
   'qrencode: QR code for "Share on Local Network"'
   'calibre: convert eBooks, eBook viewer'
   'foliate: eBook reader'
