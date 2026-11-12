@@ -1,6 +1,6 @@
 pkgbase = omafile-bin
 	pkgdesc = Native GTK4/libadwaita file manager that follows the Omarchy theme (prebuilt)
-	pkgver = 0.28.1
+	pkgver = 0.28.2
 	pkgrel = 1
 	url = https://github.com/whogotpwned/omafile
 	arch = x86_64
@@ -42,7 +42,7 @@ pkgbase = omafile-bin
 	optdepends = uwsm: launch terminals and readers as session apps
 	provides = omafile
 	conflicts = omafile
-	source_x86_64 = omafile-0.28.1-x86_64.tar.gz::https://github.com/whogotpwned/omafile/releases/download/v0.28.1/omafile-0.28.1-x86_64.tar.gz
+	source_x86_64 = omafile-0.28.2-x86_64.tar.gz::https://github.com/whogotpwned/omafile/releases/download/v0.28.2/omafile-0.28.2-x86_64.tar.gz
 	sha256sums_x86_64 = SKIP
 
 pkgname = omafile-bin

@@ -2,6 +2,11 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.28.2 — 2026-11-12
+
+### Changed
+- What is hidden in *Help › About* is a dedication now.
+
 ## 0.28.1 — 2026-11-12
 
 ### Added

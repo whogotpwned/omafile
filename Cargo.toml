@@ -1,6 +1,6 @@
 [package]
 name = "omafile"
-version = "0.28.1"
+version = "0.28.2"
 edition = "2021"
 description = "A native GTK4/libadwaita file manager for Omarchy"
 license = "MIT"

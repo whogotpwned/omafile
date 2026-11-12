@@ -250,7 +250,7 @@ fn features_list(window: &Rc<Window>, dialog: &adw::Dialog) -> gtk::ListBox {
 }
 
 /// What the About page says to whoever clicks its icon five times in a row.
-const EGG: &str = "Aylin is fab ✨";
+const EGG: &str = "For my Sisko Aylin ❤️";
 
 /// The fifth click of a quick series (and every fifth after it).
 fn egg_due(clicks_in_a_row: i32) -> bool {
@@ -260,7 +260,7 @@ fn egg_due(clicks_in_a_row: i32) -> bool {
 fn about_page(window: &Rc<Window>) -> gtk::Widget {
     let icon = gtk::Image::from_icon_name("io.github.whogotpwned.Omafile");
     icon.set_pixel_size(96);
-    // Five quick clicks on the icon: it turns a somersault and says something nice.
+    // Five quick clicks on the icon: it turns a somersault and shows the dedication.
     let egg = gtk::Label::builder().label(EGG).css_classes(["omafile-egg"]).build();
     let egg_reveal = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(crate::motion::PANEL).child(&egg).build();
     let clicks = gtk::GestureClick::new();
@@ -440,9 +440,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_egg_waits_for_the_fifth_click_and_is_kind() {
+    fn the_egg_waits_for_the_fifth_click_and_is_a_dedication() {
         assert!(!egg_due(0) && !egg_due(1) && !egg_due(4) && egg_due(5) && !egg_due(6) && egg_due(10));
-        assert!(EGG.starts_with("Aylin is fab"));
+        assert!(EGG.contains("Aylin") && EGG.ends_with("❤️"));
     }
 
     #[test]
