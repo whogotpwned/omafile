@@ -156,3 +156,22 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 16.12 *Keep backups › For a month* with older backups on the drive: after the next run they are gone, the newest three stay. A nearly full stick with *Make room* on: the oldest backups go before the run.
 - [ ] 16.13 On Omarchy the page ends with *Omarchy looks after the system* and a plausible time for the last system snapshot (compare `sudo snapper -c root list`). `omarchy-snapshot create` and an `omarchy-update` behave as before; `/.snapshots` and `~/.snapshots` do not appear inside a backup.
 - [ ] 16.14 Choosing a folder under `/` on the system disk (for instance `/var/backups`) as destination shows the warning that snapshots are taken of this place.
+
+## 17. Theme atelier (needs Omarchy)
+
+- [ ] 17.1 Sidebar › Omarchy Themes: every theme of `omarchy-theme-list` has a card (same names); the current one carries the ring and the tick.
+- [ ] 17.2 Click another card: terminal, bar, Hyprland borders and omafile change; `cat ~/.config/omarchy/current/theme.name` names it; the card is marked.
+- [ ] 17.3 Drop a picture on the current theme's card: it becomes the wallpaper at once and is in `~/.config/omarchy/backgrounds/<theme>/`; `Super+Ctrl+Space` (next background) cycles through it.
+- [ ] 17.4 Right click a picture › Create Theme from Picture…: the preview shows the picture's colours; Dark / Light and the accent dots change it; *Save and Turn On* applies it. Terminal colours are readable (`ls --color`, `btop`), the bar and the notification colours fit, the folder icons match the accent.
+- [ ] 17.5 The new theme appears in Omarchy's own theme menu with its preview, and `omarchy-theme-set <name>` works from a terminal.
+- [ ] 17.6 `Ctrl+Z` right after saving, or right click › Move to Trash on a theme that is not on: the folder is in the trash.
+
+## 18. Captures (needs Omarchy)
+
+- [ ] 18.1 `Print`, select an area: within a second the screenshot pops into Sidebar › Captures under *Today* with the accent ring.
+- [ ] 18.2 Drag a card into a browser upload field, a chat and a Nautilus/omafile window: the file arrives.
+- [ ] 18.3 *Copy* on a screenshot, paste into a chat (picture) and into a folder (file).
+- [ ] 18.4 *Draw on it* opens Satty with the screenshot; after Enter the card shows the drawing.
+- [ ] 18.5 `Alt+Print`, record a few seconds, stop: the recording appears with its length; resting the pointer on it flips through the stills; *Save as GIF* writes a GIF beside it.
+- [ ] 18.6 With `OMARCHY_SCREENSHOT_DIR` set to another folder (in `~/.config/uwsm/default`), new screenshots are found there.
+- [ ] 18.7 Bar button, right click › *Copy the newest capture*: a notification, and paste works. `omafile --captures` opens the page.

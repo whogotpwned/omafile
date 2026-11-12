@@ -293,6 +293,29 @@ impl Decoded {
         }
     }
 
+    pub fn to_pixbuf(&self) -> gtk::gdk_pixbuf::Pixbuf {
+        gtk::gdk_pixbuf::Pixbuf::from_bytes(&self.bytes, gtk::gdk_pixbuf::Colorspace::Rgb, self.alpha, 8, self.width, self.height, self.stride)
+    }
+
+    /// The pixels as red, green, blue; transparent ones are left out.
+    pub fn pixels(&self) -> Vec<[u8; 3]> {
+        let channels = if self.alpha { 4 } else { 3 };
+        let mut out = Vec::with_capacity((self.width * self.height).max(0) as usize);
+        for y in 0..self.height.max(0) as usize {
+            let row = y * self.stride.max(0) as usize;
+            for x in 0..self.width.max(0) as usize {
+                let o = row + x * channels;
+                if o + channels > self.bytes.len() {
+                    return out;
+                }
+                if !self.alpha || self.bytes[o + 3] > 40 {
+                    out.push([self.bytes[o], self.bytes[o + 1], self.bytes[o + 2]]);
+                }
+            }
+        }
+        out
+    }
+
     pub fn to_paintable(&self) -> gdk::Paintable {
         let format = if self.alpha { gdk::MemoryFormat::R8g8b8a8 } else { gdk::MemoryFormat::R8g8b8 };
         gdk::MemoryTexture::new(self.width, self.height, format, &self.bytes, self.stride as usize).upcast::<gdk::Paintable>()
@@ -309,7 +332,7 @@ fn to_decoded(pixbuf: gtk::gdk_pixbuf::Pixbuf) -> Decoded {
     }
 }
 
-fn decode_image(path: &std::path::Path, size: i32) -> Option<Decoded> {
+pub(crate) fn decode_image(path: &std::path::Path, size: i32) -> Option<Decoded> {
     let pixbuf = match gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true) {
         Ok(p) => p,
         // An animated GIF larger than the thumbnail: the scaling loader stops after the first
@@ -378,7 +401,7 @@ fn pixbuf_from_bytes(bytes: &[u8], size: i32) -> Option<Decoded> {
     loader.pixbuf().map(to_decoded)
 }
 
-fn decode_video(path: &std::path::Path, size: i32) -> Option<Decoded> {
+pub(crate) fn decode_video(path: &std::path::Path, size: i32) -> Option<Decoded> {
     let output = match video_tool()? {
         "ffmpegthumbnailer" => std::process::Command::new("ffmpegthumbnailer")
             .args(["-c", "png", "-s", &size.to_string(), "-o", "/dev/stdout", "-i"])

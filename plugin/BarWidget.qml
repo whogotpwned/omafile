@@ -148,6 +148,22 @@ BarWidget {
       }
 
       PopupMenuRow {
+        text: i18n.t("Screenshots and recordings")
+        onTriggered: {
+          root.menuOpen = false
+          root.bar.run("setsid uwsm-app -- omafile --captures")
+        }
+      }
+
+      PopupMenuRow {
+        text: i18n.t("Copy the newest capture")
+        onTriggered: {
+          root.menuOpen = false
+          root.bar.run("omafile --copy-capture")
+        }
+      }
+
+      PopupMenuRow {
         visible: root.iphones > 0
         text: i18n.t("Import photos from iPhone")
         onTriggered: {

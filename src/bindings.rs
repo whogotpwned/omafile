@@ -107,6 +107,8 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Developer", "", "Run in venv", "Context menu on a .py file: runs it with the venv's interpreter"),
     ("Developer", "", "Context menu › New Encrypted Folder", "gocryptfs vault; Unlock, Lock, Change Password on the folder"),
     ("Tools", "backup", "", "Backup to another drive, Time Machine style: when the last one ran, the list of backups, the drive, what is included and how often; the sidebar shows the time of the last backup"),
+    ("Tools", "themes", "", "Omarchy themes as a gallery: one click turns a theme on, a picture dropped on a card becomes its background, and New from Picture makes a theme out of any picture"),
+    ("Tools", "captures", "", "Captures: Omarchy's screenshots and screen recordings by day, to drag out, copy, draw on, turn into a GIF, share or delete"),
     ("Tools", "versions", "", "Earlier versions of the selected file or folder from Btrfs snapshots: compare, restore a copy or in place, bring back deleted files; turns snapshots on for the home folder"),
     ("Tools", "feeds", "", "Feeds: read RSS and Atom news where the files are (Add Feed… in the sidebar); in the reader: ↑ ↓ or J K next and previous article, O opens the page in the browser, M marks unread, R fetches, Space scrolls, Esc back"),
     ("Remote", "", "Sidebar › Remote", "Saved connections open beside the local files (local left, server right); copy or move across with the header arrows, Shift+F5 / Shift+F6 or by dragging; passwords stay in the system keyring"),

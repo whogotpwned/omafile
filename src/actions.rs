@@ -86,6 +86,9 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("vault-add", "Add Vault (encrypted folder in the sidebar)", "changes-prevent-symbolic"),
     ("versions", "Earlier Versions (snapshots)", "document-open-recent-symbolic"),
     ("backup", "Backup: Status, History and Settings", "document-open-recent-symbolic"),
+    ("themes", "Omarchy Themes: Gallery", "applications-graphics-symbolic"),
+    ("captures", "Captures: Screenshots and Screen Recordings", "camera-photo-symbolic"),
+    ("theme-from-picture", "Create Theme from Picture…", "applications-graphics-symbolic"),
     ("backup-now", "Back Up Now", "document-open-recent-symbolic"),
     ("feeds", "Feeds: Read the News", "application-rss+xml-symbolic"),
     ("feed-add", "Add Feed (RSS / Atom)", "application-rss+xml-symbolic"),
@@ -161,6 +164,8 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.feeds", &["<Control><Alt>w"]),
     ("win.versions", &["<Control><Alt>h"]),
     ("win.backup", &["<Control><Alt>k"]),
+    ("win.themes", &["<Control><Alt>a"]),
+    ("win.captures", &["<Control><Alt>g"]),
     ("win.now-playing", &["F8"]),
     ("win.git-commit", &["<Control><Alt>c"]),
     ("win.git-branch", &["<Control><Alt>b"]),
@@ -648,6 +653,9 @@ impl Window {
         }));
         simple("versions", Box::new(|w| w.versions_selected()));
         simple("backup", Box::new(|w| w.open_backup()));
+        simple("themes", Box::new(|w| w.open_themes()));
+        simple("captures", Box::new(|w| w.open_captures()));
+        simple("theme-from-picture", Box::new(|w| w.theme_from_picture()));
         simple("backup-now", Box::new(|w| w.backup_now()));
         simple("feed-add", Box::new(|w| w.feed_add_dialog()));
         simple("feeds", Box::new(|w| {

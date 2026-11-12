@@ -212,7 +212,11 @@ impl Window {
     }
 
     pub fn share_lan_dialog(self: &Rc<Self>) {
-        let paths = self.share_paths();
+        self.share_lan_dialog_for(self.share_paths());
+    }
+
+    /// The share page for the given files, wherever they were picked.
+    pub fn share_lan_dialog_for(self: &Rc<Self>, paths: Vec<PathBuf>) {
         if paths.is_empty() {
             return;
         }

@@ -156,6 +156,11 @@ impl Window {
 
     pub fn video_trim_dialog(self: &Rc<Self>) {
         let Some(path) = self.selected_paths_where(|i| i.is_media()).into_iter().next() else { return };
+        self.video_trim_dialog_for(path);
+    }
+
+    /// The trim dialog for one file, wherever it was picked.
+    pub fn video_trim_dialog_for(self: &Rc<Self>, path: PathBuf) {
         if !has("ffmpeg") {
             self.toast_error(&tr("ffmpeg is not installed"));
             return;
@@ -193,6 +198,10 @@ impl Window {
     /// First 10 s as a palette-optimised GIF at 480 px.
     pub fn video_to_gif(self: &Rc<Self>) {
         let Some(path) = self.selected_paths_where(|i| i.is_video()).into_iter().next() else { return };
+        self.video_to_gif_for(path);
+    }
+
+    pub fn video_to_gif_for(self: &Rc<Self>, path: PathBuf) {
         if !has("ffmpeg") {
             self.toast_error(&tr("ffmpeg is not installed"));
             return;

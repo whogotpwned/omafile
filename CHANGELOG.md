@@ -2,6 +2,18 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.26.0 — 2026-11-12
+
+### Added
+- **Theme atelier** (`Ctrl+Alt+A`, sidebar › Omarchy Themes): every Omarchy theme as a card with its background and colours; one click turns it on through `omarchy-theme-set`. Pictures dropped on a card become backgrounds of that theme. Right click: Turn On, Next Background, Add Backgrounds…, Open Folder, Move to Trash.
+- **A theme from any picture** (*New from Picture…*, a picture's context menu, the command palette): the colours come out of the picture (background and text from its tone, accents to choose from its vivid colours, sixteen terminal colours that keep their meaning), every one readable on the background. A small desktop previews the result live, in dark or light. Saved as `~/.config/omarchy/themes/<name>` with a `colors.toml` for Omarchy's templates, the picture as background, a `preview.png` and a matching icon set.
+- **Captures** (`Ctrl+Alt+G`, sidebar › Captures): Omarchy's screenshots and screen recordings by day. Drag a card into another program, copy it (picture and file), draw on it with Satty the way Omarchy starts it, save a recording as GIF, share, trash with Undo. A recording flips through its stills under the pointer; new captures appear by themselves.
+- `omafile --captures` and `omafile --copy-capture`; the bar button's menu has *Screenshots and recordings* and *Copy the newest capture*.
+
+### Fixed
+- `omafile --import-photos` was refused as an unknown option. It and the new `--captures` are declared now, and are passed on to an omafile that is already running instead of opening a second window.
+- Themes in Omarchy's current `colors.toml` format (`color0` … `color15`) had their red, green, yellow and other terminal colours ignored: omafile showed Tokyo Night's instead. They are read now.
+
 ## 0.25.0 — 2026-11-11
 
 ### Added

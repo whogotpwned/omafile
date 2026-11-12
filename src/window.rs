@@ -52,6 +52,10 @@ pub enum PlaceKind {
     Volume(gio::Volume),
     /// The backup page.
     Backup,
+    /// The gallery of Omarchy themes; the entry's file is the folder they are in.
+    Themes,
+    /// Screenshots and screen recordings; the entry's file is the screenshot folder.
+    Captures,
     /// A news feed (its address; empty for all feeds together).
     Feed(String),
     /// A saved server connection (its name); the entry's file is the address.
@@ -102,6 +106,8 @@ pub struct Window {
     pub vault_page: RefCell<Option<Rc<crate::vaults::VaultPage>>>,
     pub feed_page: RefCell<Option<Rc<crate::feedsui::FeedPage>>>,
     pub backup_page: RefCell<Option<Rc<crate::backupui::BackupPage>>>,
+    pub themes_page: RefCell<Option<Rc<crate::atelier::ThemesPage>>>,
+    pub captures_page: RefCell<Option<Rc<crate::capturesui::CapturesPage>>>,
     /// What the sidebar's Backup row says right now.
     pub backup_label: RefCell<String>,
     /// Unread articles per feed, until something changes.
@@ -348,6 +354,8 @@ impl Window {
             vault_page: RefCell::new(None),
             feed_page: RefCell::new(None),
             backup_page: RefCell::new(None),
+            themes_page: RefCell::new(None),
+            captures_page: RefCell::new(None),
             backup_label: RefCell::new(String::new()),
             feed_counts: RefCell::new(None),
             split_tools,
@@ -397,6 +405,14 @@ impl Window {
         crate::nowplaying::NowPlaying::install(&this);
         this.start_feed_updates();
         this.start_backup_watch();
+        if std::env::args().any(|a| a == "--captures") {
+            let weak = Rc::downgrade(&this);
+            glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+                if let Some(w) = weak.upgrade() {
+                    w.open_captures();
+                }
+            });
+        }
         if std::env::args().any(|a| a == "--import-photos") {
             let weak = Rc::downgrade(&this);
             glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
@@ -1054,6 +1070,8 @@ impl Window {
                     PlaceKind::Vault(v) => w.open_vault(&v),
                     PlaceKind::Feed(url) => w.open_feed(&url),
                     PlaceKind::Backup => w.open_backup(),
+                    PlaceKind::Themes => w.open_themes(),
+                    PlaceKind::Captures => w.open_captures(),
                     _ => w.navigate(file),
                 }
             }
@@ -1281,8 +1299,13 @@ impl Window {
         }
         add("Projects", "folder-symbolic", home.join("Projects"));
         add("Code", "folder-symbolic", home.join("Code"));
-        if let Some(themes) = crate::omarchy::themes_dir() {
-            places.push(Place::Entry { name: tr("Omarchy Themes"), icon: "applications-graphics-symbolic".into(), file: gio::File::for_path(themes), kind: PlaceKind::Builtin });
+        // The gallery; the entry still is the themes folder for things dropped on it.
+        if crate::omarchy::themes_dir().is_some() || crate::omarchy::stock_themes_dir().is_dir() {
+            places.push(Place::Entry { name: tr("Omarchy Themes"), icon: "applications-graphics-symbolic".into(), file: gio::File::for_path(crate::omarchy::install_dir()), kind: PlaceKind::Themes });
+        }
+        // Screenshots and recordings: on Omarchy always, elsewhere once there are some.
+        if glib::find_program_in_path("omarchy-capture-screenshot").is_some() || !crate::captures::list().is_empty() {
+            places.push(Place::Entry { name: tr("Captures"), icon: "camera-photo-symbolic".into(), file: gio::File::for_path(crate::captures::dirs().0), kind: PlaceKind::Captures });
         }
         places.push(Place::Entry { name: tr("Recent"), icon: "document-open-recent-symbolic".into(), file: gio::File::for_uri("recent:///"), kind: PlaceKind::Builtin });
         let trash_name = match *self.trash_summary.borrow() {
@@ -1674,6 +1697,8 @@ impl Window {
                     PlaceKind::Bookmark => (tr("Bookmark"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_) | PlaceKind::Feed(_) | PlaceKind::Backup => continue,
                     PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
+                    PlaceKind::Themes => (tr("Gallery of Omarchy themes"), PaletteTarget::Action("themes".into())),
+                    PlaceKind::Captures => (tr("Screenshots and screen recordings"), PaletteTarget::Action("captures".into())),
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
                 };
                 let icon: &'static str = if icon.starts_with("tag:") { "tag-symbolic" } else { leak_icon(icon) };
@@ -2326,6 +2351,7 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     if f.images && !in_trash {
         let img = gio::Menu::new();
         img.append(Some(tr("Set as Wallpaper").as_str()), Some("win.set-wallpaper"));
+        img.append(Some(tr("Create Theme from Picture…").as_str()), Some("win.theme-from-picture"));
         img.append(Some(tr("Rotate Left").as_str()), Some("win.image-rotate::-90"));
         img.append(Some(tr("Rotate Right").as_str()), Some("win.image-rotate::90"));
         img.append(Some(tr("Resize…").as_str()), Some("win.image-resize"));

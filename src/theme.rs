@@ -198,20 +198,23 @@ pub fn load_from(dir: &Path) -> Palette {
             let pick = |key: &str, fallback: Rgb| colors.get(key).copied().unwrap_or(fallback);
             p.background = pick("background", p.background);
             p.foreground = pick("foreground", p.foreground);
-            p.accent = pick("accent", pick("blue", p.accent));
-            p.blue = pick("blue", p.accent);
-            p.red = pick("red", p.red);
-            p.yellow = pick("yellow", p.yellow);
+            // Today's colors.toml names the terminal colours color0..color15; older ones
+            // (and other tools) use words. Both are read.
+            let named = |word: &str, number: &str, fallback: Rgb| colors.get(word).or_else(|| colors.get(number)).copied().unwrap_or(fallback);
+            p.blue = named("blue", "color4", p.blue);
+            p.accent = pick("accent", p.blue);
+            p.red = named("red", "color1", p.red);
+            p.yellow = named("yellow", "color3", p.yellow);
             p.orange = pick("orange", p.red.mix(p.yellow, 0.5));
-            p.green = pick("green", p.green);
-            p.magenta = pick("magenta", p.magenta);
-            p.cyan = pick("cyan", p.cyan);
-            p.bright_red = pick("bright_red", p.red);
-            p.bright_yellow = pick("bright_yellow", p.yellow);
-            p.bright_green = pick("bright_green", p.green);
-            p.bright_blue = pick("bright_blue", p.blue);
-            p.bright_magenta = pick("bright_magenta", p.magenta);
-            p.bright_cyan = pick("bright_cyan", p.cyan);
+            p.green = named("green", "color2", p.green);
+            p.magenta = named("magenta", "color5", p.magenta);
+            p.cyan = named("cyan", "color6", p.cyan);
+            p.bright_red = named("bright_red", "color9", p.red);
+            p.bright_yellow = named("bright_yellow", "color11", p.yellow);
+            p.bright_green = named("bright_green", "color10", p.green);
+            p.bright_blue = named("bright_blue", "color12", p.blue);
+            p.bright_magenta = named("bright_magenta", "color13", p.magenta);
+            p.bright_cyan = named("bright_cyan", "color14", p.cyan);
             p.light = match strings.get("mode").or_else(|| strings.get("theme_type")).map(|s| s.as_str()) {
                 Some("light") => true,
                 Some("dark") => false,
@@ -448,6 +451,120 @@ pub fn css(p: &Palette) -> String {
 }}
 .omafile-help-found {{
   color: {green};
+}}
+.omafile-theme-page {{
+  background-color: {view_bg};
+}}
+.omafile-theme-flow > flowboxchild {{
+  padding: 0;
+  border-radius: 14px;
+  background: none;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}}
+.omafile-theme-flow > flowboxchild:hover {{
+  transform: scale(1.025);
+}}
+.omafile-theme-flow > flowboxchild:active {{
+  transform: scale(0.985);
+}}
+.omafile-theme-flow > flowboxchild:focus-visible {{
+  outline: 2px solid {accent};
+  outline-offset: 3px;
+}}
+.omafile-theme-card {{
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px alpha(black, 0.25), 0 6px 18px alpha(black, 0.22);
+}}
+.omafile-theme-card.omafile-theme-current {{
+  box-shadow: 0 0 0 3px {accent}, 0 8px 22px alpha(black, 0.3);
+}}
+.omafile-theme-picture {{
+  opacity: 0;
+  transition: opacity 420ms ease-out;
+}}
+.omafile-theme-picture.omafile-theme-loaded {{
+  opacity: 1;
+}}
+.omafile-theme-caption {{
+  padding: 26px 12px 9px 12px;
+  color: white;
+  background-image: linear-gradient(to bottom, alpha(black, 0), alpha(black, 0.72));
+}}
+.omafile-theme-name {{
+  font-weight: 700;
+  text-shadow: 0 1px 3px alpha(black, 0.6);
+}}
+.omafile-theme-badge {{
+  margin: 9px;
+  padding: 5px;
+  border-radius: 999px;
+  color: {accent_fg};
+  background-color: {accent};
+}}
+.omafile-theme-own {{
+  margin: 9px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.8em;
+  font-weight: 700;
+  color: white;
+  background-color: alpha(black, 0.5);
+}}
+.omafile-theme-mock {{
+  border-radius: 12px;
+}}
+.omafile-theme-accent {{
+  padding: 3px;
+  min-width: 0;
+  min-height: 0;
+}}
+.omafile-theme-accent:checked {{
+  box-shadow: 0 0 0 2px {accent};
+  background: none;
+}}
+.omafile-menu-item {{
+  padding: 6px 12px;
+  font-weight: normal;
+  border-radius: 6px;
+}}
+.omafile-capture-day {{
+  font-size: 1.15em;
+  font-weight: 800;
+  margin: 12px 2px 6px 2px;
+}}
+.omafile-capture-actions {{
+  margin: 8px;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}}
+.omafile-capture-actions button {{
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+}}
+flowboxchild:hover .omafile-capture-actions,
+flowboxchild:focus-within .omafile-capture-actions {{
+  opacity: 1;
+}}
+.omafile-capture-play {{
+  padding: 11px;
+  border-radius: 999px;
+  color: white;
+  background-color: alpha(black, 0.5);
+}}
+@keyframes omafile-capture-arrive {{
+  from {{ opacity: 0; transform: scale(0.82); }}
+  60% {{ opacity: 1; transform: scale(1.04); }}
+  to {{ opacity: 1; transform: scale(1); }}
+}}
+.omafile-capture-new {{
+  animation: omafile-capture-arrive 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}}
+.omafile-capture-card {{
+  transition: box-shadow 900ms ease-out;
+}}
+.omafile-capture-new .omafile-capture-card {{
+  box-shadow: 0 0 0 3px {accent}, 0 8px 22px alpha(black, 0.3);
 }}
 .omafile-vault-page {{
   background-color: {view_bg};

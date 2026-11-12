@@ -52,6 +52,7 @@ pub const FEATURES: &[Feature] = &[
     f("Organising", "accessories-text-editor-symbolic", "Notes on files", "A note on any file or folder, shown as a badge next to its name.", "edit-note", false, ""),
     // ----- documents and media
     f("Documents and media", "x-office-document-symbolic", "PDF tools", "Merge, split, extract pages, or make a PDF from pictures.", "", false, "Context menu › PDF"),
+    f("Documents and media", "camera-photo-symbolic", "Captures", "The screenshots and screen recordings Omarchy makes, as a film strip by day. Drag one straight into another program, copy it, draw on it, make a GIF of a recording; a new capture appears by itself.", "captures", true, ""),
     f("Documents and media", "image-x-generic-symbolic", "Picture and video tools", "Resize, rotate and convert pictures; trim videos, make GIFs, extract or convert audio.", "", false, "Context menu › Image / Video / Audio"),
     f("Documents and media", "x-office-address-book-symbolic", "eBooks", "Covers and details for EPUB and comics, rename from metadata, send to an eReader, convert with Calibre.", "", false, "Context menu › eBook"),
     f("Documents and media", "package-x-generic-symbolic", "Archives", "Look inside archives like folders, extract here, compress a selection.", "", false, "Context menu › Extract / Compress"),
@@ -74,6 +75,7 @@ pub const FEATURES: &[Feature] = &[
     f("For developers", "applications-engineering-symbolic", "Project actions", "Knows Rust, Node, Python, Make and more: build, test and run from the project's folder.", "", false, "Command palette in a project folder"),
     f("For developers", "edit-copy-symbolic", "Compare", "Two files side by side, or two folders with what differs.", "compare", false, ""),
     // ----- making it yours
+    f("Make it yours", "applications-graphics-symbolic", "Theme atelier", "Every Omarchy theme as a card with its background and colours; one click turns it on. Any picture becomes a theme of its own: omafile takes the colours out of it, shows the desktop they would make, and saves a theme Omarchy builds the rest of.", "themes", true, "Context menu of a picture › Create Theme from Picture…"),
     f("Make it yours", "applications-graphics-symbolic", "Follows your Omarchy theme", "Colours, accent, light or dark and the icon set come from the active theme and change with it at once.", "", false, "Sidebar › Omarchy Themes"),
     f("Make it yours", "preferences-desktop-locale-symbolic", "Your language", "English, German, Spanish, French, Italian, Portuguese and Dutch, chosen from the system.", "", false, "Omarchy › Setup › Language"),
     f("Make it yours", "input-keyboard-symbolic", "Keyboard first", "Every command has a shortcut; Vim keys can be switched on in groups.", "preferences", true, ""),

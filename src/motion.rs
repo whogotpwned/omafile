@@ -49,6 +49,21 @@ pub fn slide_paned(paned: &gtk::Paned, to: i32, ms: u32, done: Option<Box<dyn Fn
     property(paned, "position", from, to as f64, ms, done);
 }
 
+/// Let a widget come in: it fades up from nothing, a little later the further down the
+/// list it is, so a page of cards fills like a hand of cards being dealt.
+pub fn stagger_in(widget: &gtk::Widget, index: u32) {
+    if !animations_enabled(widget) {
+        return;
+    }
+    widget.set_opacity(0.0);
+    let weak = widget.downgrade();
+    glib::timeout_add_local_once(std::time::Duration::from_millis(30 + (index.min(24) * 28) as u64), move || {
+        if let Some(widget) = weak.upgrade() {
+            property(&widget, "opacity", 0.0, 1.0, 320, None);
+        }
+    });
+}
+
 pub fn animations_enabled(widget: &impl IsA<gtk::Widget>) -> bool {
     widget.settings().is_gtk_enable_animations()
 }
