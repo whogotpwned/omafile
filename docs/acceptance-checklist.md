@@ -175,3 +175,11 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 18.5 `Alt+Print`, record a few seconds, stop: the recording appears with its length; resting the pointer on it flips through the stills; *Save as GIF* writes a GIF beside it.
 - [ ] 18.6 With `OMARCHY_SCREENSHOT_DIR` set to another folder (in `~/.config/uwsm/default`), new screenshots are found there.
 - [ ] 18.7 Bar button, right click › *Copy the newest capture*: a notification, and paste works. `omafile --captures` opens the page.
+
+## 19. First start
+
+- [ ] 19.1 On a machine (or user) where omafile never ran: after `install.sh` / the package, the first window shows the tour; the application icon is on the first stop.
+- [ ] 19.2 *Skip the Tour* closes it; starting omafile again shows no tour. `~/.config/omafile/omafile.conf` holds `tour = seen`.
+- [ ] 19.3 Upgrading an existing installation to this version: no tour appears.
+- [ ] 19.4 The first start is not a window (bar button › *Copy the newest capture*, or a browser's *Show in folder*): the tour comes with the first window that opens afterwards.
+- [ ] 19.5 Swiping on a touchpad moves between the stops; with animations off (`gsettings set org.gnome.desktop.interface enable-animations false`) the stops change without motion.

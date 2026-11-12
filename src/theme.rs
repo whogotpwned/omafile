@@ -566,6 +566,40 @@ flowboxchild:focus-within .omafile-capture-actions {{
 .omafile-capture-new .omafile-capture-card {{
   box-shadow: 0 0 0 3px {accent}, 0 8px 22px alpha(black, 0.3);
 }}
+.omafile-tour-bubble {{
+  padding: 14px;
+  border-radius: 999px;
+  color: {accent};
+  background-color: alpha({accent}, 0.14);
+  opacity: 0;
+}}
+.omafile-tour-bubble.omafile-tour-main {{
+  padding: 22px;
+  background-color: alpha({accent}, 0.22);
+}}
+.omafile-tour-art {{
+  opacity: 0;
+  box-shadow: 0 8px 24px alpha(black, 0.3);
+}}
+.omafile-tour-text {{
+  font-size: 1.08em;
+  opacity: 0.86;
+}}
+@keyframes omafile-tour-pop {{
+  from {{ opacity: 0; transform: scale(0.6); }}
+  70% {{ opacity: 1; transform: scale(1.06); }}
+  to {{ opacity: 1; transform: scale(1); }}
+}}
+.omafile-tour-in .omafile-tour-bubble,
+.omafile-tour-in .omafile-tour-art {{
+  animation: omafile-tour-pop 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}}
+.omafile-tour-in .omafile-tour-bubble:nth-child(1) {{
+  animation-delay: 120ms;
+}}
+.omafile-tour-in .omafile-tour-bubble:nth-child(3) {{
+  animation-delay: 200ms;
+}}
 .omafile-vault-page {{
   background-color: {view_bg};
 }}

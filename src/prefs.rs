@@ -19,6 +19,11 @@ fn path() -> PathBuf {
 impl Prefs {
     pub fn load() -> Rc<Self> {
         let prefs = Prefs::default();
+        // A fresh installation: omafile has never kept anything on this computer. Noted
+        // before anything is written, and remembered, so that the tour is shown with the
+        // first window even when this first start has none (a start from the bar's menu,
+        // or by another program asking to show a folder).
+        let fresh = is_fresh(&glib::user_config_dir().join("omafile"), &glib::user_state_dir().join("omafile"));
         if let Ok(text) = std::fs::read_to_string(path()) {
             let mut values = prefs.values.borrow_mut();
             for line in text.lines() {
@@ -30,6 +35,9 @@ impl Prefs {
                     values.insert(k.trim().to_string(), v.trim().to_string());
                 }
             }
+        }
+        if fresh {
+            prefs.set("tour", Some("pending"));
         }
         Rc::new(prefs)
     }
@@ -70,6 +78,13 @@ impl Prefs {
     }
 }
 
+/// Whether omafile has never run here: neither its configuration nor its state folder holds
+/// anything. An upgrade from any earlier version leaves at least one of them filled.
+pub fn is_fresh(config: &std::path::Path, state: &std::path::Path) -> bool {
+    let empty = |dir: &std::path::Path| std::fs::read_dir(dir).map(|mut entries| entries.next().is_none()).unwrap_or(true);
+    empty(config) && empty(state)
+}
+
 /// Icon themes installed on this system (directories with an index.theme).
 pub fn installed_icon_themes() -> Vec<String> {
     let mut dirs: Vec<PathBuf> = vec![glib::home_dir().join(".icons"), glib::user_data_dir().join("icons")];
@@ -98,4 +113,26 @@ pub fn installed_icon_themes() -> Vec<String> {
         }
     }
     names.into_iter().collect()
+}
+
+#[cfg(test)]
+mod fresh_tests {
+    use super::*;
+
+    #[test]
+    fn an_installation_is_fresh_until_omafile_has_kept_something() {
+        let root = std::env::temp_dir().join(format!("omafile-fresh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (config, state) = (root.join("config/omafile"), root.join("state/omafile"));
+        assert!(is_fresh(&config, &state), "nothing there at all");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::create_dir_all(&state).unwrap();
+        assert!(is_fresh(&config, &state), "empty folders are still nothing");
+        std::fs::write(state.join("status"), "busy=0\n").unwrap();
+        assert!(!is_fresh(&config, &state), "an earlier version ran here: an upgrade, not a first start");
+        std::fs::remove_file(state.join("status")).unwrap();
+        std::fs::write(config.join("bookmarks"), "").unwrap();
+        assert!(!is_fresh(&config, &state));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 }

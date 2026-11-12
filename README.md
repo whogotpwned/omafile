@@ -10,13 +10,13 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.26.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.27.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
 [![Rust](https://img.shields.io/badge/Rust-2021-e0af68)](Cargo.toml)
 [![Arch package](https://img.shields.io/badge/Arch-PKGBUILD-ad8ee6)](PKGBUILD)
-[![Tests](https://img.shields.io/badge/tests-119%20passing-73daca)](#development)
+[![Tests](https://img.shields.io/badge/tests-122%20passing-73daca)](#development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-565f89)](LICENSE)
 
 <img src="docs/screenshot-hero.png" alt="Two omafile windows in Tokyo Night. Front left: grid view with thumbnails for photos, a GIF, a video, eBook covers, a PDF and a song, the preview pane, an unlocked and a locked vault and an iPhone in the sidebar and the mini player at its bottom. Right: the Now Playing view with cover, live spectrum and transport controls." width="900">
@@ -197,6 +197,12 @@ Context menu · Connect to Server · custom folder icon · vault menu · a tag l
 Panels move the way the rest of Omarchy moves instead of snapping: the terminal panel slides up and down, the split view slides its divider in from the right, a new folder cross-fades over the old one (the previous view is frozen and fades out), slow listings show pulsing skeleton rows, thumbnails cross-fade over their icon, hover and selection colours ease. libadwaita animations with an ease-out-quint curve over about 260 ms; `gtk-enable-animations` (reduce motion) switches every effect off at once.
 
 ---
+
+## First start
+
+![tour](docs/screenshot-tour.png)
+
+The first window after installing omafile opens with a **tour**: seven short stops (the keyboard, the views, what it shares with Omarchy, backups and vaults, devices and servers, where everything else is), each with the shortcuts that belong to it. `→` / `Enter` go on, `←` goes back, **Skip the Tour** or `Esc` ends it at any point. It is shown **once**, and only on a fresh installation: an upgrade does not bring it up, and neither does a second start. *Help (`F1`) › About › Take the Tour* and the command palette (*Take the Tour*) open it again whenever you like. To see it again as on the first day, set `tour = pending` in `~/.config/omafile/omafile.conf`.
 
 ## Keyboard shortcuts
 
@@ -497,11 +503,11 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.26.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.27.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects
-cargo test          # 119 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
+cargo test          # 122 tests: parsers, undo ops, git, bulk rename, venv detection, LAN share, bindings completeness
 cargo clippy
 ```
 

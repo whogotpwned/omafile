@@ -2,6 +2,12 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.27.0 — 2026-11-12
+
+### Added
+- **A tour for new installations**: with the first window after omafile was installed, seven short stops show what it can do (keyboard, views, Omarchy integration, safety, devices and servers, where to find the rest), each with its shortcuts; the Omarchy stop shows a small desktop in the colours of the current theme. *Skip the Tour*, `Esc` or the last stop end it, and it never comes back by itself. Arrow keys, `Enter` and swiping walk through it.
+- The tour is shown only on a fresh installation (no configuration and no state from an earlier version): upgrading does not trigger it. *Help › About › Take the Tour* and the command palette open it at any time.
+
 ## 0.26.0 — 2026-11-12
 
 ### Added

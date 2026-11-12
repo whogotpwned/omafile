@@ -255,6 +255,16 @@ fn about_page(window: &Rc<Window>) -> gtk::Widget {
     let links = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     links.set_halign(gtk::Align::Center);
     links.set_margin_top(6);
+    let tour = gtk::Button::builder().label(tr("Take the Tour")).build();
+    tour.add_css_class("pill");
+    tour.add_css_class("suggested-action");
+    let weak = Rc::downgrade(window);
+    tour.connect_clicked(move |_| {
+        if let Some(w) = weak.upgrade() {
+            w.show_tour();
+        }
+    });
+    links.append(&tour);
     for (label, uri) in [(tr("Website"), WEBSITE.to_string()), (tr("Changelog"), format!("{WEBSITE}/blob/main/CHANGELOG.md")), (tr("Report a Problem"), format!("{WEBSITE}/issues"))] {
         let button = gtk::Button::builder().label(label).build();
         button.add_css_class("pill");

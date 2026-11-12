@@ -57,6 +57,7 @@ mod termpanel;
 mod theme;
 mod thumbs;
 mod transfer;
+mod tour;
 mod trashauto;
 mod undo;
 mod vaults;

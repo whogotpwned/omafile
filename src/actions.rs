@@ -86,6 +86,7 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("vault-add", "Add Vault (encrypted folder in the sidebar)", "changes-prevent-symbolic"),
     ("versions", "Earlier Versions (snapshots)", "document-open-recent-symbolic"),
     ("backup", "Backup: Status, History and Settings", "document-open-recent-symbolic"),
+    ("tour", "Take the Tour", "starred-symbolic"),
     ("themes", "Omarchy Themes: Gallery", "applications-graphics-symbolic"),
     ("captures", "Captures: Screenshots and Screen Recordings", "camera-photo-symbolic"),
     ("theme-from-picture", "Create Theme from Picture…", "applications-graphics-symbolic"),
@@ -653,6 +654,7 @@ impl Window {
         }));
         simple("versions", Box::new(|w| w.versions_selected()));
         simple("backup", Box::new(|w| w.open_backup()));
+        simple("tour", Box::new(|w| w.show_tour()));
         simple("themes", Box::new(|w| w.open_themes()));
         simple("captures", Box::new(|w| w.open_captures()));
         simple("theme-from-picture", Box::new(|w| w.theme_from_picture()));

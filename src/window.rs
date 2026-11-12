@@ -405,6 +405,7 @@ impl Window {
         crate::nowplaying::NowPlaying::install(&this);
         this.start_feed_updates();
         this.start_backup_watch();
+        this.maybe_show_tour();
         if std::env::args().any(|a| a == "--captures") {
             let weak = Rc::downgrade(&this);
             glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
