@@ -664,10 +664,11 @@ pub fn property(now: &Now, interface: &str, name: &str, art: Option<&str>) -> Op
             let track = glib::variant::ObjectPath::try_from(format!("/io/github/whogotpwned/Omafile/radio/{}", now.episode)).ok()?;
             dict.insert_value("mpris:trackid", &track.to_variant());
             dict.insert_value("xesam:title", &title.to_variant());
-            dict.insert_value("xesam:artist", &vec![artist].to_variant());
-            // Under a song stands its station; under a station's bare name, what kind it is.
+            dict.insert_value("xesam:artist", &vec![artist.clone()].to_variant());
+            // Under a song stands its station; where the station's name stands already (alone, or
+            // as the maker of an episode), what kind of station it is.
             let name = station.map(|s| s.name.clone()).unwrap_or_default();
-            let album = if title == name { station.map(|s| crate::radioui::genre_title(&s.genre)).unwrap_or_default() } else { name };
+            let album = if title == name || artist == name { station.map(|s| crate::radioui::genre_title(&s.genre)).unwrap_or_default() } else { name };
             dict.insert_value("xesam:album", &album.to_variant());
             dict.insert_value("xesam:url", &station.map(|s| s.url.clone()).unwrap_or_default().to_variant());
             if seekable {
@@ -863,6 +864,7 @@ mod tests {
         assert_eq!(get(&cast, "CanSeek").get::<bool>(), Some(true));
         assert_eq!(get(&cast, "Position").get::<i64>(), Some(90_500_000));
         assert_eq!(glib::VariantDict::new(Some(&get(&cast, "Metadata"))).lookup::<i64>("mpris:length").unwrap(), Some(3_600_000_000));
+        assert_eq!(glib::VariantDict::new(Some(&get(&cast, "Metadata"))).lookup::<String>("xesam:album").unwrap().as_deref(), Some("Electronic"), "the podcast's name stands as the artist already");
         assert_eq!(property(&cast, ROOT, "Identity", None).unwrap().get::<String>().unwrap(), "omafile Radio");
         assert!(property(&cast, PLAYER_IFACE, "NoSuchThing", None).is_none());
         // Every property the interface declares has a value.

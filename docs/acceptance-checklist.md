@@ -183,3 +183,15 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 19.3 Upgrading an existing installation to this version: no tour appears.
 - [ ] 19.4 The first start is not a window (bar button › *Copy the newest capture*, or a browser's *Show in folder*): the tour comes with the first window that opens afterwards.
 - [ ] 19.5 Swiping on a touchpad moves between the stops; with animations off (`gsettings set org.gnome.desktop.interface enable-animations false`) the stops change without motion.
+
+## 20. Radio (needs sound and the internet)
+
+- [ ] 20.1 `Ctrl+Alt+O`: the page shows *Electronic* and *Tech and hacking news*. A click on *SomaFM Groove Salad*: music within a few seconds, the bar at the top names the song, the card has the accent ring.
+- [ ] 20.2 `F8`: Now Playing shows the station's cover, the song and *omafile Radio*; the equalizer moves. The mini player in the sidebar shows the same.
+- [ ] 20.3 The keyboard's play / pause key pauses and resumes; the next-track key changes to the next station. Omarchy's audio panel shows the radio as the playing source.
+- [ ] 20.4 A click on *Darknet Diaries*: the newest episode plays; the progress bar in Now Playing can be dragged; *Next* plays the episode before it.
+- [ ] 20.5 *Add Station* with the address of another stream (for example a `.pls` from a station's website): it appears under *My stations* and plays. With a podcast's feed address and no name: the name comes from the feed, the card says *Podcast*.
+- [ ] 20.6 Remove a built-in station, then the undo arrow at the top: it is back.
+- [ ] 20.7 Close the window while a station plays: the music goes on, the media keys still work. Open omafile again: the Radio page shows what plays. *Stop* ends it, and no `mpv` process is left (`pgrep -a mpv`).
+- [ ] 20.8 With the network cable out, a click on a station: after a moment a notification says the address does not answer; nothing hangs.
+- [ ] 20.9 Bar button, right click › *Radio* opens the page.

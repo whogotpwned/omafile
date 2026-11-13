@@ -1905,13 +1905,13 @@ impl Pane {
         let virtual_view = self.state.borrow().virtual_title.is_some();
         let smart_view = self.state.borrow().virtual_title.as_deref().map(|t| t.starts_with("Smart: ")).unwrap_or(false);
         let mut text = if smart_view {
-            format!("{total} {} in this smart folder", if total == 1 { tr("match") } else { tr("matches") })
+            if total == 1 { tr("1 match in this smart folder") } else { crate::trf!("{n} matches in this smart folder", n = total) }
         } else if virtual_view {
-            format!("{total} tagged {}", if total == 1 { tr("item") } else { tr("items") })
+            if total == 1 { tr("1 tagged item") } else { crate::trf!("{n} tagged items", n = total) }
         } else if deep && self.content_toggle.is_active() {
-            format!("{total} {} contain the text", if total == 1 { tr("file") } else { tr("files") })
+            if total == 1 { tr("1 file contains the text") } else { crate::trf!("{n} files contain the text", n = total) }
         } else if deep {
-            format!("{total} {} found", if total == 1 { tr("match") } else { tr("matches") })
+            if total == 1 { tr("1 match found") } else { crate::trf!("{n} matches found", n = total) }
         } else {
             format!("{total} {}", if total == 1 { tr("item") } else { tr("items") })
         };

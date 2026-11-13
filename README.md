@@ -10,7 +10,7 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.28.2-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.29.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
@@ -91,6 +91,7 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 | ![nearby](docs/screenshot-nearby.png) | **iPhone & iPad, three ways.** **Nearby** (`Ctrl+Alt+P`): omafile speaks the LocalSend protocol, so with the free LocalSend app on the phone (Settings › Encryption off) the iPhone appears under *iPhone & iPad* in the sidebar; drop files on it to send them, and files sent from the phone arrive after an *Accept* prompt in `~/Downloads` (or any folder you pick), with a *Show* button on the toast. **USB**: with `gvfs-afc` the phone mounts like a drive; *Import Photos* copies the camera roll into `Pictures/iPhone/YYYY-MM`, converts HEIC to JPEG (libheif or ImageMagick), skips what was imported before, undoable; also `omafile --import-photos` and the bar menu. **No app at all**: *Share on Local Network* now serves a phone-friendly page with the selection to download **and** a drop zone / picker that sends photos straight into the folder on show; scan the QR code with the camera. Omarchy's firewall lets only port 53317 in (it is opened for LocalSend), so omafile listens there and serves the share page on the same port under a private path; nothing has to be opened by hand. |
 | ![ebooks](docs/screenshot-ebook.png) | **eBooks**: EPUB, comic archives (CBZ / CBR) and FictionBook show their **cover** in list, grid and preview, the preview and Properties list title, author, series, publisher, year, language, ISBN and chapter count, and the page turner pages from the cover into the **chapters** (text) or comic pages (`↑` `↓` in Quick Look). Context menu › *eBook*: *Open in Reader* (foliate, Calibre viewer, KOReader, Okular), *Rename from Metadata* (`Author - Title (Series 1).epub`, undoable), *Send to eReader* (Kindle `documents/`, Kobo, Tolino, PocketBook… when plugged in) and *Convert to* EPUB / MOBI / AZW3 / PDF with Calibre's `ebook-convert`. Covers go through the shared thumbnail cache; everything is read with `bsdtar`, no Calibre needed for reading. |
 | ![now playing](docs/screenshot-nowplaying.png) | **Now Playing** (`F8`): whatever plays on this computer, be it a YouTube tab in the browser, Spotify or mpv (anything that speaks MPRIS), shows up in omafile. While a player exists, a small **live equalizer** sits in the header and a **mini player** at the bottom of the sidebar (cover, title, its own equalizer, previous / play-pause / next, progress). Everything moves: the mini player slides up and glows once when music starts, the cover cross-fades between tracks and nods with the bass, buttons bounce, and both slide away when the player quits. `F8` or a click slides in the **full view**: the cover with a halo that breathes with the bass over a backdrop in the cover's colours, a 44-band **spectrum** with falling peaks and a reflection, seek bar, shuffle, repeat, volume, a chooser when several players run and a button that brings the player to the front. Keys there: `Space` play / pause, `←` `→` seek, `↑` `↓` volume, `N` / `P` next / previous, `Esc` back to the files. The spectrum follows the real sound through `parec` / `pw-record` (only while the view is open, nothing is stored) and falls back to a generated animation; both can be switched off in Preferences › Now Playing. ![mini player](docs/screenshot-nowplaying-mini.png) ![in motion](docs/nowplaying.gif) |
+| ![radio](docs/screenshot-radio.png) | **Radio** (`Ctrl+Alt+O`, sidebar › *Radio*): **internet radio and podcasts** where the files are. Ten stations of electronic music (SomaFM: Groove Salad, DEF CON Radio, Space Station Soma, Drone Zone, cliqhop and more) and eight **tech and hacking news** podcasts (Security Now, Darknet Diaries, Risky Business, SANS Internet Stormcast, Hacker Public Radio, Changelog News, Logbuch:Netzpolitik, Chaosradio) are there from the start. **Add Station** takes any address: a stream, a `.pls` / `.m3u` playlist, or a podcast's feed; omafile asks the address what it is and finds the name by itself. Stations can be changed, removed and sorted into genres of your own; the built-in ones come back with one click. A click on a card plays; a stream shows the song it names, a podcast plays its newest episode and *Next* walks back through the older ones. **It plays in the player that is already there**: the radio announces itself as a media player (MPRIS), so it shows in *Now Playing* (`F8`) with its cover and the equalizer, in the sidebar's mini player, on the media keys and in every bar widget that shows what plays. It **goes on when the window is closed**; *Stop* (on the page, in the palette, or the sidebar entry's menu) ends it. Playback is done by `mpv`, which Omarchy ships. `omafile --radio` opens the page; the bar button's menu has the entry too. |
 | ![pdf pages](docs/screenshot-pdf-pages.png) | **Multi-page documents**: a `‹ 2 / 3 ›` turner appears under the page in the preview pane and in Quick Look. Pages render on demand through poppler at the pane's resolution, so flipping through a long PDF never blocks the list. |
 | ![tabs](docs/screenshot-tabs.png) | **Tabs** (`Ctrl+T`), **split view** (`F6`) with two sets of tabs and their own histories, drag files across sides or between a local and a remote tab. **Sessions** bring tabs, split, open terminal panels and window size back on the next start. |
 | ![path completion](docs/screenshot-complete.png) | **Editable path bar** (`Ctrl+L`): the breadcrumb becomes a text field with the cursor at the end, folders complete as you type (`Tab` accepts, `↑`/`↓` pick, `Enter` opens). `~`, relative paths, `sftp://` and `user@host` all work. |
@@ -238,6 +239,7 @@ The first window after installing omafile opens with a **tour**: seven short sto
 | `Ctrl+Alt+K` | Backup: status, the last backups, drive, schedule and settings |
 | `Ctrl+Alt+A` | Theme atelier: the gallery of Omarchy themes, a theme from a picture |
 | `Ctrl+Alt+G` | Captures: screenshots and screen recordings by day |
+| `Ctrl+Alt+O` | Radio: internet radio and podcasts (plays in Now Playing and on the media keys) |
 | `F8` | Now Playing: full media view (in it: `Space`, `←` `→`, `↑` `↓`, `N` / `P`, `Esc`) |
 | `Ctrl+Alt+C` / `Ctrl+Alt+B` | Git commit / switch branch (click a badge to stage) |
 | `Ctrl+Alt+D` `Ctrl+Alt+M` `Ctrl+Alt+S` `Ctrl+Alt+V` | Compare, note, save smart folder, activate venv |
@@ -257,6 +259,7 @@ omafile --print-recent   recent folders, newest first, one path per line
 omafile --print-bindings every binding: keys, action, group (tab separated)
 omafile --lock-all       unmount every unlocked gocryptfs folder (what the bar button's "Lock all" runs)
 omafile --captures       open omafile on the screenshots and screen recordings
+omafile --radio          open omafile on the radio stations
 omafile --copy-capture   put the newest screenshot or recording on the clipboard (wl-copy)
 omafile --backup         back up now to the drive chosen under Backup (what the timer runs; add --scheduled to do it only when one is due)
 omafile --version
@@ -326,6 +329,7 @@ omafile is built for a stock Omarchy install and uses what is already there. Onl
 | `gtk4`, `libadwaita` | the whole UI | yes (Nautilus) | `sudo pacman -S --needed gtk4 libadwaita` |
 | `vte4` | terminal panel | **no** | `sudo pacman -S --needed vte4`; required, the binary links against it |
 | `gvfs` (+ `gvfs-smb`, `gvfs-nfs`, `gvfs-mtp`) | trash, drives, SFTP, archives in place | yes | `sudo pacman -S --needed gvfs` |
+| `mpv` | radio and podcasts | yes | `sudo pacman -S --needed mpv`; the Radio page says so |
 | `gocryptfs` (+ `fuse3`) | encrypted folders | **no** | `sudo pacman -S --needed gocryptfs`; the vault entries say so |
 | `git` | status badges, branch line, git actions | yes | badges stay off |
 | `fd` | fast recursive search | yes | slower GIO walk |
@@ -394,6 +398,7 @@ The button shows `⇅` while a copy or move runs and a lock glyph while encrypte
 - **Icons.** The theme's `icons.theme` names the icon set (Yaru variants); omafile applies it itself, Preferences can override it.
 - **Live.** A `GFileMonitor` on the `current` directory catches the swap `omarchy-theme-set` performs and re-skins open windows.
 - **Themes and captures.** omafile never does Omarchy's work a second time: a theme is turned on with `omarchy-theme-set`, a background with `omarchy-theme-bg-set` / `omarchy-theme-bg-next`, a new theme is only a `colors.toml` for Omarchy's templates, and screenshots are taken and drawn on with Omarchy's tools.
+- **Radio.** Stations are played by the `mpv` Omarchy ships, started without a window and without its scripts; omafile presents it on MPRIS as one player (`org.mpris.MediaPlayer2.omafile`), which is what Omarchy's media keys and its shell's media service control.
 - **Launching.** Windows through `uwsm-app`, terminals through `uwsm app -- $TERMINAL`, files through the desktop portal, the editor through `omarchy-launch-editor`.
 - **Language.** `~/.config/omarchy/language` (*Setup › Language*) picks the UI language of the app and the bar widget; see [Languages](#languages).
 - **Shell plugin.** Built like the first-party `omarchy.menu` widget: `BarIconButton` in a `BarWidget`, `bar.run` for commands, `whogotpwned.*` namespace, `schemaVersion: 1`, `bar-widget` kind, `defaultSection`. `omarchy plugin validate .` passes.
@@ -411,13 +416,13 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 
 #### What is still open before publishing
 
-Status as of 0.28.2. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
+Status as of 0.29.0. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
 
 | # | Step | State | Who and how |
 |---|---|---|---|
 | 1 | **Try it on a real Omarchy.** Install the binary (`./install.sh --all`) and the bar button (`omarchy plugin add https://github.com/whogotpwned/omafile.git --enable`), run `omarchy plugin validate .` in the checkout, and work through [docs/acceptance-checklist.md](docs/acceptance-checklist.md). The bar button in particular has only ever been checked against the shell's source, never run inside the shell. | open | The maintainer, on an Omarchy machine. What fails becomes an issue. |
 | 2 | **Add GitHub topics** so the repository can be found: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`. There are none yet. | open | The maintainer: the gear next to *About* on the repository page. |
-| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.28.2 && git push origin v0.28.2` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
+| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.29.0 && git push origin v0.29.0` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
 | 4 | **Publish to the AUR**, after step 3: `packaging/aur/update.sh` fills in the checksums of the release, commit that, then `packaging/aur/publish.sh` pushes `omafile` and `omafile-bin`. | open | The maintainer: it needs an AUR account with an SSH **public** key added under *My Account*. The private key stays on the maintainer's machine and out of this repository. |
 | 5 | **List it on the marketplace**, after step 3: submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org), which is where Omarchy's manual sends plugin authors. The texts for the form are prepared in [docs/marketplace-submission.md](docs/marketplace-submission.md). That page could not be opened from the machine this was written on, so compare the form's fields with the prepared ones. | open | The maintainer: the submission is made in the author's name. |
 | 6 | **After publishing**: `omarchy plugin update` moves users to the tip of `main`, so `main` has to stay releasable; the weekly *Omarchy compatibility* workflow reports when a new Omarchy no longer fits; later versions repeat steps 3 to 5 (the marketplace has a form for new versions). The working branch `claude/relaxed-bohr-btoomh` can be deleted once `main` is what people install. | later | The maintainer. |
@@ -484,6 +489,7 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 | File | Content |
 |---|---|
 | `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `nearby-enabled`, `nearby-folder`, `nearby-accept-all`, `iphone-folder`, `iphone-convert-heic`, `auto-mount`, `trash-auto-days`) |
+| `~/.config/omafile/radio` | Radio stations, `kind<TAB>genre<TAB>name<TAB>address` per line (`live` or `podcast`); absent until the list is changed, then the built-in stations are in it too |
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
@@ -516,7 +522,7 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.28.2** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.29.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects

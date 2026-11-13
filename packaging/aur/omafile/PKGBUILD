@@ -1,6 +1,6 @@
 # Maintainer: whogotpwned
 pkgname=omafile
-pkgver=0.28.2
+pkgver=0.29.0
 pkgrel=1
 pkgdesc="Native GTK4/libadwaita file manager that follows the Omarchy theme"
 arch=('x86_64' 'aarch64')
@@ -12,6 +12,7 @@ optdepends=(
   'gvfs-afc: iPhone and iPad over USB'
   'libimobiledevice: iPhone and iPad over USB'
   'gvfs-mtp: Android phones over USB'
+  'mpv: internet radio and podcasts'
   'gocryptfs: encrypted folders'
   'git: status badges, stage, commit, branches'
   'diffutils: compare files and folders'

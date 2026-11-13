@@ -23,7 +23,7 @@ sections are `left`, `centerBegin`, `center`, `centerEnd`, `right` and `tray`.
 Clicks: left raises the open omafile window or opens the configured folder
 (`~` by default), right shows a places menu (Home, Downloads, Documents,
 Pictures, Projects, Trash, folder of the active terminal, new window, then
-*Screenshots and recordings* and *Copy the newest capture*), middle
+*Screenshots and recordings*, *Radio* and *Copy the newest capture*), middle
 opens the active terminal's folder. The icon is a Nerd Font glyph in the bar's
 font; change it with `omarchy bar set whogotpwned.omafile icon "󰉋"`.
 

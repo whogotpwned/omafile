@@ -190,6 +190,14 @@ BarWidget {
       }
 
       MenuRow {
+        text: i18n.t("Radio")
+        onTriggered: {
+          root.menuOpen = false
+          root.bar.run("setsid uwsm-app -- omafile --radio")
+        }
+      }
+
+      MenuRow {
         text: i18n.t("Copy the newest capture")
         onTriggered: {
           root.menuOpen = false

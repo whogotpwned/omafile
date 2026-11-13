@@ -2,6 +2,19 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.29.0 — 2026-11-13
+
+### Added
+- **Radio** (`Ctrl+Alt+O`, sidebar › *Radio*, `omafile --radio`, the bar button's menu): internet radio and podcasts in the file manager. Ten stations of electronic music from SomaFM and eight tech and hacking news podcasts (Security Now, Darknet Diaries, Risky Business, SANS Internet Stormcast, Hacker Public Radio, Changelog News, Logbuch:Netzpolitik, Chaosradio) are built in.
+- **Your own stations**: *Add Station* takes the address of a stream, of a `.pls` / `.m3u` playlist or of a podcast's feed. omafile asks the address what it is, finds a name when none is given, and files it under a genre of your choice. Stations can be changed and removed; removed built-in ones come back with one click. The list is `~/.config/omafile/radio`.
+- **It plays in the player that was already there.** The radio is a media player on the desktop (MPRIS), so *Now Playing*, the sidebar's mini player, the media keys and bar widgets show and control it like any other: the song a stream names, the episode of a podcast with its length and position, a cover per station. *Next* and *Previous* change the station; within a podcast they walk through the episodes.
+- The radio goes on when the window is closed and stops with *Stop*. `mpv` does the playing (part of Omarchy; an optional dependency elsewhere).
+- `scripts/check-radio.py` asks every built-in station for sound. It runs with every change and once a week, so a station that moved is noticed.
+- Feeds: an episode's sound (the enclosure of a podcast feed) is read along with the article.
+
+### Fixed
+- The status line of a search, a tag view and a smart folder was half English in the other languages ("0 Treffer found"); the whole line is translated now.
+
 ## 0.28.2 — 2026-11-12
 
 ### Changed
