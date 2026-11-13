@@ -15,12 +15,17 @@ prebuilt tarball, two AUR packages, and the Omarchy plugin marketplace.
 4. **Real-machine pass.** Work through [acceptance-checklist.md](acceptance-checklist.md)
    on an Omarchy install before the first tag.
 
+What of this is still open is kept as a table in the README, under
+*Publishing as an Omarchy plugin*. No credential belongs in this repository:
+the Release workflow uses the repository's own token, and the AUR is reached
+with an SSH key that stays on your machine.
+
 ## Every release
 
 ```sh
 scripts/bump-version.sh 0.18.0      # Cargo.toml, Cargo.lock, PKGBUILDs, manifest.json, README badge, changelog stub
 $EDITOR CHANGELOG.md                # write the entry
-cargo test --release && cargo clippy --release && python scripts/check-i18n.py && bash plugin/validate.sh
+cargo test --release && cargo clippy --release && python scripts/check-i18n.py && bash plugin/validate.sh && scripts/selftest.sh
 git commit -am "Release 0.18.0"
 git tag v0.18.0
 git push origin main v0.18.0
@@ -53,7 +58,7 @@ through the marketplace's verify form with the release commit SHA.
 
 | Job | Checks |
 |---|---|
-| `build` | `cargo build / test / clippy -D warnings` on Arch, translation catalogs, plugin manifest and version agreement, desktop entry, a start under Xvfb, the release tarball as an artifact |
+| `build` | `cargo build / test / clippy -D warnings` on Arch, translation catalogs, plugin manifest and version agreement, desktop entry, a start under Xvfb, the self-test (every command; English, and German in a small window), the Omarchy check against the latest release and the development branch, the release tarball as an artifact |
 | `package` | `makepkg` with the AUR PKGBUILD against the commit, installs the package, `namcap`, `.SRCINFO` freshness |
 
 ## Files

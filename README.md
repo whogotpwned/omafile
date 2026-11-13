@@ -409,11 +409,24 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 
 `add` clones into `~/.config/omarchy/plugins/whogotpwned.omafile`, validates like the shell does, refuses duplicate ids, executes nothing from the repository and never asks for sudo. The file manager binary is separate (`install.sh`, PKGBUILD), so removing one never touches the other.
 
+#### What is still open before publishing
+
+Status as of 0.28.2. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
+
+| # | Step | State | Who and how |
+|---|---|---|---|
+| 1 | **Try it on a real Omarchy.** Install the binary (`./install.sh --all`) and the bar button (`omarchy plugin add https://github.com/whogotpwned/omafile.git --enable`), run `omarchy plugin validate .` in the checkout, and work through [docs/acceptance-checklist.md](docs/acceptance-checklist.md). The bar button in particular has only ever been checked against the shell's source, never run inside the shell. | open | The maintainer, on an Omarchy machine. What fails becomes an issue. |
+| 2 | **Add GitHub topics** so the repository can be found: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`. There are none yet. | open | The maintainer: the gear next to *About* on the repository page. |
+| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.28.2 && git push origin v0.28.2` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
+| 4 | **Publish to the AUR**, after step 3: `packaging/aur/update.sh` fills in the checksums of the release, commit that, then `packaging/aur/publish.sh` pushes `omafile` and `omafile-bin`. | open | The maintainer: it needs an AUR account with an SSH **public** key added under *My Account*. The private key stays on the maintainer's machine and out of this repository. |
+| 5 | **List it on the marketplace**, after step 3: submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org), which is where Omarchy's manual sends plugin authors. The texts for the form are prepared in [docs/marketplace-submission.md](docs/marketplace-submission.md). That page could not be opened from the machine this was written on, so compare the form's fields with the prepared ones. | open | The maintainer: the submission is made in the author's name. |
+| 6 | **After publishing**: `omarchy plugin update` moves users to the tip of `main`, so `main` has to stay releasable; the weekly *Omarchy compatibility* workflow reports when a new Omarchy no longer fits; later versions repeat steps 3 to 5 (the marketplace has a form for new versions). The working branch `claude/relaxed-bohr-btoomh` can be deleted once `main` is what people install. | later | The maintainer. |
+
 <details>
 <summary>Release checklist and the rules the shell enforces</summary>
 
 1. `scripts/bump-version.sh X.Y.Z` sets the version in `Cargo.toml`, the PKGBUILDs, `manifest.json` and the README, and opens a changelog entry.
-2. `cargo test`, `cargo clippy`, `python scripts/check-i18n.py`, `omarchy plugin validate .` (mirrored in `plugin/validate.sh` for machines without Omarchy). CI runs the same on every push.
+2. `cargo test`, `cargo clippy`, `python scripts/check-i18n.py`, `scripts/selftest.sh`, `scripts/check-omarchy.py <omarchy checkout>`, `omarchy plugin validate .` (mirrored in `plugin/validate.sh` for machines without Omarchy). CI runs the same on every push.
 3. Commit, tag `vX.Y.Z`, push: the Release workflow builds the tarball and publishes the GitHub Release; `packaging/aur/update.sh` and `publish.sh` update the AUR. Details in [docs/RELEASING.md](docs/RELEASING.md); the real-machine pass is [docs/acceptance-checklist.md](docs/acceptance-checklist.md). `omarchy plugin update` fast-forwards users to the default branch, so keep it releasable.
 4. Submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org). GitHub topics: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`.
 
