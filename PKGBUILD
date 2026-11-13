@@ -12,6 +12,7 @@ optdepends=(
   'gvfs-afc: iPhone and iPad over USB'
   'libimobiledevice: iPhone and iPad over USB'
   'gvfs-mtp: Android phones over USB'
+  'mpv: internet radio and podcasts'
   'gocryptfs: encrypted folders'
   'git: status badges, stage, commit, branches'
   'diffutils: compare files and folders'

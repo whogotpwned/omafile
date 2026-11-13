@@ -277,6 +277,19 @@ pub struct Article {
     pub html: String,
     pub image: Option<String>,
     pub author: String,
+    /// The sound that comes with it: a podcast episode's file.
+    pub audio: Option<String>,
+}
+
+/// Whether an enclosure is sound: by its type, or by its ending when the feed names none.
+fn is_audio(kind: Option<&str>, url: &str) -> bool {
+    match kind {
+        Some(t) if !t.trim().is_empty() => t.starts_with("audio/"),
+        _ => {
+            let path = url.split(['?', '#']).next().unwrap_or("").to_lowercase();
+            [".mp3", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".flac"].iter().any(|e| path.ends_with(e))
+        }
+    }
 }
 
 /// Read a feed: its title and its articles, newest first. None when this is not a feed.
@@ -338,6 +351,9 @@ pub fn parse_feed(xml: &str) -> Option<(String, Vec<Article>)> {
                             if rel == "enclosure" && attr(&attrs, "type").map(|t| t.starts_with("image/")).unwrap_or(false) && a.image.is_none() {
                                 a.image = Some(href.to_string());
                             }
+                            if rel == "enclosure" && is_audio(attr(&attrs, "type"), href) && a.audio.is_none() {
+                                a.audio = Some(href.to_string());
+                            }
                         }
                     } else if !closed {
                         field = Some((name, String::new()));
@@ -348,6 +364,11 @@ pub fn parse_feed(xml: &str) -> Option<(String, Vec<Article>)> {
                     if let (Some(a), Some(url), true) = (current.as_mut(), attr(&attrs, "url"), is_image) {
                         if a.image.is_none() {
                             a.image = Some(url.to_string());
+                        }
+                    }
+                    if let (Some(a), Some(url)) = (current.as_mut(), attr(&attrs, "url")) {
+                        if name != "media:thumbnail" && !is_image && a.audio.is_none() && (is_audio(attr(&attrs, "type"), url) || attr(&attrs, "medium") == Some("audio")) {
+                            a.audio = Some(url.to_string());
                         }
                     }
                 }
@@ -817,6 +838,27 @@ pub fn to_markup(html: &str, base: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn podcast_episodes_carry_their_sound() {
+        let rss = r#"<rss><channel><title>Risky Talk</title>
+            <item><title>Episode 2</title><guid>2</guid><pubDate>Tue, 10 Nov 2026 10:00:00 GMT</pubDate>
+              <enclosure url="https://cdn.example.org/ep2.mp3?x=1" length="123" type="audio/mpeg"/>
+              <media:thumbnail url="https://cdn.example.org/ep2.jpg"/></item>
+            <item><title>Episode 1</title><guid>1</guid><pubDate>Tue, 03 Nov 2026 10:00:00 GMT</pubDate>
+              <enclosure url="https://cdn.example.org/ep1.m4a"/></item>
+            <item><title>Only a picture</title><guid>0</guid><enclosure url="https://cdn.example.org/p.png" type="image/png"/></item>
+          </channel></rss>"#;
+        let (title, items) = parse_feed(rss).unwrap();
+        assert_eq!(title, "Risky Talk");
+        assert_eq!(items[0].audio.as_deref(), Some("https://cdn.example.org/ep2.mp3?x=1"));
+        assert_eq!(items[0].image.as_deref(), Some("https://cdn.example.org/ep2.jpg"));
+        assert_eq!(items[1].audio.as_deref(), Some("https://cdn.example.org/ep1.m4a"), "no type: the ending says it is sound");
+        assert!(items.iter().find(|a| a.title == "Only a picture").unwrap().audio.is_none());
+        let atom = r#"<feed xmlns="http://www.w3.org/2005/Atom"><title>Atom Cast</title><entry><title>One</title><id>a</id>
+            <link rel="alternate" href="https://example.org/one"/><link rel="enclosure" type="audio/ogg" href="https://example.org/one.ogg"/></entry></feed>"#;
+        assert_eq!(parse_feed(atom).unwrap().1[0].audio.as_deref(), Some("https://example.org/one.ogg"));
+    }
 
     const RSS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">

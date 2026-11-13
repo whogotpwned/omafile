@@ -487,7 +487,7 @@ impl Window {
     pub fn show_files(self: &Rc<Self>) {
         match self.content_stack.visible_child_name().as_deref() {
             Some("nowplaying") => self.show_now_playing(false),
-            Some("vault") | Some("feeds") | Some("backup") | Some("themes") | Some("captures") => self.content_stack.set_visible_child_name("files"),
+            Some("vault") | Some("feeds") | Some("backup") | Some("themes") | Some("captures") | Some("radio") => self.content_stack.set_visible_child_name("files"),
             _ => {}
         }
     }

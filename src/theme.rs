@@ -566,6 +566,22 @@ flowboxchild:focus-within .omafile-capture-actions {{
 .omafile-capture-new .omafile-capture-card {{
   box-shadow: 0 0 0 3px {accent}, 0 8px 22px alpha(black, 0.3);
 }}
+.omafile-radio-air {{
+  margin: 2px 18px 8px 18px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background-color: alpha({accent}, 0.1);
+  box-shadow: 0 0 0 1px alpha({accent}, 0.28);
+}}
+.omafile-radio-art {{
+  border-radius: 10px;
+}}
+.omafile-radio-kind {{
+  opacity: 0.8;
+}}
+.omafile-radio-title {{
+  font-weight: 700;
+}}
 .omafile-tour-bubble {{
   padding: 14px;
   border-radius: 999px;

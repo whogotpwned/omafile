@@ -56,6 +56,8 @@ pub enum PlaceKind {
     Themes,
     /// Screenshots and screen recordings; the entry's file is the screenshot folder.
     Captures,
+    /// Internet radio.
+    Radio,
     /// A news feed (its address; empty for all feeds together).
     Feed(String),
     /// A saved server connection (its name); the entry's file is the address.
@@ -108,6 +110,7 @@ pub struct Window {
     pub backup_page: RefCell<Option<Rc<crate::backupui::BackupPage>>>,
     pub themes_page: RefCell<Option<Rc<crate::atelier::ThemesPage>>>,
     pub captures_page: RefCell<Option<Rc<crate::capturesui::CapturesPage>>>,
+    pub radio_page: RefCell<Option<Rc<crate::radioui::RadioPage>>>,
     /// What the sidebar's Backup row says right now.
     pub backup_label: RefCell<String>,
     /// Unread articles per feed, until something changes.
@@ -356,6 +359,7 @@ impl Window {
             backup_page: RefCell::new(None),
             themes_page: RefCell::new(None),
             captures_page: RefCell::new(None),
+            radio_page: RefCell::new(None),
             backup_label: RefCell::new(String::new()),
             feed_counts: RefCell::new(None),
             split_tools,
@@ -407,13 +411,16 @@ impl Window {
         this.start_backup_watch();
         this.maybe_show_tour();
         this.maybe_selftest();
-        if std::env::args().any(|a| a == "--captures") {
-            let weak = Rc::downgrade(&this);
-            glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
-                if let Some(w) = weak.upgrade() {
-                    w.open_captures();
-                }
-            });
+        this.radio_watch();
+        for (flag, open) in [("--captures", (|w| w.open_captures()) as fn(&Rc<Window>)), ("--radio", |w| w.open_radio())] {
+            if std::env::args().any(|a| a == flag) {
+                let weak = Rc::downgrade(&this);
+                glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+                    if let Some(w) = weak.upgrade() {
+                        open(&w);
+                    }
+                });
+            }
         }
         if std::env::args().any(|a| a == "--import-photos") {
             let weak = Rc::downgrade(&this);
@@ -1074,6 +1081,7 @@ impl Window {
                     PlaceKind::Backup => w.open_backup(),
                     PlaceKind::Themes => w.open_themes(),
                     PlaceKind::Captures => w.open_captures(),
+                    PlaceKind::Radio => w.open_radio(),
                     _ => w.navigate(file),
                 }
             }
@@ -1094,6 +1102,7 @@ impl Window {
                     Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_unmount() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Unmount", "win.sidebar-unmount")]),
                     Some(Place::Entry { kind: PlaceKind::Volume(_), .. }) => menu_of(&[("Mount", "win.sidebar-mount")]),
                     Some(Place::Entry { kind: PlaceKind::Backup, .. }) => menu_of(&[("Back Up Now", "win.backup-now"), ("Open Backup", "win.backup")]),
+                    Some(Place::Entry { kind: PlaceKind::Radio, .. }) => menu_of(&[("Play or Pause", "win.radio-toggle"), ("Stop", "win.radio-stop"), ("Add Station…", "win.radio-add")]),
                     Some(Place::Entry { kind: PlaceKind::Feed(url), .. }) if url.is_empty() => menu_of(&[("Fetch New Articles", "win.sidebar-feed-refresh")]),
                     Some(Place::Entry { kind: PlaceKind::Feed(_), .. }) => menu_of(&[("Fetch New Articles", "win.sidebar-feed-refresh"), ("Mark All as Read", "win.sidebar-feed-read"), ("Copy Address", "win.sidebar-feed-copy"), ("Remove", "win.sidebar-feed-remove")]),
                     Some(Place::Entry { kind: PlaceKind::Connection(_), .. }) => menu_of(&[("Connect", "win.sidebar-connect"), ("Open in New Tab", "win.sidebar-new-tab"), ("Edit…", "win.sidebar-connection-edit"), ("Remove", "win.sidebar-connection-remove")]),
@@ -1135,7 +1144,7 @@ impl Window {
                             spring2.borrow_mut().take();
                             let Some(w) = this2.upgrade() else { return };
                             let file = match w.state.borrow().places.get(i as usize) {
-                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Backup | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_)) => Some(file.clone()),
+                                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Backup | PlaceKind::Radio | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_)) => Some(file.clone()),
                                 _ => None,
                             };
                             if let Some(f) = file {
@@ -1180,7 +1189,7 @@ impl Window {
                     }
                     file
                 }
-                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Backup | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file,
+                Some(Place::Entry { file, kind, .. }) if !matches!(kind, PlaceKind::Ssh(_) | PlaceKind::Connection(_) | PlaceKind::Feed(_) | PlaceKind::Backup | PlaceKind::Radio | PlaceKind::Tag(_) | PlaceKind::Smart(_) | PlaceKind::Nearby(_) | PlaceKind::Volume(_)) => file,
                 _ => return false,
             };
             if let Some(p) = w.active_pane() {
@@ -1309,6 +1318,7 @@ impl Window {
         if glib::find_program_in_path("omarchy-capture-screenshot").is_some() || !crate::captures::list().is_empty() {
             places.push(Place::Entry { name: tr("Captures"), icon: "camera-photo-symbolic".into(), file: gio::File::for_path(crate::captures::screenshot_dir()), kind: PlaceKind::Captures });
         }
+        places.push(Place::Entry { name: tr("Radio"), icon: "audio-x-generic-symbolic".into(), file: gio::File::for_uri("omafile-radio:///"), kind: PlaceKind::Radio });
         places.push(Place::Entry { name: tr("Recent"), icon: "document-open-recent-symbolic".into(), file: gio::File::for_uri("recent:///"), kind: PlaceKind::Builtin });
         let trash_name = match *self.trash_summary.borrow() {
             Some((n, bytes)) if n > 0 => format!("{}  ·  {n} {}, {}", tr("Trash"), if n == 1 { tr("item") } else { tr("items") }, crate::ops::human_size(bytes)),
@@ -1701,6 +1711,7 @@ impl Window {
                     PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Themes => (tr("Gallery of Omarchy themes"), PaletteTarget::Action("themes".into())),
                     PlaceKind::Captures => (tr("Screenshots and screen recordings"), PaletteTarget::Action("captures".into())),
+                    PlaceKind::Radio => continue,
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
                 };
                 let icon: &'static str = if icon.starts_with("tag:") { "tag-symbolic" } else { leak_icon(icon) };

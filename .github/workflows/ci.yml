@@ -131,3 +131,15 @@ jobs:
             diff -u "packaging/aur/$pkg/.SRCINFO" "/home/builder/$pkg/.SRCINFO.new" || echo "::warning::packaging/aur/$pkg/.SRCINFO differs from makepkg --printsrcinfo: run packaging/aur/gen-srcinfo.sh on Arch before publishing"
           done
           diff -u PKGBUILD packaging/aur/omafile/PKGBUILD || { echo "::error::PKGBUILD and packaging/aur/omafile/PKGBUILD differ"; exit 1; }
+
+  # The radio stations omafile starts with are addresses on the internet, and those move.
+  # Every one is asked for sound; a station that no longer answers is a warning here (an
+  # outage elsewhere must not stop a change to omafile) and a failure in the weekly run.
+  radio:
+    name: Built-in radio stations answer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask every station for sound
+        run: |
+          python3 scripts/check-radio.py || echo "::warning::A built-in radio station does not answer (see the log): replace it in src/radio.rs"

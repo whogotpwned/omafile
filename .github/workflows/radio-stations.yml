@@ -1,0 +1,23 @@
+name: Radio stations
+
+# The radio stations omafile starts with are addresses on the internet, and those move.
+# Once a week every one is asked for sound: a stream must send audio, a podcast's feed
+# must hold an episode that can be fetched. When one is gone this run fails and names it,
+# so it can be replaced in src/radio.rs.
+
+on:
+  schedule:
+    - cron: "43 4 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stations:
+    name: Built-in radio stations answer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask every station for sound
+        run: python3 scripts/check-radio.py

@@ -43,6 +43,9 @@ mod pyui;
 mod projects;
 mod preview;
 mod quicklook;
+mod radio;
+mod radioplayer;
+mod radioui;
 mod render;
 mod remote;
 mod scheme;
@@ -99,6 +102,7 @@ type InWindow = fn(&Rc<window::Window>);
 /// performs for it, and the line `--help` shows.
 const WINDOW_OPTIONS: &[(&str, &str, &str)] = &[
     ("captures", "show-captures", "Open on the screenshots and screen recordings"),
+    ("radio", "show-radio", "Open on the radio stations"),
     ("import-photos", "run-import-photos", "Import the camera roll of a connected iPhone / iPad"),
 ];
 
@@ -112,6 +116,7 @@ const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --theme-from-picture <picture> [--name <name>] [--dark | --light]
                                 make an Omarchy theme out of a picture, as the theme atelier does
        omafile --captures       open omafile on the screenshots and screen recordings
+       omafile --radio          open omafile on the radio stations
        omafile --copy-capture   put the newest screenshot or recording on the clipboard
        omafile --version";
 
@@ -190,8 +195,8 @@ fn main() -> glib::ExitCode {
             let (app3, prefs3, theme3) = (app.clone(), prefs2.clone(), theme2.clone());
             fm1::serve(move |request| show_for_other_apps(&app3, request, &prefs3, &theme3));
         }
-        // What `omafile --captures` and `--import-photos` ask of a running omafile.
-        let in_window: [(&str, InWindow); 2] = [("show-captures", |w| w.open_captures()), ("run-import-photos", |w| w.import_photos())];
+        // What `omafile --captures`, `--radio` and `--import-photos` ask of a running omafile.
+        let in_window: [(&str, InWindow); 3] = [("show-captures", |w| w.open_captures()), ("show-radio", |w| w.open_radio()), ("run-import-photos", |w| w.import_photos())];
         for (name, run) in in_window {
             let action = gio::SimpleAction::new(name, None);
             let (app3, prefs3, theme3) = (app.clone(), prefs2.clone(), theme2.clone());
@@ -214,6 +219,8 @@ fn main() -> glib::ExitCode {
     });
 
     let (prefs_a, theme_a) = (prefs.clone(), theme.clone());
+    // The radio ends with omafile.
+    app.connect_shutdown(|_| radioplayer::player().shutdown());
     app.connect_activate(move |app| {
         // A saved session wins over the current directory when restoring is on
         // and this is the first window.

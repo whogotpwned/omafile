@@ -46,6 +46,7 @@ const SKIPPED: &[(&str, &str)] = &[
     ("terminal", "starts a terminal"),
     ("terminal-selected", "starts a terminal"),
     ("play", "starts a player"),
+    ("radio-toggle", "starts the radio"),
     ("ebook-reader", "starts a reader"),
     ("ebook-send", "starts a mail program"),
     ("set-wallpaper", "changes the desktop"),

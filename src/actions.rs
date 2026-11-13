@@ -89,6 +89,10 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("tour", "Take the Tour", "starred-symbolic"),
     ("themes", "Omarchy Themes: Gallery", "applications-graphics-symbolic"),
     ("captures", "Captures: Screenshots and Screen Recordings", "camera-photo-symbolic"),
+    ("radio", "Radio: Internet Radio and Podcasts", "audio-x-generic-symbolic"),
+    ("radio-toggle", "Radio: Play or Pause", "media-playback-start-symbolic"),
+    ("radio-stop", "Radio: Stop", "media-playback-stop-symbolic"),
+    ("radio-add", "Radio: Add Station…", "list-add-symbolic"),
     ("theme-from-picture", "Create Theme from Picture…", "applications-graphics-symbolic"),
     ("backup-now", "Back Up Now", "document-open-recent-symbolic"),
     ("feeds", "Feeds: Read the News", "application-rss+xml-symbolic"),
@@ -167,6 +171,7 @@ pub const ACCELS: &[(&str, &[&str])] = &[
     ("win.backup", &["<Control><Alt>k"]),
     ("win.themes", &["<Control><Alt>a"]),
     ("win.captures", &["<Control><Alt>g"]),
+    ("win.radio", &["<Control><Alt>o"]),
     ("win.now-playing", &["F8"]),
     ("win.git-commit", &["<Control><Alt>c"]),
     ("win.git-branch", &["<Control><Alt>b"]),
@@ -657,6 +662,10 @@ impl Window {
         simple("tour", Box::new(|w| w.show_tour()));
         simple("themes", Box::new(|w| w.open_themes()));
         simple("captures", Box::new(|w| w.open_captures()));
+        simple("radio", Box::new(|w| w.open_radio()));
+        simple("radio-toggle", Box::new(|w| w.radio_toggle()));
+        simple("radio-stop", Box::new(|w| w.radio_stop()));
+        simple("radio-add", Box::new(|w| w.radio_station_dialog(None)));
         simple("theme-from-picture", Box::new(|w| w.theme_from_picture()));
         simple("backup-now", Box::new(|w| w.backup_now()));
         simple("feed-add", Box::new(|w| w.feed_add_dialog()));
