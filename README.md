@@ -10,7 +10,7 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.29.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.30.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
@@ -205,6 +205,22 @@ Panels move the way the rest of Omarchy moves instead of snapping: the terminal 
 
 The first window after installing omafile opens with a **tour**: seven short stops (the keyboard, the views, what it shares with Omarchy, backups and vaults, devices and servers, where everything else is), each with the shortcuts that belong to it. `→` / `Enter` go on, `←` goes back, **Skip the Tour** or `Esc` ends it at any point. It is shown **once**, and only on a fresh installation: an upgrade does not bring it up, and neither does a second start. *Help (`F1`) › About › Take the Tour* and the command palette (*Take the Tour*) open it again whenever you like. To see it again as on the first day, set `tour = pending` in `~/.config/omafile/omafile.conf`.
 
+## Updates
+
+![update](docs/screenshot-update.png)
+
+omafile **tells you when a newer version exists**. A few seconds after the first window opens, and at most once a day, it asks GitHub which version is the newest; when there is one, a notification stays at the bottom until you answer it. **Update…** shows the command that updates *your* installation and, on **Update Now**, runs it in a terminal where you can watch it:
+
+| Installed | What counts as newest | The command shown |
+|---|---|---|
+| with `./install.sh` from a checkout | the version on the `main` branch (what `git pull` brings) | `cd <checkout> && git pull --ff-only && ./install.sh` |
+| as a package (`omafile`, `omafile-bin` from the AUR) | the latest tagged release | `yay -S <package>` (or `paru`) |
+| some other way | the version on `main` | none; omafile says how it is usually done |
+
+omafile **never updates itself** and installs nothing without that click. *Skip This Version* silences one version; the next one is announced again. *Later* brings the notification back the next day.
+
+The question is one request for a small public file (`manifest.json` of this repository, or GitHub's answer about the latest release). It carries nothing about you, your files or how you use omafile; GitHub sees what it sees of any download, the address it comes from. **Preferences › Updates** turns the daily question off. *Check for Updates* in the palette (`Ctrl+K`) and in *Help › About* asks at once, whatever the setting, and `omafile --check-update` does it in a terminal or a script (exit code 0: up to date, 10: a newer version exists, 1: could not ask).
+
 ## Keyboard shortcuts
 
 `Ctrl+?` opens the full, searchable list inside omafile (it is the *Shortcuts* page of Help, `F1`). `omafile --print-bindings` prints it for scripts. The essentials:
@@ -261,6 +277,7 @@ omafile --lock-all       unmount every unlocked gocryptfs folder (what the bar b
 omafile --captures       open omafile on the screenshots and screen recordings
 omafile --radio          open omafile on the radio stations
 omafile --copy-capture   put the newest screenshot or recording on the clipboard (wl-copy)
+omafile --check-update   ask whether a newer omafile exists and print the command that updates it
 omafile --backup         back up now to the drive chosen under Backup (what the timer runs; add --scheduled to do it only when one is due)
 omafile --version
 ```
@@ -416,13 +433,13 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 
 #### What is still open before publishing
 
-Status as of 0.29.0. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
+Status as of 0.30.0. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
 
 | # | Step | State | Who and how |
 |---|---|---|---|
 | 1 | **Try it on a real Omarchy.** Install the binary (`./install.sh --all`) and the bar button (`omarchy plugin add https://github.com/whogotpwned/omafile.git --enable`), run `omarchy plugin validate .` in the checkout, and work through [docs/acceptance-checklist.md](docs/acceptance-checklist.md). The bar button in particular has only ever been checked against the shell's source, never run inside the shell. | open | The maintainer, on an Omarchy machine. What fails becomes an issue. |
 | 2 | **Add GitHub topics** so the repository can be found: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`. There are none yet. | open | The maintainer: the gear next to *About* on the repository page. |
-| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.29.0 && git push origin v0.29.0` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
+| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.30.0 && git push origin v0.30.0` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
 | 4 | **Publish to the AUR**, after step 3: `packaging/aur/update.sh` fills in the checksums of the release, commit that, then `packaging/aur/publish.sh` pushes `omafile` and `omafile-bin`. | open | The maintainer: it needs an AUR account with an SSH **public** key added under *My Account*. The private key stays on the maintainer's machine and out of this repository. |
 | 5 | **List it on the marketplace**, after step 3: submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org), which is where Omarchy's manual sends plugin authors. The texts for the form are prepared in [docs/marketplace-submission.md](docs/marketplace-submission.md). That page could not be opened from the machine this was written on, so compare the form's fields with the prepared ones. | open | The maintainer: the submission is made in the author's name. |
 | 6 | **After publishing**: `omarchy plugin update` moves users to the tip of `main`, so `main` has to stay releasable; the weekly *Omarchy compatibility* workflow reports when a new Omarchy no longer fits; later versions repeat steps 3 to 5 (the marketplace has a form for new versions). The working branch `claude/relaxed-bohr-btoomh` can be deleted once `main` is what people install. | later | The maintainer. |
@@ -488,8 +505,10 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 
 | File | Content |
 |---|---|
-| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `nearby-enabled`, `nearby-folder`, `nearby-accept-all`, `iphone-folder`, `iphone-convert-heic`, `auto-mount`, `trash-auto-days`) |
+| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `nearby-enabled`, `nearby-folder`, `nearby-accept-all`, `iphone-folder`, `iphone-convert-heic`, `auto-mount`, `trash-auto-days`, `check-updates`) |
 | `~/.config/omafile/radio` | Radio stations, `kind<TAB>genre<TAB>name<TAB>address` per line (`live` or `podcast`); absent until the list is changed, then the built-in stations are in it too |
+| `~/.local/state/omafile/update` | Update check: when GitHub was asked last, the newest version it named, a version you chose to skip |
+| `~/.local/share/omafile/source` | Written by `install.sh`: the checkout omafile was built from, for the update command |
 | `~/.config/omafile/tags` | Colour tags, `uri<TAB>colour` per line (also stored as GIO metadata) |
 | `~/.config/omafile/notes` | Notes index (also stored as `metadata::annotation`) |
 | `~/.config/omafile/smart-folders` | Smart folders: name, root, query, max age, glob |
@@ -522,7 +541,7 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.29.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.30.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects

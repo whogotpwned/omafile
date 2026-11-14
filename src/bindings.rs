@@ -108,6 +108,7 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Developer", "", "Context menu › New Encrypted Folder", "gocryptfs vault; Unlock, Lock, Change Password on the folder"),
     ("Tools", "backup", "", "Backup to another drive, Time Machine style: when the last one ran, the list of backups, the drive, what is included and how often; the sidebar shows the time of the last backup"),
     ("Tools", "themes", "", "Omarchy themes as a gallery: one click turns a theme on, a picture dropped on a card becomes its background, and New from Picture makes a theme out of any picture"),
+    ("Tools", "", "Palette › Check for Updates", "Check for Updates: asks whether a newer omafile exists and shows the command that updates this installation (also asked once a day; Preferences › Updates turns that off)"),
     ("Tools", "radio", "", "Radio: internet radio and podcasts, with electronic music and tech and hacking news from the start; add any station by its address. It plays in Now Playing and on the media keys, and goes on when the window is closed"),
     ("Tools", "captures", "", "Captures: Omarchy's screenshots and screen recordings by day, to drag out, copy, draw on, turn into a GIF, share or delete"),
     ("Tools", "versions", "", "Earlier versions of the selected file or folder from Btrfs snapshots: compare, restore a copy or in place, bring back deleted files; turns snapshots on for the home folder"),

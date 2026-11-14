@@ -87,6 +87,7 @@ pub const PALETTE_ACTIONS: &[(&str, &str, &str)] = &[
     ("versions", "Earlier Versions (snapshots)", "document-open-recent-symbolic"),
     ("backup", "Backup: Status, History and Settings", "document-open-recent-symbolic"),
     ("tour", "Take the Tour", "starred-symbolic"),
+    ("check-update", "Check for Updates", "software-update-available-symbolic"),
     ("themes", "Omarchy Themes: Gallery", "applications-graphics-symbolic"),
     ("captures", "Captures: Screenshots and Screen Recordings", "camera-photo-symbolic"),
     ("radio", "Radio: Internet Radio and Podcasts", "audio-x-generic-symbolic"),
@@ -660,6 +661,8 @@ impl Window {
         simple("versions", Box::new(|w| w.versions_selected()));
         simple("backup", Box::new(|w| w.open_backup()));
         simple("tour", Box::new(|w| w.show_tour()));
+        simple("check-update", Box::new(|w| w.check_update_now()));
+        simple("update-show", Box::new(|w| w.update_dialog()));
         simple("themes", Box::new(|w| w.open_themes()));
         simple("captures", Box::new(|w| w.open_captures()));
         simple("radio", Box::new(|w| w.open_radio()));

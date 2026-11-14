@@ -249,7 +249,17 @@ impl Window {
             }
         });
         system.add(&dbus_row);
+        let updates = adw::SwitchRow::builder().title(tr("Look for a new version once a day")).subtitle(tr("Asks GitHub which omafile is the newest; nothing about you or your files is sent. omafile says so when there is one and never updates by itself.")).active(self.prefs.get_bool("check-updates", true)).build();
+        let this = Rc::downgrade(self);
+        updates.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("check-updates", Some(if row.is_active() { "true" } else { "false" }));
+            }
+        });
+        let update_group = adw::PreferencesGroup::builder().title(tr("Updates")).build();
+        update_group.add(&updates);
         page.add(&system);
+        page.add(&update_group);
 
         let servers = adw::PreferencesGroup::builder().title(tr("Servers")).build();
         let two = adw::SwitchRow::builder().title(tr("Open servers beside the local files")).subtitle(tr("Connecting splits the view: local on the left, the server on the right, like WinSCP. Off: the server opens in the current tab")).active(self.prefs.get_bool("remote-two-panes", true)).build();

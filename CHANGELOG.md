@@ -2,6 +2,18 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.30.0 — 2026-11-14
+
+### Added
+- **omafile tells you about a new version.** At most once a day it asks GitHub which version is the newest and, when there is one, shows a notification that stays until it is answered. *Update…* names the command for this installation (`git pull` and `./install.sh` for a checkout, the AUR helper for a package) and *Update Now* runs it in a terminal. omafile never updates itself. *Skip This Version* and *Later* are there too.
+- What counts as the newest version follows the installation: the latest tagged release for a package, the `main` branch for a checkout. `install.sh` notes where the checkout is (`~/.local/share/omafile/source`) so the command can name it; run it once more to get that.
+- *Check for Updates* in the palette and in *Help › About*, `omafile --check-update` on the command line (exit code 10 when a newer version exists).
+- **Preferences › Updates** turns the daily question off. It is one request for a small public file and carries nothing about you or your files.
+
+### Fixed
+- The number of hidden files in the status line ("+8 hidden") is translated.
+- The self-test gives a closing dialog a moment before the next command: on libadwaita 1.5 a run could end in an assertion of the library that was the test's own doing.
+
 ## 0.29.0 — 2026-11-13
 
 ### Added

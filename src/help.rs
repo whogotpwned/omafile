@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const CHANGELOG: &str = include_str!("../CHANGELOG.md");
-const WEBSITE: &str = "https://github.com/whogotpwned/omafile";
+pub const WEBSITE: &str = "https://github.com/whogotpwned/omafile";
 
 pub struct Feature {
     pub area: &'static str,
@@ -81,6 +81,7 @@ pub const FEATURES: &[Feature] = &[
     f("Make it yours", "preferences-desktop-locale-symbolic", "Your language", "English, German, Spanish, French, Italian, Portuguese and Dutch, chosen from the system.", "", false, "Omarchy › Setup › Language"),
     f("Make it yours", "input-keyboard-symbolic", "Keyboard first", "Every command has a shortcut; Vim keys can be switched on in groups.", "preferences", true, ""),
     f("Make it yours", "folder-symbolic", "The system's file manager", "Folders from other programs and “Show in folder” in browsers open in omafile; long transfers keep the computer awake.", "", false, "Preferences › Default file manager"),
+    f("Make it yours", "software-update-available-symbolic", "Tells you about a new version", "Once a day omafile asks whether a newer version exists and says so, with the command that updates your installation. It never updates by itself, and Preferences turns the question off.", "check-update", false, "Palette › Check for Updates"),
     f("Make it yours", "view-restore-symbolic", "Remembers where you were", "Tabs, panes and window size come back on the next start.", "", false, "Preferences › Restore tabs on start"),
     f("Make it yours", "view-app-grid-symbolic", "On the Omarchy bar", "The shell plugin puts omafile on the bar: places, running transfers, unlocked vaults, connected phones.", "", false, "omarchy plugin add"),
 ];
@@ -302,9 +303,39 @@ fn about_page(window: &Rc<Window>) -> gtk::Widget {
         });
         links.append(&button);
     }
+    // Is there a newer version? What is known is shown; the button asks now.
+    let known = crate::update::load_state().available(VERSION);
+    let update_status = gtk::Label::builder().label(known.map(|latest| crate::trf!("omafile {version} is available", version = latest)).unwrap_or_default()).css_classes(["omafile-dim", "caption"]).wrap(true).justify(gtk::Justification::Center).build();
+    let check = gtk::Button::builder().label(tr("Check for Updates")).halign(gtk::Align::Center).build();
+    check.add_css_class("pill");
+    let (weak, status) = (Rc::downgrade(window), update_status.downgrade());
+    check.connect_clicked(move |_| {
+        if let Some(status) = status.upgrade() {
+            status.set_text(&tr("Looking for a newer version…"));
+        }
+        let (weak, status) = (weak.clone(), status.clone());
+        glib::spawn_future_local(async move {
+            let answer = crate::updateui::ask_now().await;
+            let Some(status) = status.upgrade() else { return };
+            match answer {
+                Ok(Some(latest)) => {
+                    status.set_text(&crate::trf!("omafile {version} is available", version = latest));
+                    if let Some(w) = weak.upgrade() {
+                        w.update_dialog();
+                    }
+                }
+                Ok(None) => status.set_text(&crate::trf!("omafile {version} is the newest version", version = VERSION)),
+                Err(e) => status.set_text(&crate::trf!("Could not ask for the newest version: {error}", error = e)),
+            }
+        });
+    });
+    let update_row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    update_row.set_margin_top(4);
+    update_row.append(&check);
+    update_row.append(&update_status);
     let head = gtk::Box::new(gtk::Orientation::Vertical, 6);
     head.set_margin_top(18);
-    for w in [icon.upcast_ref::<gtk::Widget>(), egg_reveal.upcast_ref(), name.upcast_ref(), version.upcast_ref(), tagline.upcast_ref(), counts.upcast_ref(), links.upcast_ref()] {
+    for w in [icon.upcast_ref::<gtk::Widget>(), egg_reveal.upcast_ref(), name.upcast_ref(), version.upcast_ref(), tagline.upcast_ref(), counts.upcast_ref(), links.upcast_ref(), update_row.upcast_ref()] {
         head.append(w);
     }
 

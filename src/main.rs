@@ -64,6 +64,8 @@ mod transfer;
 mod tour;
 mod trashauto;
 mod undo;
+mod update;
+mod updateui;
 mod vaults;
 mod vaultui;
 mod views;
@@ -118,6 +120,7 @@ const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --captures       open omafile on the screenshots and screen recordings
        omafile --radio          open omafile on the radio stations
        omafile --copy-capture   put the newest screenshot or recording on the clipboard
+       omafile --check-update   ask whether a newer omafile exists and print how to update
        omafile --version";
 
 fn main() -> glib::ExitCode {
@@ -137,6 +140,7 @@ fn main() -> glib::ExitCode {
         Some("--describe-theme") => return glib::ExitCode::from(omarchy::describe_theme(args.get(2))),
         Some("--theme-from-picture") => return glib::ExitCode::from(atelier::create_headless(&args[2..])),
         Some("--copy-capture") => return glib::ExitCode::from(captures::copy_latest()),
+        Some("--check-update") => return glib::ExitCode::from(update::cli()),
         Some("--lock-all") => return glib::ExitCode::from(status::lock_all().min(1) as u8),
         Some("--version") | Some("-V") => {
             println!("omafile {}", env!("CARGO_PKG_VERSION"));

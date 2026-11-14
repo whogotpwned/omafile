@@ -47,6 +47,7 @@ const SKIPPED: &[(&str, &str)] = &[
     ("terminal-selected", "starts a terminal"),
     ("play", "starts a player"),
     ("radio-toggle", "starts the radio"),
+    ("check-update", "asks the network"),
     ("ebook-reader", "starts a reader"),
     ("ebook-send", "starts a mail program"),
     ("set-wallpaper", "changes the desktop"),
@@ -93,9 +94,12 @@ async fn settle(w: &Rc<Window>) {
         // the time it needs, also on a slow machine: forcing a dialog shut in the middle
         // of its own closing trips an assertion inside libadwaita, which would be this
         // test's doing and nobody else's.
-        for _ in 0..30 {
+        for _ in 0..45 {
             glib::timeout_future(Duration::from_millis(70)).await;
             if w.window.visible_dialog().as_ref() != Some(&dialog) {
+                // Gone from view is not yet done closing: a breath before the next command
+                // opens another dialog, or libadwaita 1.5 loses track of this one.
+                glib::timeout_future(Duration::from_millis(180)).await;
                 break;
             }
         }

@@ -412,6 +412,7 @@ impl Window {
         this.maybe_show_tour();
         this.maybe_selftest();
         this.radio_watch();
+        this.start_update_check();
         for (flag, open) in [("--captures", (|w| w.open_captures()) as fn(&Rc<Window>)), ("--radio", |w| w.open_radio())] {
             if std::env::args().any(|a| a == flag) {
                 let weak = Rc::downgrade(&this);

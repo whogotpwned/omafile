@@ -1919,7 +1919,7 @@ impl Pane {
         if !show_hidden && !deep && !virtual_view {
             let hidden = (0..self.store.n_items()).filter(|i| self.store.item(*i).and_downcast::<FileItem>().map(|x| x.is_hidden()).unwrap_or(false)).count();
             if hidden > 0 {
-                text.push_str(&format!(" (+{hidden} hidden)"));
+                text.push_str(&format!(" ({})", crate::trf!("+{n} hidden", n = hidden)));
             }
         }
         if !selected.is_empty() {

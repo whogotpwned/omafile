@@ -51,6 +51,8 @@ install -m644 "$here/data/icons/io.github.whogotpwned.Omafile-symbolic.svg" "$ic
 command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t "$icons_dir" 2>/dev/null || true
 install -m644 "$here/data/hyprland-bindings.lua" "$share_dir/hyprland-bindings.lua"
 install -m644 "$here/data/hyprland-bindings.conf" "$share_dir/hyprland-bindings.conf"
+# Where this checkout is, so that omafile can name the command that updates it.
+printf '%s\n' "$here" > "$share_dir/source"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" || true
 echo ":: installed $bin_dir/omafile and $apps_dir/$desktop"
 case ":$PATH:" in

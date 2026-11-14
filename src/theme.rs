@@ -566,6 +566,9 @@ flowboxchild:focus-within .omafile-capture-actions {{
 .omafile-capture-new .omafile-capture-card {{
   box-shadow: 0 0 0 3px {accent}, 0 8px 22px alpha(black, 0.3);
 }}
+.omafile-update-command {{
+  padding: 10px 8px 10px 14px;
+}}
 .omafile-radio-air {{
   margin: 2px 18px 8px 18px;
   padding: 10px 14px;

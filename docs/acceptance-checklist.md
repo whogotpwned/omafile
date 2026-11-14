@@ -195,3 +195,12 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 20.7 Close the window while a station plays: the music goes on, the media keys still work. Open omafile again: the Radio page shows what plays. *Stop* ends it, and no `mpv` process is left (`pgrep -a mpv`).
 - [ ] 20.8 With the network cable out, a click on a station: after a moment a notification says the address does not answer; nothing hangs.
 - [ ] 20.9 Bar button, right click › *Radio* opens the page.
+
+## 21. Updates (needs the internet and a newer version on GitHub)
+
+- [ ] 21.1 With an omafile older than the one on GitHub: a few seconds after the first window, the notification *omafile X is available* appears and stays. Starting omafile again the same day shows no second notification.
+- [ ] 21.2 *Update…*: the dialog names both versions and the command for this installation (`cd … && git pull --ff-only && ./install.sh` after `install.sh`; `yay -S omafile-bin` for the package). The copy button puts the command on the clipboard.
+- [ ] 21.3 *Update Now* opens a terminal that runs the command; after it finished and omafile was restarted, *Help › About* shows the new version and *Check for Updates* says it is the newest.
+- [ ] 21.4 *Skip This Version*: no notification for that version on the following days; *Check for Updates* still names it.
+- [ ] 21.5 Preferences › Updates off: no request is made at start (`~/.local/state/omafile/update` keeps its old `checked` time). *Check for Updates* still works.
+- [ ] 21.6 Without a network: no notification, no error, nothing hangs; `omafile --check-update` prints that it could not ask and exits with 1.
