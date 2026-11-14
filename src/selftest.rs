@@ -89,6 +89,9 @@ fn other_windows(w: &Rc<Window>) -> usize {
 async fn settle(w: &Rc<Window>) {
     for _ in 0..4 {
         let Some(dialog) = w.window.visible_dialog() else { break };
+        if std::env::var_os("OMAFILE_SELFTEST_TRACE").is_some() {
+            eprintln!("selftest:   closing {} \"{}\"", dialog.type_().name(), dialog.title());
+        }
         dialog.close();
         // A dialog slides away; while it does it still counts as the visible one. It gets
         // the time it needs, also on a slow machine: forcing a dialog shut in the middle
@@ -105,6 +108,9 @@ async fn settle(w: &Rc<Window>) {
         }
         if w.window.visible_dialog().as_ref() == Some(&dialog) {
             // One that will not close by itself (it asks first, or it is busy).
+            if std::env::var_os("OMAFILE_SELFTEST_TRACE").is_some() {
+                eprintln!("selftest:   forcing {} \"{}\"", dialog.type_().name(), dialog.title());
+            }
             dialog.force_close();
             glib::timeout_future(Duration::from_millis(120)).await;
         }
