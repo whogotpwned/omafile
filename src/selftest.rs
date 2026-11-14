@@ -87,32 +87,40 @@ fn other_windows(w: &Rc<Window>) -> usize {
 /// Close what a command opened, the way a person would (Esc on a dialog, closing a
 /// window), so the next one starts from the files again.
 async fn settle(w: &Rc<Window>) {
+    let trace = std::env::var_os("OMAFILE_SELFTEST_TRACE").is_some();
     for _ in 0..4 {
         let Some(dialog) = w.window.visible_dialog() else { break };
-        if std::env::var_os("OMAFILE_SELFTEST_TRACE").is_some() {
-            eprintln!("selftest:   closing {} \"{}\"", dialog.type_().name(), dialog.title());
-        }
-        dialog.close();
         // A dialog slides away; while it does it still counts as the visible one. It gets
-        // the time it needs, also on a slow machine: forcing a dialog shut in the middle
-        // of its own closing trips an assertion inside libadwaita, which would be this
-        // test's doing and nobody else's.
-        for _ in 0..45 {
-            glib::timeout_future(Duration::from_millis(70)).await;
-            if w.window.visible_dialog().as_ref() != Some(&dialog) {
-                // Gone from view is not yet done closing: a breath before the next command
-                // opens another dialog, or libadwaita 1.5 loses track of this one.
-                glib::timeout_future(Duration::from_millis(180)).await;
+        // the time it needs, and is asked again when it did not hear the first time (a
+        // large dialog that was still being put on screen): forcing a dialog shut trips an
+        // assertion inside libadwaita 1.5 a moment later, which would be this test's doing
+        // and nobody else's. Only one that refuses to close (it asks first) is forced.
+        let mut gone = false;
+        for attempt in 0..3 {
+            if trace {
+                eprintln!("selftest:   closing {} \"{}\"{}", dialog.type_().name(), dialog.title(), if attempt > 0 { " again" } else { "" });
+            }
+            dialog.close();
+            for _ in 0..40 {
+                glib::timeout_future(Duration::from_millis(70)).await;
+                if w.window.visible_dialog().as_ref() != Some(&dialog) {
+                    gone = true;
+                    break;
+                }
+            }
+            if gone || !dialog.can_close() {
                 break;
             }
         }
-        if w.window.visible_dialog().as_ref() == Some(&dialog) {
-            // One that will not close by itself (it asks first, or it is busy).
-            if std::env::var_os("OMAFILE_SELFTEST_TRACE").is_some() {
+        if gone {
+            // Gone from view is not yet done closing: a breath before the next command.
+            glib::timeout_future(Duration::from_millis(180)).await;
+        } else {
+            if trace {
                 eprintln!("selftest:   forcing {} \"{}\"", dialog.type_().name(), dialog.title());
             }
             dialog.force_close();
-            glib::timeout_future(Duration::from_millis(120)).await;
+            glib::timeout_future(Duration::from_millis(600)).await;
         }
     }
     let main: gtk::Window = w.window.clone().upcast();

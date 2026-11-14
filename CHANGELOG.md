@@ -12,7 +12,7 @@ All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD
 
 ### Fixed
 - The number of hidden files in the status line ("+8 hidden") is translated.
-- The self-test gives a closing dialog a moment before the next command: on libadwaita 1.5 a run could end in an assertion of the library that was the test's own doing.
+- The self-test asks a dialog that did not close to close once more instead of forcing it shut: on libadwaita 1.5 a forced dialog made a later step end in an assertion of the library, which was the test's own doing. `OMAFILE_SELFTEST_TRACE=1` names the dialogs it closes.
 
 ## 0.29.0 — 2026-11-13
 
