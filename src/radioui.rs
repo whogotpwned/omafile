@@ -29,6 +29,7 @@ pub fn genre_title(genre: &str) -> String {
         radio::ELECTRONIC => tr("Electronic"),
         radio::NEWS => tr("Tech and hacking news"),
         radio::OWN => tr("My stations"),
+        radio::FILES => tr("From your files"),
         other => other.to_string(),
     }
 }
@@ -66,7 +67,7 @@ pub fn draw_art(cr: &cairo::Context, w: f64, h: f64, station: &Station, with_nam
             cr.arc(cx, cy, unit * 0.04, 0.0, std::f64::consts::TAU);
             let _ = cr.fill();
         }
-        Kind::Podcast => {
+        Kind::Podcast | Kind::File => {
             let mut seed = (hue as u32).wrapping_mul(7919).wrapping_add(station.name.len() as u32);
             let bars = 24;
             let step = w / bars as f64;
@@ -141,6 +142,19 @@ pub fn art_file(station: &Station) -> Option<PathBuf> {
         std::fs::write(&path, art_png(station, 512)?).ok()?;
     }
     Some(path)
+}
+
+/// Open a video in the player the desktop has for it (mpv on Omarchy), in a window of its
+/// own. False when nothing could be started.
+pub fn open_in_player(file: &gio::File) -> bool {
+    let context = gdk::Display::default().map(|display| display.app_launch_context());
+    if gio::AppInfo::launch_default_for_uri(&file.uri(), context.as_ref()).is_ok() {
+        return true;
+    }
+    // No default application for it: mpv itself, the way its launcher entry starts it.
+    let Some(path) = file.path().filter(|_| radioplayer::mpv_installed()) else { return false };
+    let args = [std::ffi::OsStr::new("mpv"), std::ffi::OsStr::new("--player-operation-mode=pseudo-gui"), std::ffi::OsStr::new("--"), path.as_os_str()];
+    gio::Subprocess::newv(&args, gio::SubprocessFlags::STDOUT_SILENCE | gio::SubprocessFlags::STDERR_SILENCE).is_ok()
 }
 
 /// The first few thousand bytes an address sends: enough to tell a feed from sound, and
@@ -388,6 +402,7 @@ impl RadioPage {
                 State::Loading => tr("Connecting…"),
                 _ if by.is_empty() => match now.station.as_ref().map(|s| s.kind) {
                     Some(Kind::Podcast) => tr("Podcast"),
+                    Some(Kind::File) => tr("From your files"),
                     _ => tr("Live"),
                 },
                 _ => by,

@@ -2,6 +2,12 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.31.1 — 2026-11-14
+
+### Fixed
+- **Songs and videos did not play on a stock Omarchy**: a click on the play badge did nothing. The built-in player is GTK's, which needs the GStreamer plugins (`gst-plugins-good`, `gst-libav`); Omarchy 4 ships `mpv` and not those, and the README wrongly said it had them. Now `mpv` takes over by itself when the built-in player cannot play a file: a song plays through omafile's mpv player (the radio's) and shows in *Now Playing*, the mini player and on the media keys; a video opens in mpv's own window. With the plugins installed, playback stays inside the preview as before.
+- **Opening a file** (double click, `Enter`) starts its default application directly instead of going through the desktop portal, the way Nautilus does. The portal's detour could show a chooser on the first opens of a type, and on some setups nothing at all. *Open With…* still asks the desktop's chooser.
+
 ## 0.31.0 — 2026-11-14
 
 ### Changed

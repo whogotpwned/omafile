@@ -28,6 +28,14 @@ pub struct PreviewPane {
     media_icon: gtk::Image,
     controls: gtk::MediaControls,
     media: RefCell<Option<gtk::MediaFile>>,
+    /// What is on show when it is a song or a video: the file, its name, whether it has pictures.
+    media_item: RefCell<Option<(gio::File, String, bool)>>,
+    /// The user asked to hear it (as opposed to merely having it selected).
+    wants_play: Cell<bool>,
+    /// GTK's own player could not play it: mpv is asked instead.
+    media_failed: Cell<bool>,
+    /// Told when a video went to the video player's own window (Quick Look steps aside).
+    video_left: RefCell<Option<Box<dyn Fn()>>>,
     /// Pixel size requested for images and PDF pages.
     image_size: i32,
     /// Page turner under a multi-page document.
@@ -170,7 +178,7 @@ impl PreviewPane {
         root.append(&stack);
         root.append(&info);
 
-        let this = Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None), pager, page_label, doc: RefCell::new(None), anim: RefCell::new(None), anim_paused: Cell::new(false) });
+        let this = Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None), media_item: RefCell::new(None), wants_play: Cell::new(false), media_failed: Cell::new(false), video_left: RefCell::new(None), pager, page_label, doc: RefCell::new(None), anim: RefCell::new(None), anim_paused: Cell::new(false) });
         let weak = Rc::downgrade(&this);
         prev.connect_clicked(move |_| { if let Some(p) = weak.upgrade() { p.doc_step(-1); } });
         let weak = Rc::downgrade(&this);
@@ -791,6 +799,10 @@ impl PreviewPane {
             self.media_icon.set_from_gicon(&icon);
         }
         self.load_facts(item, gen_of(self));
+        self.media_item.replace(Some((item.target_file(), item.display_name(), item.is_video())));
+        self.wants_play.set(false);
+        self.media_failed.set(false);
+        self.controls.set_visible(true);
         let media = gtk::MediaFile::for_file(&item.target_file());
         let art = self.video.parent().and_downcast::<gtk::Stack>().expect("media art stack");
         if item.is_video() {
@@ -815,6 +827,7 @@ impl PreviewPane {
         }
         self.controls.set_media_stream(Some(&media));
         let hint = self.hint.clone();
+        let weak = Rc::downgrade(self);
         media.connect_error_notify(move |m| {
             if let Some(e) = m.error() {
                 // GStreamer errors are essays; keep the useful line.
@@ -826,6 +839,15 @@ impl PreviewPane {
                     msg.lines().next().unwrap_or("unknown error").to_string()
                 };
                 hint.set_text(&trf!("Cannot play: {short}", short = short));
+                // GTK's player cannot: mpv can, and Omarchy has it. At once when the user
+                // already asked to hear it, otherwise when they do.
+                if let Some(p) = weak.upgrade() {
+                    p.media_failed.set(true);
+                    if p.wants_play.get() {
+                        m.pause();
+                        p.play_with_mpv();
+                    }
+                }
             }
         });
         let hint2 = self.hint.clone();
@@ -841,8 +863,47 @@ impl PreviewPane {
 
     /// Start playback of the media shown (Quick Look on an audio file, "Play").
     pub fn play(&self) {
-        if let Some(m) = self.media.borrow().as_ref() {
+        self.wants_play.set(true);
+        if self.media_failed.get() {
+            self.play_with_mpv();
+        } else if let Some(m) = self.media.borrow().as_ref() {
             m.play();
+        }
+    }
+
+    /// What to do when a video was handed to the video player's own window.
+    pub fn connect_video_left(&self, f: impl Fn() + 'static) {
+        self.video_left.replace(Some(Box::new(f)));
+    }
+
+    /// The way out when GTK's own player lacks a decoder, as on a stock Omarchy, which ships
+    /// mpv and not the GStreamer plugins. A song goes to omafile's mpv player, the one the
+    /// radio uses: it shows in Now Playing and listens to the media keys. A video opens in
+    /// the video player's own window.
+    fn play_with_mpv(&self) {
+        let Some((file, name, video)) = self.media_item.borrow().clone() else { return };
+        // Once per file, however often the error or the wish is repeated.
+        if !self.wants_play.replace(false) {
+            return;
+        }
+        let started = if video {
+            crate::radioui::open_in_player(&file)
+        } else if crate::radioplayer::mpv_installed() {
+            let path = file.path().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| file.uri().to_string());
+            crate::radioplayer::player().play_file(&path, &name);
+            true
+        } else {
+            false
+        };
+        if started {
+            // The controls under the cover belong to the player that could not.
+            self.controls.set_visible(false);
+            if video {
+                if let Some(told) = self.video_left.borrow().as_ref() {
+                    told();
+                }
+            }
+            self.hint.set_text(&if video { tr("Opened in the video player: the built-in one lacks the decoder for it") } else { tr("Plays through mpv: pause, seek and stop are in Now Playing (F8) and on the media keys") });
         }
     }
 
@@ -852,6 +913,8 @@ impl PreviewPane {
             id.remove();
         }
         self.anim_paused.set(false);
+        self.wants_play.set(false);
+        self.media_item.replace(None);
         if let Some(m) = self.media.borrow_mut().take() {
             m.pause();
             m.set_file(None::<&gio::File>);

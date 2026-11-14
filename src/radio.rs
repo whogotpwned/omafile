@@ -18,6 +18,9 @@ pub enum Kind {
     Live,
     /// A feed with episodes; the newest one is played.
     Podcast,
+    /// Not a station: a sound file from the user's own folders, played by the same
+    /// player when the built-in one cannot. Never in the list of stations.
+    File,
 }
 
 impl Kind {
@@ -25,6 +28,7 @@ impl Kind {
         match self {
             Kind::Live => "live",
             Kind::Podcast => "podcast",
+            Kind::File => "file",
         }
     }
 
@@ -44,6 +48,8 @@ pub struct Station {
 pub const ELECTRONIC: &str = "Electronic";
 pub const NEWS: &str = "Tech and hacking news";
 pub const OWN: &str = "My stations";
+/// What a file that is played says in place of a genre.
+pub const FILES: &str = "From your files";
 
 /// The stations omafile starts with. SomaFM is listener-supported radio without
 /// commercials and publishes these playlists for players to use; the podcasts are the

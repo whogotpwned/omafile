@@ -206,3 +206,11 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 21.4 *Skip This Version*: no notification for that version on the following days; *Check for Updates* still names it.
 - [ ] 21.5 Preferences › Updates off: no request is made at start (`~/.local/state/omafile/update` keeps its old `checked` time). *Check for Updates* still works.
 - [ ] 21.6 Without a network: no notification, no error, nothing hangs; `omafile --check-update` prints that it could not ask and exits with 1.
+
+## 22. Playing files (on a stock Omarchy, without the GStreamer plugins)
+
+- [ ] 22.1 Click the play badge on an MP3 or FLAC: it plays within a second or two; the mini player appears in the sidebar and `F8` shows it. Pause, seek and the media keys work. `pacman -Q gst-plugins-good` says it is not installed.
+- [ ] 22.2 Click the play badge on an MP4: mpv opens in its own window and plays; Quick Look steps aside.
+- [ ] 22.3 Double click (or `Enter`) on a song, a video, a picture, a PDF and a text file: each opens in its default application at once, without a chooser dialog.
+- [ ] 22.4 `Space` on a song (Quick Look): it plays; the line under the facts says that it plays through mpv.
+- [ ] 22.5 After `sudo pacman -S --needed gst-plugins-good gst-libav` and a restart of omafile: the play badge plays inside the preview, with the controls under the cover.

@@ -73,6 +73,13 @@ impl QuickLook {
             }
         });
         this.dialog.add_controller(keys);
+        // A video that plays in the video player's window needs no second view of it here.
+        let dialog = this.dialog.downgrade();
+        this.preview.connect_video_left(move || {
+            if let Some(dialog) = dialog.upgrade() {
+                dialog.close();
+            }
+        });
         let weak = Rc::downgrade(&this);
         this.dialog.connect_closed(move |_| {
             if let Some(q) = weak.upgrade() {

@@ -374,15 +374,17 @@ impl RadioPlayer {
             if now.station.is_none() {
                 return;
             }
-            let live = now.station.as_ref().is_some_and(|s| s.kind == Kind::Live);
+            let kind = now.station.as_ref().map(|s| s.kind);
+            let live = kind == Some(Kind::Live);
             match said {
                 Said::Pause(paused) if matches!(now.state, State::Playing | State::Paused) => now.state = if paused { State::Paused } else { State::Playing },
                 Said::Loaded => {
                     now.state = State::Playing;
                     now.error.clear();
                 }
-                // A stream names its songs; an episode has its title from the feed.
-                Said::Title(title) if live => {
+                // A stream names its songs and a file carries its tags; an episode has its
+                // title from the feed.
+                Said::Title(title) if live || kind == Some(Kind::File) => {
                     let (artist, song) = radio::split_title(&title);
                     tell = now.title != song || now.artist != artist;
                     now.title = song;
@@ -402,7 +404,7 @@ impl RadioPlayer {
                 // mpv's own words ("loading failed") say less than this.
                 Said::Ended(Some(_)) if now.active() => {
                     now.state = State::Failed;
-                    now.error = tr("The address does not answer or sends no sound");
+                    now.error = if kind == Some(Kind::File) { tr("This file cannot be played") } else { tr("The address does not answer or sends no sound") };
                 }
                 // An episode that is over is over; a stream that ends has dropped out.
                 Said::Ended(None) if now.active() => {
@@ -438,6 +440,13 @@ impl RadioPlayer {
         }
     }
 
+    /// Play a sound file from the user's folders: the same player, the same place in Now
+    /// Playing and on the media keys. This is how a song is heard on a machine where GTK's
+    /// own player lacks the decoder (Omarchy ships mpv, not the GStreamer plugins).
+    pub fn play_file(self: &Rc<Self>, path: &str, name: &str) {
+        self.play(&Station { kind: Kind::File, genre: radio::FILES.into(), name: name.to_string(), url: path.to_string() });
+    }
+
     /// Play a station from its beginning: the stream, or the newest episode.
     pub fn play(self: &Rc<Self>, station: &Station) {
         let request = self.request.get() + 1;
@@ -447,15 +456,18 @@ impl RadioPlayer {
             let volume = now.volume;
             *now = Now { station: Some(station.clone()), state: State::Loading, volume, ..Default::default() };
         }
-        if let Some(dir) = last_path().parent() {
-            let _ = std::fs::create_dir_all(dir);
+        // The station to come back to; a file that was played is not one.
+        if station.kind != Kind::File {
+            if let Some(dir) = last_path().parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(last_path(), &station.url);
         }
-        let _ = std::fs::write(last_path(), &station.url);
         self.changed();
         let (this, station) = (self.clone(), station.clone());
         glib::spawn_future_local(async move {
             match station.kind {
-                Kind::Live => this.load(request, station.url.clone()).await,
+                Kind::Live | Kind::File => this.load(request, station.url.clone()).await,
                 Kind::Podcast => {
                     let fetched = crate::feedsui::fetch(&station.url).await;
                     if this.request.get() != request {
@@ -647,7 +659,7 @@ pub fn property(now: &Now, interface: &str, name: &str, art: Option<&str>) -> Op
     Some(match (interface, name) {
         (ROOT, "CanQuit") | (ROOT, "CanRaise") => true.to_variant(),
         (ROOT, "HasTrackList") => false.to_variant(),
-        (ROOT, "Identity") => "omafile Radio".to_variant(),
+        (ROOT, "Identity") => if now.station.as_ref().is_some_and(|s| s.kind == Kind::File) { "omafile" } else { "omafile Radio" }.to_variant(),
         (ROOT, "DesktopEntry") => "io.github.whogotpwned.Omafile".to_variant(),
         (ROOT, "SupportedUriSchemes") => vec!["http".to_string(), "https".to_string()].to_variant(),
         (ROOT, "SupportedMimeTypes") => Vec::<String>::new().to_variant(),

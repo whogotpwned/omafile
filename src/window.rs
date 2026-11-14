@@ -1917,7 +1917,29 @@ impl Window {
         self.state.borrow().view_mode.clone()
     }
 
+    /// Open a file. Its default application is started directly, as file managers do; the
+    /// desktop's chooser is asked only for "Open With…" or when nothing is set for the type.
+    /// (Going through the portal for every file adds a dialog on the first opens, and on
+    /// some setups nothing at all.)
     pub fn launch(self: &Rc<Self>, file: &gio::File, ask: bool) {
+        if ask {
+            self.launch_asking(file, true);
+            return;
+        }
+        let (this, file) = (Rc::downgrade(self), file.clone());
+        glib::spawn_future_local(async move {
+            let info = file.query_info_future("standard::content-type", gio::FileQueryInfoFlags::NONE, glib::Priority::DEFAULT).await.ok();
+            let Some(w) = this.upgrade() else { return };
+            let app = info.and_then(|i| i.content_type()).and_then(|kind| gio::AppInfo::default_for_type(&kind, false));
+            let context = gtk::prelude::WidgetExt::display(&w.window).app_launch_context();
+            let started = app.is_some_and(|app| app.launch(std::slice::from_ref(&file), Some(&context)).is_ok());
+            if !started {
+                w.launch_asking(&file, false);
+            }
+        });
+    }
+
+    fn launch_asking(self: &Rc<Self>, file: &gio::File, ask: bool) {
         let launcher = gtk::FileLauncher::new(Some(file));
         launcher.set_always_ask(ask);
         let this = Rc::downgrade(self);
