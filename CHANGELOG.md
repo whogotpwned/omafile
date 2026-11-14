@@ -2,6 +2,18 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.32.1 — 2026-11-14
+
+### Fixed
+- **FLAC files did not play.** 0.31.1 let mpv take over when GTK's own player reported that it could not play a file; for FLAC it could not and did not say so. Songs no longer go through GTK's player at all where `mpv` is installed: mpv plays every song, whatever the format and whatever GStreamer plugins there are.
+
+### Changed
+- **The play button on a file's icon just plays.** It no longer opens the preview: a song starts in omafile's player (mini player in the sidebar, *Now Playing* on `F8`), a second click pauses it, and it keeps playing while you browse. A video opens in the video player's window. *Play* in the context menu does the same.
+- **Quick Look (`Space`) has its own controls for a song**: play / pause, a position bar to drag, and the time. What the preview started ends when it is closed; what the play button started plays on.
+
+### Added
+- **The cover of the file in the player.** *Now Playing*, the mini player and whatever else shows the playing track get the picture inside the sound file, else a `cover.jpg` / `folder.jpg` (also `front`, `album`; PNG, WebP) lying beside it. Title, artist and album come from the file's tags.
+
 ## 0.32.0 — 2026-11-14
 
 ### Added

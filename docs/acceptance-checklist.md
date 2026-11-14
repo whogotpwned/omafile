@@ -214,8 +214,10 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 
 ## 22. Playing files (on a stock Omarchy, without the GStreamer plugins)
 
-- [ ] 22.1 Click the play badge on an MP3 or FLAC: it plays within a second or two; the mini player appears in the sidebar and `F8` shows it. Pause, seek and the media keys work. `pacman -Q gst-plugins-good` says it is not installed.
-- [ ] 22.2 Click the play badge on an MP4: mpv opens in its own window and plays; Quick Look steps aside.
-- [ ] 22.3 Double click (or `Enter`) on a song, a video, a picture, a PDF and a text file: each opens in its default application at once, without a chooser dialog.
-- [ ] 22.4 `Space` on a song (Quick Look): it plays; the line under the facts says that it plays through mpv.
-- [ ] 22.5 After `sudo pacman -S --needed gst-plugins-good gst-libav` and a restart of omafile: the play badge plays inside the preview, with the controls under the cover.
+- [ ] 22.1 Click the play badge on an MP3, a FLAC, an Ogg and an M4A: each plays within a second or two, and **no preview opens**. The mini player appears in the sidebar.
+- [ ] 22.2 `F8`: Now Playing shows the cover from the file (or `cover.jpg` beside it), title, artist and album from the tags; pause, seeking and the media keys work.
+- [ ] 22.3 A second click on the badge of the song that plays pauses it; a third goes on. A click on another song's badge switches to it. Browsing to another folder does not stop it.
+- [ ] 22.4 Click the play badge on an MP4: mpv opens in its own window and plays; no preview opens.
+- [ ] 22.5 `Space` on a song: Quick Look opens and it plays; the button pauses, dragging the bar seeks, the time counts. `←`/`→` play the neighbours. `Esc` closes the preview and the music stops.
+- [ ] 22.6 Start a song with the badge, then `Space` on the same song and `Esc`: it keeps playing (the preview did not start it).
+- [ ] 22.7 Double click (or `Enter`) on a song, a video, a picture, a PDF and a text file: each opens in its default application at once, without a chooser dialog.

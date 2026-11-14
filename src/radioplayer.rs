@@ -48,6 +48,8 @@ pub struct Now {
     /// What plays: the song a stream names, or the episode.
     pub title: String,
     pub artist: String,
+    /// The album a sound file names in its tags.
+    pub album: String,
     pub error: String,
     /// Seconds; 0 for a stream, which has no beginning and no end.
     pub position: f64,
@@ -60,7 +62,7 @@ pub struct Now {
 
 impl Default for Now {
     fn default() -> Self {
-        Now { station: None, state: State::Stopped, title: String::new(), artist: String::new(), error: String::new(), position: 0.0, duration: 0.0, volume: 1.0, episodes: Vec::new(), episode: 0 }
+        Now { station: None, state: State::Stopped, title: String::new(), artist: String::new(), album: String::new(), error: String::new(), position: 0.0, duration: 0.0, volume: 1.0, episodes: Vec::new(), episode: 0 }
     }
 }
 
@@ -86,6 +88,34 @@ impl Now {
             (self.title.clone(), self.artist.clone())
         }
     }
+}
+
+/// The picture that belongs to a sound file: the cover inside it (written once to
+/// `cache`), else a picture lying beside it under one of the usual names.
+pub fn cover_of(audio: &std::path::Path, cache: &std::path::Path) -> Option<PathBuf> {
+    let meta = std::fs::metadata(audio).ok()?;
+    let changed = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+    let target = cache.join(format!("{}.png", feeds::hash(&format!("{}:{}:{changed}", audio.display(), meta.len()))));
+    if target.is_file() {
+        return Some(target);
+    }
+    if let Some(png) = crate::thumbs::cover_png(audio) {
+        std::fs::create_dir_all(cache).ok()?;
+        std::fs::write(&target, png).ok()?;
+        return Some(target);
+    }
+    let beside = std::fs::read_dir(audio.parent()?).ok()?;
+    let mut pictures: Vec<PathBuf> = beside
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            let stem = p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+            let ending = p.extension().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+            ["cover", "folder", "front", "album", "albumart"].contains(&stem.as_str()) && ["jpg", "jpeg", "png", "webp"].contains(&ending.as_str())
+        })
+        .collect();
+    pictures.sort();
+    pictures.into_iter().next()
 }
 
 /// The episodes of a feed that have sound, newest first.
@@ -135,8 +165,8 @@ fn question(id: f64, parts: &[Json]) -> String {
 #[derive(Debug, PartialEq)]
 pub enum Said {
     Pause(bool),
-    /// What the stream calls the current song.
-    Title(String),
+    /// What the stream calls the current song ("Artist - Title"), and the album a file names.
+    Title(String, String),
     Position(f64),
     Duration(f64),
     Volume(f64),
@@ -158,9 +188,9 @@ pub fn understand(line: &str) -> Said {
             (Some("metadata"), Some(tags)) => {
                 let tag = |wanted: &str| tags.entries().into_iter().find(|(key, _)| key.eq_ignore_ascii_case(wanted)).and_then(|(_, value)| if let Json::String(text) = value { Some(text.trim().to_string()) } else { None }).filter(|text| !text.is_empty());
                 match (tag("icy-title"), tag("title"), tag("artist")) {
-                    (Some(icy), _, _) => Said::Title(icy),
-                    (None, Some(title), Some(artist)) => Said::Title(format!("{artist} - {title}")),
-                    (None, Some(title), None) => Said::Title(title),
+                    (Some(icy), _, _) => Said::Title(icy, String::new()),
+                    (None, Some(title), Some(artist)) => Said::Title(format!("{artist} - {title}"), tag("album").unwrap_or_default()),
+                    (None, Some(title), None) => Said::Title(title, tag("album").unwrap_or_default()),
                     _ => Said::Nothing,
                 }
             }
@@ -195,6 +225,8 @@ pub struct RadioPlayer {
     request: Cell<u64>,
     bus: RefCell<Option<Served>>,
     hold: RefCell<Option<gio::ApplicationHoldGuard>>,
+    /// The cover of the sound file that plays: its path, and the picture found for it.
+    file_art: RefCell<Option<(String, String)>>,
 }
 
 thread_local! {
@@ -206,6 +238,7 @@ thread_local! {
         request: Cell::new(0),
         bus: RefCell::new(None),
         hold: RefCell::new(None),
+        file_art: RefCell::new(None),
     });
 }
 
@@ -384,11 +417,12 @@ impl RadioPlayer {
                 }
                 // A stream names its songs and a file carries its tags; an episode has its
                 // title from the feed.
-                Said::Title(title) if live || kind == Some(Kind::File) => {
+                Said::Title(title, album) if live || kind == Some(Kind::File) => {
                     let (artist, song) = radio::split_title(&title);
-                    tell = now.title != song || now.artist != artist;
+                    tell = now.title != song || now.artist != artist || now.album != album;
                     now.title = song;
                     now.artist = artist;
+                    now.album = album;
                 }
                 // Told to nobody: whoever shows the time asks for it.
                 Said::Position(seconds) => {
@@ -445,6 +479,22 @@ impl RadioPlayer {
     /// own player lacks the decoder (Omarchy ships mpv, not the GStreamer plugins).
     pub fn play_file(self: &Rc<Self>, path: &str, name: &str) {
         self.play(&Station { kind: Kind::File, genre: radio::FILES.into(), name: name.to_string(), url: path.to_string() });
+        // Its cover, for Now Playing and whoever else shows what plays: the picture inside
+        // the file, else one lying beside it. Looked up off the main thread, then announced.
+        if self.file_art.borrow().as_ref().is_some_and(|(of, _)| of == path) {
+            return;
+        }
+        self.file_art.replace(None);
+        let (this, path) = (Rc::downgrade(self), path.to_string());
+        glib::spawn_future_local(async move {
+            let (audio, cache) = (PathBuf::from(&path), glib::user_cache_dir().join("omafile/covers"));
+            let found = gio::spawn_blocking(move || cover_of(&audio, &cache)).await.ok().flatten();
+            let (Some(player), Some(cover)) = (this.upgrade(), found) else { return };
+            if player.now.borrow().station.as_ref().is_some_and(|s| s.url == path) {
+                player.file_art.replace(Some((path, gio::File::for_path(cover).uri().to_string())));
+                player.changed();
+            }
+        });
     }
 
     /// Play a station from its beginning: the stream, or the newest episode.
@@ -680,7 +730,14 @@ pub fn property(now: &Now, interface: &str, name: &str, art: Option<&str>) -> Op
             // Under a song stands its station; where the station's name stands already (alone, or
             // as the maker of an episode), what kind of station it is.
             let name = station.map(|s| s.name.clone()).unwrap_or_default();
-            let album = if title == name || artist == name { station.map(|s| crate::radioui::genre_title(&s.genre)).unwrap_or_default() } else { name };
+            let album = if station.is_some_and(|s| s.kind == Kind::File) {
+                // A file: the album from its tags, or nothing; its name is not an album.
+                now.album.clone()
+            } else if title == name || artist == name {
+                station.map(|s| crate::radioui::genre_title(&s.genre)).unwrap_or_default()
+            } else {
+                name
+            };
             dict.insert_value("xesam:album", &album.to_variant());
             dict.insert_value("xesam:url", &station.map(|s| s.url.clone()).unwrap_or_default().to_variant());
             if seekable {
@@ -696,7 +753,17 @@ pub fn property(now: &Now, interface: &str, name: &str, art: Option<&str>) -> Op
 }
 
 impl RadioPlayer {
-    fn art(now: &Now) -> Option<String> {
+    fn art(&self, now: &Now) -> Option<String> {
+        let station = now.station.as_ref()?;
+        if station.kind == Kind::File {
+            if let Some((_, cover)) = self.file_art.borrow().as_ref().filter(|(of, _)| *of == station.url) {
+                return Some(cover.clone());
+            }
+        }
+        Self::drawn_art(now)
+    }
+
+    fn drawn_art(now: &Now) -> Option<String> {
         now.station.as_ref().and_then(crate::radioui::art_file).map(|p| gio::File::for_path(p).uri().to_string())
     }
 
@@ -720,7 +787,7 @@ impl RadioPlayer {
             return;
         }
         let Some(connection) = self.bus.borrow().as_ref().map(|s| s.connection.clone()) else { return };
-        let art = Self::art(now);
+        let art = self.art(now);
         let changed = glib::VariantDict::new(None);
         for name in ["PlaybackStatus", "Metadata", "Volume", "CanSeek"] {
             if let Some(value) = property(now, PLAYER_IFACE, name, art.as_deref()) {
@@ -754,8 +821,9 @@ impl RadioPlayer {
                     invocation.return_value(None);
                 })
                 .property(move |_, _, _, interface, name| {
-                    let now = weak2.upgrade().map(|p| p.now()).unwrap_or_default();
-                    let art = Self::art(&now);
+                    let player = weak2.upgrade();
+                    let now = player.as_ref().map(|p| p.now()).unwrap_or_default();
+                    let art = player.and_then(|p| p.art(&now));
                     property(&now, interface, name, art.as_deref()).unwrap_or_else(|| "".to_variant())
                 })
                 .set_property(move |_, _, _, _, name, value| {
@@ -828,8 +896,9 @@ mod tests {
     #[test]
     fn what_mpv_says_is_understood() {
         assert_eq!(understand(r#"{"event":"property-change","id":1,"name":"pause","data":true}"#), Said::Pause(true));
-        assert_eq!(understand(r#"{"event":"property-change","id":2,"name":"metadata","data":{"icy-name":"Test FM","icy-title":"Aphex Twin - Xtal"}}"#), Said::Title("Aphex Twin - Xtal".into()));
-        assert_eq!(understand(r#"{"event":"property-change","id":2,"name":"metadata","data":{"ARTIST":"Autechre","Title":"Bike"}}"#), Said::Title("Autechre - Bike".into()), "tags of an Ogg stream");
+        assert_eq!(understand(r#"{"event":"property-change","id":2,"name":"metadata","data":{"icy-name":"Test FM","icy-title":"Aphex Twin - Xtal"}}"#), Said::Title("Aphex Twin - Xtal".into(), String::new()));
+        assert_eq!(understand(r#"{"event":"property-change","id":2,"name":"metadata","data":{"ARTIST":"Autechre","Title":"Bike"}}"#), Said::Title("Autechre - Bike".into(), String::new()), "tags of an Ogg stream");
+        assert_eq!(understand(r#"{"event":"property-change","id":2,"name":"metadata","data":{"title":"Night Drive","artist":"Omarchy FM","album":"Late Hours"}}"#), Said::Title("Omarchy FM - Night Drive".into(), "Late Hours".into()), "tags of a file");
         assert_eq!(understand(r#"{"event":"property-change","id":2,"name":"metadata","data":{"icy-name":"Test FM"}}"#), Said::Nothing, "nothing said about the song");
         assert_eq!(understand(r#"{"event":"property-change","id":2,"name":"metadata"}"#), Said::Nothing);
         assert_eq!(understand(r#"{"data":12.5,"request_id":7,"error":"success"}"#), Said::Position(12.5));
@@ -884,6 +953,25 @@ mod tests {
             let name = line.split("name=\"").nth(1).unwrap().split('"').next().unwrap();
             assert!(property(&cast, ROOT, name, None).or_else(|| property(&cast, PLAYER_IFACE, name, None)).is_some(), "{name}");
         }
+    }
+
+    #[test]
+    fn a_song_gets_the_picture_lying_beside_it() {
+        let dir = std::env::temp_dir().join(format!("omafile-cover-{}", std::process::id()));
+        let (album, cache) = (dir.join("album"), dir.join("cache"));
+        std::fs::create_dir_all(&album).unwrap();
+        // Not really sound: there is no picture inside to be found.
+        let song = album.join("01 - Intro.flac");
+        std::fs::write(&song, b"not a flac").unwrap();
+        assert_eq!(cover_of(&song, &cache), None, "nothing inside, nothing beside");
+        std::fs::write(album.join("notes.jpg"), b"x").unwrap();
+        assert_eq!(cover_of(&song, &cache), None, "any picture will not do");
+        std::fs::write(album.join("Folder.JPG"), b"x").unwrap();
+        assert_eq!(cover_of(&song, &cache), Some(album.join("Folder.JPG")), "the usual names, in any case");
+        std::fs::write(album.join("cover.png"), b"x").unwrap();
+        assert_eq!(cover_of(&song, &cache), Some(album.join("Folder.JPG")).filter(|_| "Folder.JPG" < "cover.png"), "the first by name");
+        assert_eq!(cover_of(&album.join("gone.mp3"), &cache), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

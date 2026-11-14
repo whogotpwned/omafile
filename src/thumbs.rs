@@ -441,6 +441,20 @@ fn decode_cover(path: &std::path::Path, size: i32) -> Option<Decoded> {
     pixbuf_from_bytes(&output.stdout, size)
 }
 
+/// The cover inside a sound file as a PNG, the way it is written to disk for other
+/// programs to show (the player on the media keys wants a file, not pixels).
+pub fn cover_png(path: &std::path::Path) -> Option<Vec<u8>> {
+    let output = std::process::Command::new("ffmpeg")
+        .args(["-v", "quiet", "-i"])
+        .arg(path)
+        .args(["-an", "-map", "0:v:0", "-frames:v", "1", "-vf", "scale='min(640,iw)':-2", "-f", "image2pipe", "-vcodec", "png", "-"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    (output.status.success() && output.stdout.starts_with(&[0x89, b'P', b'N', b'G'])).then_some(output.stdout)
+}
+
 fn read_text_head(path: &std::path::Path) -> Option<String> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).ok()?;

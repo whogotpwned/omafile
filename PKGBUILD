@@ -1,6 +1,6 @@
 # Maintainer: whogotpwned
 pkgname=omafile
-pkgver=0.32.0
+pkgver=0.32.1
 pkgrel=1
 pkgdesc="Native GTK4/libadwaita file manager that follows the Omarchy theme"
 arch=('x86_64' 'aarch64')

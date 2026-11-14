@@ -573,6 +573,28 @@ impl Window {
         }
     }
 
+    /// The play button on a file's icon, and "Play" in its menu: just play it. A song goes
+    /// to omafile's mpv player (a second click pauses it), a video to the video player's
+    /// window; no preview opens. Without mpv, Quick Look plays it with GTK's own player.
+    pub fn play_selected(self: &Rc<Self>, pane: &Rc<crate::pane::Pane>) {
+        let Some(item) = pane.selected_items().into_iter().next() else { return };
+        let file = item.target_file();
+        if item.is_audio() && radioplayer::mpv_installed() {
+            let path = file.path().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| file.uri().to_string());
+            let player = radioplayer::player();
+            if player.now().is_on(&path) {
+                player.toggle();
+            } else {
+                player.play_file(&path, &item.display_name());
+            }
+            return;
+        }
+        if item.is_video() && open_in_player(&file) {
+            return;
+        }
+        self.quicklook.play(pane, &self.window);
+    }
+
     /// Tell when a station cannot be played, wherever the window is.
     pub fn radio_watch(self: &Rc<Self>) {
         let this = Rc::downgrade(self);

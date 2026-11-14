@@ -2079,7 +2079,7 @@ pub fn make_thumb(size: i32, wide: bool, pane: Weak<Pane>) -> gtk::Overlay {
         let Some(pos) = position else { return };
         p.selection.select_item(pos, true);
         if let Some(win) = p.window.upgrade() {
-            win.quicklook.play(&p, &win.window);
+            win.play_selected(&p);
         }
     });
     overlay.add_overlay(&play);

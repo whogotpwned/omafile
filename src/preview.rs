@@ -36,6 +36,15 @@ pub struct PreviewPane {
     media_failed: Cell<bool>,
     /// Told when a video went to the video player's own window (Quick Look steps aside).
     video_left: RefCell<Option<Box<dyn Fn()>>>,
+    /// Play / pause, position and time for a song that omafile's mpv player plays: where
+    /// mpv is installed it plays every song, whatever GTK's own player can decode.
+    engine_row: gtk::Box,
+    engine_play: gtk::Button,
+    engine_scale: gtk::Scale,
+    engine_time: gtk::Label,
+    /// The song on show that the mpv player is to play, and whether this view started it.
+    engine_song: RefCell<Option<(String, String)>>,
+    engine_started: Cell<bool>,
     /// Pixel size requested for images and PDF pages.
     image_size: i32,
     /// Page turner under a multi-page document.
@@ -143,10 +152,28 @@ impl PreviewPane {
         controls.add_css_class("omafile-media-controls");
         controls.set_margin_start(12);
         controls.set_margin_end(12);
+        let engine_play = gtk::Button::from_icon_name("media-playback-start-symbolic");
+        engine_play.add_css_class("circular");
+        engine_play.add_css_class("suggested-action");
+        engine_play.set_valign(gtk::Align::Center);
+        engine_play.set_tooltip_text(Some(tr("Play or pause").as_str()));
+        let engine_scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 1.0);
+        engine_scale.set_hexpand(true);
+        engine_scale.set_valign(gtk::Align::Center);
+        engine_scale.set_sensitive(false);
+        let engine_time = gtk::Label::builder().css_classes(["omafile-dim", "caption", "numeric"]).valign(gtk::Align::Center).build();
+        let engine_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        engine_row.set_margin_start(16);
+        engine_row.set_margin_end(16);
+        engine_row.set_visible(false);
+        engine_row.append(&engine_play);
+        engine_row.append(&engine_scale);
+        engine_row.append(&engine_time);
         let media_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
         media_box.set_margin_top(12);
         media_box.append(&art);
         media_box.append(&controls);
+        media_box.append(&engine_row);
 
         stack.add_named(&placeholder, Some("none"));
         stack.add_named(&picture_box, Some("image"));
@@ -178,7 +205,7 @@ impl PreviewPane {
         root.append(&stack);
         root.append(&info);
 
-        let this = Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None), media_item: RefCell::new(None), wants_play: Cell::new(false), media_failed: Cell::new(false), video_left: RefCell::new(None), pager, page_label, doc: RefCell::new(None), anim: RefCell::new(None), anim_paused: Cell::new(false) });
+        let this = Rc::new(PreviewPane { root, stack, picture, text, icon, name, details, hint, thumbs, generation: Cell::new(0), image_size, video, cover, media_icon, controls, media: RefCell::new(None), media_item: RefCell::new(None), wants_play: Cell::new(false), media_failed: Cell::new(false), video_left: RefCell::new(None), engine_row, engine_play, engine_scale, engine_time, engine_song: RefCell::new(None), engine_started: Cell::new(false), pager, page_label, doc: RefCell::new(None), anim: RefCell::new(None), anim_paused: Cell::new(false) });
         let weak = Rc::downgrade(&this);
         prev.connect_clicked(move |_| { if let Some(p) = weak.upgrade() { p.doc_step(-1); } });
         let weak = Rc::downgrade(&this);
@@ -204,7 +231,75 @@ impl PreviewPane {
             }
         });
         picture_box.add_controller(scroll);
+
+        // The song controls: the button, the position (drag to seek), and keeping both true.
+        let weak = Rc::downgrade(&this);
+        this.engine_play.connect_clicked(move |_| {
+            if let Some(p) = weak.upgrade() {
+                p.engine_toggle();
+            }
+        });
+        let weak = Rc::downgrade(&this);
+        this.engine_scale.connect_change_value(move |_, _, value| {
+            if let Some(song) = weak.upgrade().and_then(|p| p.engine_song.borrow().clone()) {
+                let player = crate::radioplayer::player();
+                if player.now().is_on(&song.0) {
+                    player.seek_to(value);
+                }
+            }
+            glib::Propagation::Proceed
+        });
+        let weak = Rc::downgrade(&this);
+        crate::radioplayer::player().connect_changed(move |_| {
+            if let Some(p) = weak.upgrade() {
+                p.engine_sync();
+            }
+        });
+        let weak = Rc::downgrade(&this);
+        glib::timeout_add_local(std::time::Duration::from_millis(500), move || match weak.upgrade() {
+            Some(p) => {
+                if p.engine_song.borrow().is_some() && p.root.is_mapped() {
+                    p.engine_sync();
+                }
+                glib::ControlFlow::Continue
+            }
+            None => glib::ControlFlow::Break,
+        });
         this
+    }
+
+    /// Show what the mpv player does with the song on show.
+    fn engine_sync(&self) {
+        let Some((path, _)) = self.engine_song.borrow().clone() else { return };
+        let now = crate::radioplayer::player().now();
+        let on = now.is_on(&path);
+        let sounding = on && now.state != crate::radioplayer::State::Paused;
+        self.engine_play.set_icon_name(if sounding { "media-playback-pause-symbolic" } else { "media-playback-start-symbolic" });
+        let known = on && now.duration > 0.0;
+        self.engine_scale.set_sensitive(known);
+        if known {
+            self.engine_scale.set_range(0.0, now.duration);
+            self.engine_scale.set_value(now.position.clamp(0.0, now.duration));
+            self.engine_time.set_text(&format!("{} / {}", crate::mpris::fmt_time((now.position * 1e6) as i64), crate::mpris::fmt_time((now.duration * 1e6) as i64)));
+        } else {
+            self.engine_scale.set_value(0.0);
+            self.engine_time.set_text(if on { "…" } else { "" });
+        }
+        if on && now.state == crate::radioplayer::State::Failed {
+            self.hint.set_text(&now.error);
+        }
+    }
+
+    /// The button under the cover: start the song, or pause and go on.
+    fn engine_toggle(&self) {
+        let Some((path, name)) = self.engine_song.borrow().clone() else { return };
+        let player = crate::radioplayer::player();
+        if player.now().is_on(&path) {
+            player.toggle();
+        } else {
+            self.engine_started.set(true);
+            player.play_file(&path, &name);
+        }
     }
 
     /// GIFs and animated WebP play in the preview (the icons in the list stay still).
@@ -802,28 +897,30 @@ impl PreviewPane {
         self.media_item.replace(Some((item.target_file(), item.display_name(), item.is_video())));
         self.wants_play.set(false);
         self.media_failed.set(false);
-        self.controls.set_visible(true);
-        let media = gtk::MediaFile::for_file(&item.target_file());
+        // A song, and mpv is there: omafile's mpv player plays it, with the controls below.
+        // GTK's own player is left out of it: what it can decode depends on plugins that a
+        // stock Omarchy does not have, and it does not always say when it cannot.
+        let engine = !item.is_video() && crate::radioplayer::mpv_installed();
+        self.engine_row.set_visible(engine);
+        self.controls.set_visible(!engine);
+        self.engine_started.set(false);
+        let target = item.target_file();
+        self.engine_song.replace(engine.then(|| (target.path().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| target.uri().to_string()), item.display_name())));
         let art = self.video.parent().and_downcast::<gtk::Stack>().expect("media art stack");
+        if engine {
+            self.video.set_media_stream(None::<&gtk::MediaStream>);
+            self.show_cover(item, &art);
+            self.engine_sync();
+            self.stack.set_visible_child_name("media");
+            return;
+        }
+        let media = gtk::MediaFile::for_file(&target);
         if item.is_video() {
             self.video.set_media_stream(Some(&media));
             art.set_visible_child_name("video");
         } else {
             self.video.set_media_stream(None::<&gtk::MediaStream>);
-            if ThumbCache::can_thumbnail(item) {
-                self.thumbs.assign(item, &self.cover, self.image_size);
-                art.set_visible_child_name("cover");
-                let art2 = art.clone();
-                let cover = self.cover.clone();
-                // No cover art inside the file: fall back to the icon once we know.
-                glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
-                    if cover.paintable().is_none() && art2.visible_child_name().as_deref() == Some("cover") {
-                        art2.set_visible_child_name("icon");
-                    }
-                });
-            } else {
-                art.set_visible_child_name("icon");
-            }
+            self.show_cover(item, &art);
         }
         self.controls.set_media_stream(Some(&media));
         let hint = self.hint.clone();
@@ -861,8 +958,37 @@ impl PreviewPane {
         self.stack.set_visible_child_name("media");
     }
 
+    /// A song's cover over its controls, or its icon when the file carries none.
+    fn show_cover(&self, item: &FileItem, art: &gtk::Stack) {
+        if ThumbCache::can_thumbnail(item) {
+            self.thumbs.assign(item, &self.cover, self.image_size);
+            art.set_visible_child_name("cover");
+            let art2 = art.clone();
+            let cover = self.cover.clone();
+            // No cover art inside the file: fall back to the icon once we know.
+            glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+                if cover.paintable().is_none() && art2.visible_child_name().as_deref() == Some("cover") {
+                    art2.set_visible_child_name("icon");
+                }
+            });
+        } else {
+            art.set_visible_child_name("icon");
+        }
+    }
+
     /// Start playback of the media shown (Quick Look on an audio file, "Play").
     pub fn play(&self) {
+        if let Some((path, name)) = self.engine_song.borrow().clone() {
+            let player = crate::radioplayer::player();
+            let now = player.now();
+            if !now.is_on(&path) {
+                self.engine_started.set(true);
+                player.play_file(&path, &name);
+            } else if now.state == crate::radioplayer::State::Paused {
+                player.toggle();
+            }
+            return;
+        }
         self.wants_play.set(true);
         if self.media_failed.get() {
             self.play_with_mpv();
@@ -876,34 +1002,22 @@ impl PreviewPane {
         self.video_left.replace(Some(Box::new(f)));
     }
 
-    /// The way out when GTK's own player lacks a decoder, as on a stock Omarchy, which ships
-    /// mpv and not the GStreamer plugins. A song goes to omafile's mpv player, the one the
-    /// radio uses: it shows in Now Playing and listens to the media keys. A video opens in
-    /// the video player's own window.
+    /// The way out for a video when GTK's own player lacks the decoder, as on a stock
+    /// Omarchy, which ships mpv and not the GStreamer plugins: it opens in the video
+    /// player's own window. (Songs do not come here: mpv plays those from the start.)
     fn play_with_mpv(&self) {
-        let Some((file, name, video)) = self.media_item.borrow().clone() else { return };
+        let Some((file, _, video)) = self.media_item.borrow().clone() else { return };
         // Once per file, however often the error or the wish is repeated.
-        if !self.wants_play.replace(false) {
+        if !video || !self.wants_play.replace(false) {
             return;
         }
-        let started = if video {
-            crate::radioui::open_in_player(&file)
-        } else if crate::radioplayer::mpv_installed() {
-            let path = file.path().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| file.uri().to_string());
-            crate::radioplayer::player().play_file(&path, &name);
-            true
-        } else {
-            false
-        };
-        if started {
-            // The controls under the cover belong to the player that could not.
+        if crate::radioui::open_in_player(&file) {
+            // The controls under the picture belong to the player that could not.
             self.controls.set_visible(false);
-            if video {
-                if let Some(told) = self.video_left.borrow().as_ref() {
-                    told();
-                }
+            if let Some(told) = self.video_left.borrow().as_ref() {
+                told();
             }
-            self.hint.set_text(&if video { tr("Opened in the video player: the built-in one lacks the decoder for it") } else { tr("Plays through mpv: pause, seek and stop are in Now Playing (F8) and on the media keys") });
+            self.hint.set_text(&tr("Opened in the video player: the built-in one lacks the decoder for it"));
         }
     }
 
@@ -915,6 +1029,16 @@ impl PreviewPane {
         self.anim_paused.set(false);
         self.wants_play.set(false);
         self.media_item.replace(None);
+        // A song this view started ends with the view, as a preview does; one that was
+        // started with the play button on its icon plays on.
+        // (Taken out first: stopping tells every listener, this view among them.)
+        let song = self.engine_song.borrow_mut().take();
+        if let Some((path, _)) = song {
+            let player = crate::radioplayer::player();
+            if self.engine_started.replace(false) && player.now().is_on(&path) {
+                player.stop();
+            }
+        }
         if let Some(m) = self.media.borrow_mut().take() {
             m.pause();
             m.set_file(None::<&gio::File>);

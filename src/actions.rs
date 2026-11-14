@@ -386,7 +386,7 @@ impl Window {
         simple("image-resize", Box::new(|w| w.image_resize_dialog()));
         simple("play", Box::new(|w| {
             if let Some(p) = w.active_pane() {
-                w.quicklook.play(&p, &w.window);
+                w.play_selected(&p);
             }
         }));
         simple("image-rotate-left", Box::new(|w| w.image_rotate(-90)));
