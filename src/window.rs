@@ -52,7 +52,7 @@ pub enum PlaceKind {
     Volume(gio::Volume),
     /// The backup page.
     Backup,
-    /// The gallery of Omarchy themes; the entry's file is the folder they are in.
+    /// Skins for omafile; the entry's file is the folder with the user's own.
     Themes,
     /// Screenshots and screen recordings; the entry's file is the screenshot folder.
     Captures,
@@ -1311,10 +1311,8 @@ impl Window {
         }
         add("Projects", "folder-symbolic", home.join("Projects"));
         add("Code", "folder-symbolic", home.join("Code"));
-        // The gallery; the entry still is the themes folder for things dropped on it.
-        if crate::omarchy::themes_dir().is_some() || crate::omarchy::stock_themes_dir().is_dir() {
-            places.push(Place::Entry { name: tr("Omarchy Themes"), icon: "applications-graphics-symbolic".into(), file: gio::File::for_path(crate::omarchy::install_dir()), kind: PlaceKind::Themes });
-        }
+        // Skins for omafile itself; the entry is the folder with the user's own.
+        places.push(Place::Entry { name: tr("Skins"), icon: "applications-graphics-symbolic".into(), file: gio::File::for_path(crate::skins::dir()), kind: PlaceKind::Themes });
         // Screenshots and recordings: on Omarchy always, elsewhere once there are some.
         if glib::find_program_in_path("omarchy-capture-screenshot").is_some() || !crate::captures::list().is_empty() {
             places.push(Place::Entry { name: tr("Captures"), icon: "camera-photo-symbolic".into(), file: gio::File::for_path(crate::captures::screenshot_dir()), kind: PlaceKind::Captures });
@@ -1710,7 +1708,7 @@ impl Window {
                     PlaceKind::Bookmark => (tr("Bookmark"), PaletteTarget::Folder(file.clone())),
                     PlaceKind::Nearby(_) | PlaceKind::Volume(_) | PlaceKind::Vault(_) | PlaceKind::Feed(_) | PlaceKind::Backup => continue,
                     PlaceKind::Mount(_) => (tr("Device"), PaletteTarget::Folder(file.clone())),
-                    PlaceKind::Themes => (tr("Gallery of Omarchy themes"), PaletteTarget::Action("themes".into())),
+                    PlaceKind::Themes => (tr("Skins: how omafile looks"), PaletteTarget::Action("themes".into())),
                     PlaceKind::Captures => (tr("Screenshots and screen recordings"), PaletteTarget::Action("captures".into())),
                     PlaceKind::Radio => continue,
                     PlaceKind::Builtin => (location_text(file), PaletteTarget::Folder(file.clone())),
@@ -2365,7 +2363,7 @@ pub fn item_menu_model_ext(f: MenuFlags, vault: VaultState) -> gio::Menu {
     if f.images && !in_trash {
         let img = gio::Menu::new();
         img.append(Some(tr("Set as Wallpaper").as_str()), Some("win.set-wallpaper"));
-        img.append(Some(tr("Create Theme from Picture…").as_str()), Some("win.theme-from-picture"));
+        img.append(Some(tr("Create Skin from Picture…").as_str()), Some("win.theme-from-picture"));
         img.append(Some(tr("Rotate Left").as_str()), Some("win.image-rotate::-90"));
         img.append(Some(tr("Rotate Right").as_str()), Some("win.image-rotate::90"));
         img.append(Some(tr("Resize…").as_str()), Some("win.image-resize"));

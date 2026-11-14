@@ -10,7 +10,7 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.30.0-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.31.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
@@ -167,8 +167,8 @@ omarchy plugin add https://github.com/whogotpwned/omafile.git --enable   # bar b
 
 | | |
 |---|---|
-| ![themes](docs/screenshot-themes.png) | **Omarchy theme folders**: in the file view (the atelier's *Open Folder*) theme folders show their `preview.png` as thumbnail, *Apply Omarchy Theme* (`omarchy-theme-set`), *Set as Wallpaper* (`omarchy-theme-bg-set`), *Export Omarchy Theme…* to `~/Downloads/<name>.tar.gz` and *Install as Omarchy Theme* from such an archive. |
-| ![atelier](docs/screenshot-atelier.png) | **Theme atelier** (`Ctrl+Alt+A`, sidebar › *Omarchy Themes*). Every theme, Omarchy's own and yours, as a **card** with its background and its colours; the one that is on carries a ring and a tick. **One click turns a theme on** (through `omarchy-theme-set`, so the terminal, the bar and Hyprland change with it, and omafile re-skins itself as you watch). Drop pictures on a card, or *Add Backgrounds…*, and they become **backgrounds of that theme** (in `~/.config/omarchy/backgrounds/<theme>`, where Omarchy looks first); for the current theme the first one is shown at once. Right click: Turn On, Next Background, Open Folder, Move to Trash (your own themes). ![theme from picture](docs/screenshot-theme-from-picture.png) **A theme from any picture** (*New from Picture…*, or *Create Theme from Picture…* in a picture's context menu and the command palette): omafile takes the colours out of the picture, the tone of its dark or light areas for background and text, its vivid colours as **accents to choose from**, and sixteen terminal colours that keep their meaning (red stays red) but lean towards the picture's shades. Every colour is shifted in lightness until it is readable on the background. A **small desktop** shows the result live: wallpaper, bar, a terminal with the active border, a selection, the palette; **Dark / Light** switches the whole scheme. *Save* writes `~/.config/omarchy/themes/<name>` with a `colors.toml` (the palette Omarchy 4 names, `mode`, `accent`, `background`, `red` and so on, followed by the `color0` … `color15` older releases read, so one theme works on both; **Omarchy's templates build every program's file** from it), the picture as background, this preview as `preview.png` and a matching Yaru icon set; *Save and Turn On* applies it. Nothing of Omarchy's is replaced or patched; `Ctrl+Z` removes the theme again. |
+| ![themes](docs/screenshot-themes.png) | **Omarchy theme folders**: in the file view, folders that hold an Omarchy theme show their `preview.png` as thumbnail, *Apply Omarchy Theme* (`omarchy-theme-set`), *Set as Wallpaper* (`omarchy-theme-bg-set`), *Export Omarchy Theme…* to `~/Downloads/<name>.tar.gz` and *Install as Omarchy Theme* from such an archive. |
+| ![skins](docs/screenshot-skins.png) | **Skins** (`Ctrl+Alt+A`, sidebar › *Skins*): **a look of its own for omafile**. By default omafile wears the Omarchy theme that is on and changes with it; that is the first card, *Follow Omarchy*. Every other card is a skin: each theme Omarchy ships or you have installed, and the skins you made yourself, with its picture and its colours. **One click and omafile wears it. Only omafile**: the desktop, the terminal, the bar and every other program keep the theme Omarchy has on, and no Omarchy command is run. The choice is kept (`skin` in the preferences) and holds in every window; a click on *Follow Omarchy* goes back. Right click: Use This Skin, Open Folder, Move to Trash (your own skins). ![skin from picture](docs/screenshot-skin-from-picture.png) **A skin from any picture** (*New from Picture…*, or *Create Skin from Picture…* in a picture's context menu and the command palette): omafile takes the colours out of the picture, the tone of its dark or light areas for background and text, its vivid colours as **accents to choose from**, and the remaining colours so that they keep their meaning (red stays red) but lean towards the picture's shades. Every colour is shifted in lightness until it is readable on the background. A **small preview** shows the result live; **Dark / Light** switches the whole scheme. *Save* writes `~/.config/omafile/skins/<name>` with a `colors.toml`, the picture and a preview; *Save and Use* puts it on at once. `Ctrl+Z` removes the skin again. The folder has the format of an Omarchy theme, so a skin you like can be copied to `~/.config/omarchy/themes` and turned on there with Omarchy's own menu, if you ever want the whole desktop in it; omafile does not do that for you. |
 | ![light](docs/screenshot-light.png) | **Theme following**: the same build after `omarchy theme set "Catppuccin Latte"`, light window and blue folders without a restart. |
 | ![sftp](docs/screenshot-sftp.png) | **SFTP / SCP**: hosts from `~/.ssh/config` in the sidebar, *Connect to Server…* for `user@host[:port]/path`, native credential prompts, mounted servers under *Devices*. Copy, paste, drag and drop, rename and preview work on remote files like on local ones. |
 | ![two panes](docs/screenshot-scp.png) | **Servers the WinSCP way**: connecting splits the view, **local on the left, the server on the right**. Two arrows in the header copy or move the selection across (they point at the other pane; `Shift+F5` / `Shift+F6`), dragging works too, conflicts ask as usual. *Connect to Server…* takes a name and a password: **saved connections** appear under *Remote* in the sidebar (right click: Connect, Open in New Tab, Edit…, Remove). The **password goes to the system keyring** (the Secret Service, e.g. GNOME Keyring, encrypted with your login) through GVFS, never into omafile's own files; the next connect does not ask, and *Remove* deletes it from the keyring again. SSH keys work without any of that. An alias from `~/.ssh/config` may be followed by a path (`web/srv/www`). The two-pane behaviour can be switched off in Preferences › Servers. |
@@ -253,7 +253,7 @@ The question is one request for a small public file (`manifest.json` of this rep
 | `Ctrl+Alt+W` | Feeds: read the news (in the reader: `J` `K`, `O`, `M`, `R`, `Space`, `Esc`) |
 | `Ctrl+Alt+H` | Earlier versions of the selection or the folder (Btrfs snapshots) |
 | `Ctrl+Alt+K` | Backup: status, the last backups, drive, schedule and settings |
-| `Ctrl+Alt+A` | Theme atelier: the gallery of Omarchy themes, a theme from a picture |
+| `Ctrl+Alt+A` | Skins: a look of its own for omafile, also from a picture; the desktop keeps its theme |
 | `Ctrl+Alt+G` | Captures: screenshots and screen recordings by day |
 | `Ctrl+Alt+O` | Radio: internet radio and podcasts (plays in Now Playing and on the media keys) |
 | `F8` | Now Playing: full media view (in it: `Space`, `←` `→`, `↑` `↓`, `N` / `P`, `Esc`) |
@@ -274,6 +274,8 @@ omafile --toggle         Hyprland: show or hide a drop-down omafile on the speci
 omafile --print-recent   recent folders, newest first, one path per line
 omafile --print-bindings every binding: keys, action, group (tab separated)
 omafile --lock-all       unmount every unlocked gocryptfs folder (what the bar button's "Lock all" runs)
+omafile --theme-from-picture <picture> [--name <name>] [--dark | --light]
+                         make a skin for omafile out of a picture (saved in ~/.config/omafile/skins)
 omafile --captures       open omafile on the screenshots and screen recordings
 omafile --radio          open omafile on the radio stations
 omafile --copy-capture   put the newest screenshot or recording on the clipboard (wl-copy)
@@ -414,7 +416,8 @@ The button shows `⇅` while a copy or move runs and a lock glyph while encrypte
 - **Mode.** `mode = "light"` in `colors.toml`, the legacy `light.mode` marker, or background luminance for custom themes.
 - **Icons.** The theme's `icons.theme` names the icon set (Yaru variants); omafile applies it itself, Preferences can override it.
 - **Live.** A `GFileMonitor` on the `current` directory catches the swap `omarchy-theme-set` performs and re-skins open windows.
-- **Themes and captures.** omafile never does Omarchy's work a second time: a theme is turned on with `omarchy-theme-set`, a background with `omarchy-theme-bg-set` / `omarchy-theme-bg-next`, a new theme is only a `colors.toml` for Omarchy's templates, and screenshots are taken and drawn on with Omarchy's tools.
+- **Skins.** A skin changes omafile and nothing else: it is read from a folder with a `colors.toml` (an Omarchy theme, or one of omafile's own in `~/.config/omafile/skins`) and applied inside omafile's own windows. Omarchy's theme, its backgrounds and its theme commands are not touched. Only the explicit entries in a theme folder's context menu (*Apply Omarchy Theme*, *Set as Wallpaper*) call `omarchy-theme-set` / `omarchy-theme-bg-set`, and they say so.
+- **Captures.** Screenshots are taken and drawn on with Omarchy's tools; omafile never does that work a second time.
 - **Radio.** Stations are played by the `mpv` Omarchy ships, started without a window and without its scripts; omafile presents it on MPRIS as one player (`org.mpris.MediaPlayer2.omafile`), which is what Omarchy's media keys and its shell's media service control.
 - **Launching.** Windows through `uwsm-app`, terminals through `uwsm app -- $TERMINAL`, files through the desktop portal, the editor through `omarchy-launch-editor`.
 - **Language.** `~/.config/omarchy/language` (*Setup › Language*) picks the UI language of the app and the bar widget; see [Languages](#languages).
@@ -433,13 +436,13 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 
 #### What is still open before publishing
 
-Status as of 0.30.0. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
+Status as of 0.31.0. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
 
 | # | Step | State | Who and how |
 |---|---|---|---|
 | 1 | **Try it on a real Omarchy.** Install the binary (`./install.sh --all`) and the bar button (`omarchy plugin add https://github.com/whogotpwned/omafile.git --enable`), run `omarchy plugin validate .` in the checkout, and work through [docs/acceptance-checklist.md](docs/acceptance-checklist.md). The bar button in particular has only ever been checked against the shell's source, never run inside the shell. | open | The maintainer, on an Omarchy machine. What fails becomes an issue. |
 | 2 | **Add GitHub topics** so the repository can be found: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`. There are none yet. | open | The maintainer: the gear next to *About* on the repository page. |
-| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.30.0 && git push origin v0.30.0` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
+| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.31.0 && git push origin v0.31.0` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
 | 4 | **Publish to the AUR**, after step 3: `packaging/aur/update.sh` fills in the checksums of the release, commit that, then `packaging/aur/publish.sh` pushes `omafile` and `omafile-bin`. | open | The maintainer: it needs an AUR account with an SSH **public** key added under *My Account*. The private key stays on the maintainer's machine and out of this repository. |
 | 5 | **List it on the marketplace**, after step 3: submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org), which is where Omarchy's manual sends plugin authors. The texts for the form are prepared in [docs/marketplace-submission.md](docs/marketplace-submission.md). That page could not be opened from the machine this was written on, so compare the form's fields with the prepared ones. | open | The maintainer: the submission is made in the author's name. |
 | 6 | **After publishing**: `omarchy plugin update` moves users to the tip of `main`, so `main` has to stay releasable; the weekly *Omarchy compatibility* workflow reports when a new Omarchy no longer fits; later versions repeat steps 3 to 5 (the marketplace has a form for new versions). The working branch `claude/relaxed-bohr-btoomh` can be deleted once `main` is what people install. | later | The maintainer. |
@@ -505,7 +508,8 @@ Catalogs are flat JSON files in `data/i18n/<code>.json`, keyed by the English st
 
 | File | Content |
 |---|---|
-| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `nearby-enabled`, `nearby-folder`, `nearby-accept-all`, `iphone-folder`, `iphone-convert-heic`, `auto-mount`, `trash-auto-days`, `check-updates`) |
+| `~/.config/omafile/omafile.conf` | Preferences (`icon-theme`, `thumbnails`, `view`, `grid-size`, `group`, `show-hidden`, `restore-session`, `browse-archives`, `venv-auto-activate`, `mac-keys`, `vim-keys`, `vim-keys-off`, `remember-views`, `nearby-enabled`, `nearby-folder`, `nearby-accept-all`, `iphone-folder`, `iphone-convert-heic`, `auto-mount`, `trash-auto-days`, `check-updates`, `skin`) |
+| `~/.config/omafile/skins/<name>/` | Your own skins: `colors.toml`, the picture it was made from, a preview (the format of an Omarchy theme) |
 | `~/.config/omafile/radio` | Radio stations, `kind<TAB>genre<TAB>name<TAB>address` per line (`live` or `podcast`); absent until the list is changed, then the built-in stations are in it too |
 | `~/.local/state/omafile/update` | Update check: when GitHub was asked last, the newest version it named, a version you chose to skip |
 | `~/.local/share/omafile/source` | Written by `install.sh`: the checkout omafile was built from, for the update command |
@@ -541,7 +545,7 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.30.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.31.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects

@@ -74,6 +74,7 @@ mod versionsui;
 mod vimkeys;
 mod viewmem;
 mod shelf;
+mod skins;
 mod treemap;
 mod rules;
 mod rulesui;
@@ -116,7 +117,7 @@ const USAGE: &str = "usage: omafile [FOLDER…]
        omafile --backup         back up now to the drive chosen under Backup (what the timer runs)
        omafile --import-photos  open omafile and import the camera roll of a connected iPhone / iPad
        omafile --theme-from-picture <picture> [--name <name>] [--dark | --light]
-                                make an Omarchy theme out of a picture, as the theme atelier does
+                                make a skin for omafile out of a picture, as Skins does
        omafile --captures       open omafile on the screenshots and screen recordings
        omafile --radio          open omafile on the radio stations
        omafile --copy-capture   put the newest screenshot or recording on the clipboard
@@ -181,7 +182,7 @@ fn main() -> glib::ExitCode {
             eprintln!("language: {}", i18n::language());
         }
         gtk::Window::set_default_icon_name("io.github.whogotpwned.Omafile");
-        *theme2.borrow_mut() = Some(theme::ThemeManager::install(prefs2.get("icon-theme")));
+        *theme2.borrow_mut() = Some(theme::ThemeManager::install(prefs2.get("icon-theme"), prefs2.get("skin").and_then(|name| skins::resolve(&name))));
         let quit = gio::SimpleAction::new("quit", None);
         let app2 = app.clone();
         quit.connect_activate(move |_, _| {

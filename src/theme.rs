@@ -1071,12 +1071,14 @@ pub struct ThemeManager {
     palette: RefCell<Palette>,
     monitors: RefCell<Vec<gio::FileMonitor>>,
     icon_override: RefCell<Option<String>>,
+    /// A skin: omafile's own look, worn instead of the Omarchy theme that is on.
+    skin: RefCell<Option<PathBuf>>,
     pending: RefCell<Option<glib::SourceId>>,
     listeners: RefCell<Vec<Listener>>,
 }
 
 impl ThemeManager {
-    pub fn install(icon_override: Option<String>) -> Rc<Self> {
+    pub fn install(icon_override: Option<String>, skin: Option<PathBuf>) -> Rc<Self> {
         let provider = gtk::CssProvider::new();
         if let Some(display) = gdk::Display::default() {
             gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 10);
@@ -1086,6 +1088,7 @@ impl ThemeManager {
             palette: RefCell::new(Palette::default()),
             monitors: RefCell::new(Vec::new()),
             icon_override: RefCell::new(icon_override),
+            skin: RefCell::new(skin),
             pending: RefCell::new(None),
             listeners: RefCell::new(Vec::new()),
         });
@@ -1110,6 +1113,19 @@ impl ThemeManager {
         self.apply_icon_theme();
     }
 
+    /// `Some(folder)`: omafile wears this skin, whatever theme Omarchy has on. `None`: it
+    /// follows Omarchy's theme. Only omafile changes; nothing of the desktop is touched.
+    pub fn set_skin(&self, skin: Option<PathBuf>) {
+        *self.skin.borrow_mut() = skin;
+        self.apply();
+    }
+
+    /// The folder the colours come from: the skin while it exists, else Omarchy's theme.
+    fn source(&self) -> PathBuf {
+        let skin = self.skin.borrow().clone();
+        skin.filter(|d| d.join("colors.toml").is_file() || d.join("alacritty.toml").is_file()).unwrap_or_else(theme_dir)
+    }
+
     fn apply_icon_theme(&self) {
         let Some(settings) = gtk::Settings::default() else { return };
         let wanted = self.icon_override.borrow().clone().or_else(|| self.palette.borrow().icon_theme.clone());
@@ -1121,7 +1137,7 @@ impl ThemeManager {
     }
 
     fn apply(&self) {
-        let palette = load_from(&theme_dir());
+        let palette = load_from(&self.source());
         let style = adw::StyleManager::default();
         style.set_color_scheme(if palette.light { adw::ColorScheme::ForceLight } else { adw::ColorScheme::ForceDark });
         self.provider.load_from_string(&css(&palette));

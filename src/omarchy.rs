@@ -3,11 +3,6 @@
 use gtk::glib;
 use std::path::{Path, PathBuf};
 
-/// Where the user's Omarchy themes live (first existing wins).
-pub fn themes_dir() -> Option<PathBuf> {
-    [install_dir(), stock_themes_dir()].into_iter().find(|p| p.is_dir())
-}
-
 /// A folder is a theme when it carries the palette files Omarchy reads.
 pub fn is_theme_dir(dir: &Path) -> bool {
     dir.is_dir() && (dir.join("colors.toml").is_file() || dir.join("alacritty.toml").is_file() || dir.join("hyprland.conf").is_file())
@@ -33,11 +28,6 @@ pub fn folder_preview(dir: &Path) -> Option<PathBuf> {
 
 fn is_image_name(p: &Path) -> bool {
     matches!(p.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref(), Some("png" | "jpg" | "jpeg" | "webp"))
-}
-
-/// Whether a file is a picture Omarchy can show as a background.
-pub fn is_picture(p: &Path) -> bool {
-    p.is_file() && is_image_name(p)
 }
 
 pub fn theme_set_available() -> bool {
@@ -128,12 +118,6 @@ pub fn stock_themes_dir() -> PathBuf {
     omarchy_path().join("themes")
 }
 
-/// Whether this Omarchy builds a theme's files from its `colors.toml` (the templates in
-/// `default/themed`). Without them a theme needs every file written by hand.
-pub fn templates_available() -> bool {
-    glib::find_program_in_path("omarchy-theme-set-templates").is_some() || omarchy_path().join("default/themed").is_dir()
-}
-
 /// The name as Omarchy shows it: `tokyo-night` becomes `Tokyo Night`.
 pub fn display_name(name: &str) -> String {
     name.split('-')
@@ -209,21 +193,13 @@ pub fn current_theme_name_in(current_dirs: &[PathBuf]) -> Option<String> {
 /// One installed theme, as the gallery shows it.
 #[derive(Clone, Debug)]
 pub struct ThemeInfo {
-    /// The folder's name: what `omarchy-theme-set` takes.
+    /// The folder's name.
     pub name: String,
     pub dir: PathBuf,
-    /// In the user's folder (can be deleted); otherwise one Omarchy ships.
-    pub user: bool,
     pub preview: Option<PathBuf>,
     pub light: bool,
     /// Background, foreground, accent, then red, yellow, green, cyan, blue, magenta.
     pub swatches: Vec<crate::theme::Rgb>,
-    pub backgrounds: Vec<PathBuf>,
-}
-
-/// Where a user's own backgrounds for a theme go (Omarchy looks here before the theme's own).
-pub fn user_backgrounds_dir(theme: &str) -> PathBuf {
-    glib::home_dir().join(".config/omarchy/backgrounds").join(theme)
 }
 
 fn images_in(dir: &Path) -> Vec<PathBuf> {
@@ -232,24 +208,20 @@ fn images_in(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn theme_info(dir: &Path, name: &str, user: bool, extra_backgrounds: &Path) -> ThemeInfo {
+fn theme_info(dir: &Path, name: &str, extra_backgrounds: &Path) -> ThemeInfo {
     let p = crate::theme::load_from(dir);
     let mut backgrounds = images_in(extra_backgrounds);
     backgrounds.extend(images_in(&dir.join("backgrounds")));
     // The first background shows the theme better than a screenshot of a terminal does.
     let preview = backgrounds.first().cloned().or_else(|| folder_preview(dir));
-    ThemeInfo { name: name.to_string(), dir: dir.to_path_buf(), user, preview, light: p.light, swatches: vec![p.background, p.foreground, p.accent, p.red, p.yellow, p.green, p.cyan, p.blue, p.magenta], backgrounds }
+    ThemeInfo { name: name.to_string(), dir: dir.to_path_buf(), preview, light: p.light, swatches: vec![p.background, p.foreground, p.accent, p.red, p.yellow, p.green, p.cyan, p.blue, p.magenta] }
 }
 
-/// Every theme: the user's and the ones Omarchy ships, by name; a user's theme hides a
-/// shipped one of the same name, as it does for `omarchy-theme-set`.
-pub fn list_themes() -> Vec<ThemeInfo> {
-    list_themes_in(&install_dir(), &stock_themes_dir(), &glib::home_dir().join(".config/omarchy/backgrounds"))
-}
-
+/// Every theme in two folders, by name: the user's and the ones Omarchy ships. A user's
+/// theme hides a shipped one of the same name, as it does for `omarchy-theme-set`.
 pub fn list_themes_in(user_dir: &Path, stock_dir: &Path, backgrounds_dir: &Path) -> Vec<ThemeInfo> {
     let mut by_name: std::collections::BTreeMap<String, ThemeInfo> = std::collections::BTreeMap::new();
-    for (dir, user) in [(stock_dir, false), (user_dir, true)] {
+    for dir in [stock_dir, user_dir] {
         let Ok(entries) = std::fs::read_dir(dir) else { continue };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -257,7 +229,7 @@ pub fn list_themes_in(user_dir: &Path, stock_dir: &Path, backgrounds_dir: &Path)
             if name.starts_with('.') || !is_theme_dir(&path) {
                 continue;
             }
-            by_name.insert(name.clone(), theme_info(&path, &name, user, &backgrounds_dir.join(&name)));
+            by_name.insert(name.clone(), theme_info(&path, &name, &backgrounds_dir.join(&name)));
         }
     }
     by_name.into_values().collect()
@@ -352,11 +324,11 @@ mod tests {
         std::fs::write(backgrounds.join("white/mine.webp"), "x").unwrap();
 
         let themes = list_themes_in(&user, &stock, &backgrounds);
-        assert_eq!(themes.iter().map(|t| (t.name.as_str(), t.user)).collect::<Vec<_>>(), vec![("tokyo-night", true), ("white", false)], "the user's theme hides the shipped one");
+        assert_eq!(themes.iter().map(|t| (t.name.as_str(), t.dir.starts_with(&user))).collect::<Vec<_>>(), vec![("tokyo-night", true), ("white", false)], "the user's theme hides the shipped one");
         assert_eq!(themes[0].swatches[2], crate::theme::Rgb(255, 0, 0));
         let white = &themes[1];
         assert!(white.light);
-        assert_eq!(white.backgrounds.iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect::<Vec<_>>(), vec!["mine.webp", "1.jpg", "2.png"], "the user's own backgrounds first, as Omarchy cycles them");
+        // The user's own backgrounds come first, as Omarchy cycles them: the first is the preview.
         assert_eq!(white.preview.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).as_deref(), Some("mine.webp"));
 
         // Omarchy's own folder: the variable, else the first known place that has themes.
@@ -385,7 +357,7 @@ mod tests {
         assert_eq!(crate::scheme::Scheme::from_colors_toml(&std::fs::read_to_string(dir.join("colors.toml")).unwrap()), Some(scheme.clone()));
         let listed = list_themes_in(&user, &stock, &backgrounds);
         let lake = listed.iter().find(|t| t.name == "lake-at-dusk").unwrap();
-        assert!(lake.user && lake.light && lake.swatches[2] == scheme.accent && lake.backgrounds.len() == 1);
+        assert!(lake.dir.starts_with(&user) && lake.light && lake.swatches[2] == scheme.accent && lake.preview.is_some());
         assert!(!icon_theme_installed("no-such-icon-set-anywhere"));
         // Taken names and empty names are refused, and nothing half-written stays.
         assert!(write_theme(&user, "lake at dusk", &scheme, &picture, None, None).is_err());

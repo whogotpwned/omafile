@@ -2,6 +2,16 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.31.0 — 2026-11-14
+
+### Changed
+- **Skins are for omafile, not for the desktop.** The gallery (`Ctrl+Alt+A`, sidebar › *Skins*, formerly *Omarchy Themes*) used to turn Omarchy themes on for the whole system. Now a click gives **omafile alone** that look: the desktop, the terminal and every other program keep the theme Omarchy has on, and no Omarchy command is run. The first card, *Follow Omarchy*, is the default and the way back: omafile wears whatever theme is on and changes with it. The choice is kept as `skin` in the preferences.
+- **A skin from a picture** is saved in `~/.config/omafile/skins` instead of Omarchy's theme folder, and *Save and Use* puts it on omafile only. `omafile --theme-from-picture` writes there too (`--into` names another folder). The folder still has the format of an Omarchy theme, so it can be copied over by hand.
+- Every theme Omarchy ships or you installed can be worn as a skin without being turned on; nothing in those folders is changed, and only omafile's own skins can be moved to the trash from the gallery.
+
+### Removed
+- From the gallery: turning an Omarchy theme on, *Next Background*, *Add Backgrounds…* and dropping pictures on a card. They changed the desktop, which is not what skins are for. The explicit entries in a theme folder's context menu (*Apply Omarchy Theme*, *Set as Wallpaper*, export and install of theme archives) are still there.
+
 ## 0.30.0 — 2026-11-14
 
 ### Added

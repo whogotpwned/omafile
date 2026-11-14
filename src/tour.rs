@@ -47,8 +47,8 @@ pub const STOPS: &[Stop] = &[
     Stop {
         icons: ["applications-graphics-symbolic", "preferences-desktop-wallpaper-symbolic", "camera-photo-symbolic"],
         title: "Part of your Omarchy",
-        text: "omafile wears the theme that is on and changes with it. The theme atelier turns themes on with a click and makes a new one out of any picture; Captures collects your screenshots and screen recordings.",
-        keys: &[("themes", "Theme atelier"), ("captures", "Captures")],
+        text: "omafile wears the theme that is on and changes with it. Skins give it a look of its own without touching the desktop, also one made out of any picture; Captures collects your screenshots and screen recordings.",
+        keys: &[("themes", "Skins"), ("captures", "Captures")],
         desktop: true,
     },
     Stop {

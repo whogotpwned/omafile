@@ -535,7 +535,7 @@ impl Window {
         match capture.kind {
             Kind::Screenshot => {
                 item(tr("Draw on It"), Box::new(|w, c| w.capture_annotate(c)));
-                item(tr("Create Theme from Picture…"), Box::new(|w, c| w.theme_dialog(c.path.clone())));
+                item(tr("Create Skin from Picture…"), Box::new(|w, c| w.theme_dialog(c.path.clone())));
             }
             Kind::Recording => {
                 item(tr("Trim…"), Box::new(|w, c| w.video_trim_dialog_for(c.path.clone())));

@@ -157,14 +157,16 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 16.13 On Omarchy the page ends with *Omarchy looks after the system* and a plausible time for the last system snapshot (compare `sudo snapper -c root list`). `omarchy-snapshot create` and an `omarchy-update` behave as before; `/.snapshots` and `~/.snapshots` do not appear inside a backup.
 - [ ] 16.14 Choosing a folder under `/` on the system disk (for instance `/var/backups`) as destination shows the warning that snapshots are taken of this place.
 
-## 17. Theme atelier (needs Omarchy)
+## 17. Skins
 
-- [ ] 17.1 Sidebar › Omarchy Themes: every theme of `omarchy-theme-list` has a card (same names); the current one carries the ring and the tick.
-- [ ] 17.2 Click another card: terminal, bar, Hyprland borders and omafile change; `cat ~/.local/state/omarchy/current/theme.name` names it; the card is marked.
-- [ ] 17.3 Drop a picture on the current theme's card: it becomes the wallpaper at once and is in `~/.config/omarchy/backgrounds/<theme>/`; `Super+Ctrl+Space` (next background) cycles through it.
-- [ ] 17.4 Right click a picture › Create Theme from Picture…: the preview shows the picture's colours; Dark / Light and the accent dots change it; *Save and Turn On* applies it. Terminal colours are readable (`ls --color`, `btop`), the bar and the notification colours fit, the folder icons match the accent.
-- [ ] 17.5 The new theme appears in Omarchy's own theme menu with its preview, and `omarchy-theme-set <name>` works from a terminal.
-- [ ] 17.6 `Ctrl+Z` right after saving, or right click › Move to Trash on a theme that is not on: the folder is in the trash.
+- [ ] 17.1 Sidebar › Skins: the first card is *Follow Omarchy* with the name of the theme that is on, and it carries the ring and the tick. Every theme of `omarchy-theme-list` has a card.
+- [ ] 17.2 Click another card: omafile changes colours (light or dark too) at once, in every open omafile window. The terminal, the bar, Hyprland's borders and the wallpaper do **not** change; `cat ~/.local/state/omarchy/current/theme.name` still names the old theme.
+- [ ] 17.3 Close omafile and start it again: it still wears the skin. `~/.config/omafile/omafile.conf` holds `skin = <name>`.
+- [ ] 17.4 With a skin on, change the Omarchy theme from Omarchy's menu: the desktop changes, omafile keeps its skin. The *Follow Omarchy* card now shows the new theme's name.
+- [ ] 17.5 Click *Follow Omarchy*: omafile wears the desktop's theme again and changes with it.
+- [ ] 17.6 Right click a picture › Create Skin from Picture…: the preview shows the picture's colours; Dark / Light and the accent dots change it; *Save and Use* puts it on omafile only. The folder is in `~/.config/omafile/skins/`, not in `~/.config/omarchy/themes/`, and Omarchy's theme menu does not list it.
+- [ ] 17.7 `Ctrl+Z` right after saving, or right click › Move to Trash on an own skin that is not on: the folder is in the trash. An Omarchy theme's card has no such entry.
+- [ ] 17.8 Delete the folder of the skin that is on (in a terminal) and start omafile: it follows Omarchy again, without an error.
 
 ## 18. Captures (needs Omarchy)
 

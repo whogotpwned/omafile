@@ -1,15 +1,15 @@
-//! The theme atelier: every Omarchy theme as a card to turn on with one click, and
-//! a new theme made from any picture.
+//! Skins: a look of its own for omafile. Every Omarchy theme, and every skin made from a
+//! picture, as a card; one click and omafile wears it.
 //!
-//! Nothing here replaces what Omarchy does. A theme is turned on with
-//! `omarchy-theme-set`, a background with `omarchy-theme-bg-set`; a new theme is a
-//! folder in `~/.config/omarchy/themes` holding a `colors.toml`, from which
-//! Omarchy's own templates build the files for the terminal, the bar, Hyprland
-//! and every other program. The colours come out of the picture (`scheme.rs`).
+//! Only omafile changes. The desktop, the terminal and every other program keep the theme
+//! Omarchy has on, and nothing here calls any of Omarchy's theme commands. The first card
+//! is "Follow Omarchy": omafile wears whatever theme is on and changes with it, which is
+//! how it starts out. A skin made from a picture is a folder in `~/.config/omafile/skins`
+//! holding a `colors.toml`; the colours come out of the picture (`scheme.rs`).
 
 use crate::i18n::tr;
 use crate::omarchy::{self, ThemeInfo};
-use crate::ops;
+use crate::skins::{self, Origin, Skin};
 use crate::scheme::{self, Analysis, Scheme};
 use crate::theme::Rgb;
 use crate::undo::Op;
@@ -231,11 +231,9 @@ fn swatches(colors: &[Rgb], size: i32) -> gtk::DrawingArea {
 pub struct ThemesPage {
     pub root: gtk::Box,
     flow: gtk::FlowBox,
-    stack: gtk::Stack,
     status: gtk::Label,
-    next_background: gtk::Button,
-    themes: RefCell<Vec<ThemeInfo>>,
-    busy: Cell<bool>,
+    /// What each card stands for, in the order of the cards: None is "Follow Omarchy".
+    cards: RefCell<Vec<Option<Skin>>>,
 }
 
 impl ThemesPage {
@@ -250,14 +248,11 @@ impl ThemesPage {
             .tooltip_text(tr("Back to the files (Esc)"))
             .build();
         back.add_css_class("flat");
-        let title = gtk::Label::builder().label(tr("Themes")).css_classes(["title-4"]).xalign(0.0).margin_start(6).build();
+        let title = gtk::Label::builder().label(tr("Skins")).css_classes(["title-4"]).xalign(0.0).margin_start(6).build();
         let status = gtk::Label::builder().css_classes(["omafile-dim"]).xalign(0.0).hexpand(true).margin_start(8).ellipsize(gtk::pango::EllipsizeMode::End).build();
-        let next_background = gtk::Button::builder().icon_name("preferences-desktop-wallpaper-symbolic").tooltip_text(tr("Next background of the current theme")).build();
-        let folder = gtk::Button::builder().icon_name("folder-open-symbolic").tooltip_text(tr("Open the folder with your themes")).build();
-        for b in [&next_background, &folder] {
-            b.add_css_class("flat");
-        }
-        let create = gtk::Button::builder().label(tr("New from Picture…")).tooltip_text(tr("Make a theme out of any picture: its colours, with the picture as background")).build();
+        let folder = gtk::Button::builder().icon_name("folder-open-symbolic").tooltip_text(tr("Open the folder with your skins")).build();
+        folder.add_css_class("flat");
+        let create = gtk::Button::builder().label(tr("New from Picture…")).tooltip_text(tr("Make a skin out of any picture: omafile in its colours")).build();
         create.add_css_class("pill");
         create.add_css_class("suggested-action");
         let top = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -268,7 +263,6 @@ impl ThemesPage {
         top.append(&back);
         top.append(&title);
         top.append(&status);
-        top.append(&next_background);
         top.append(&folder);
         top.append(&create);
 
@@ -288,23 +282,14 @@ impl ThemesPage {
         flow.set_margin_end(18);
         flow.add_css_class("omafile-theme-flow");
         let scroll = gtk::ScrolledWindow::builder().child(&flow).hscrollbar_policy(gtk::PolicyType::Never).vexpand(true).build();
-        let nothing = adw::StatusPage::builder()
-            .icon_name("applications-graphics-symbolic")
-            .title(tr("No Omarchy themes here"))
-            .description(tr("Themes live in ~/.config/omarchy/themes and in Omarchy's own folder. A theme made from a picture is saved there and waits for Omarchy."))
-            .build();
-        let stack = gtk::Stack::new();
-        stack.set_vexpand(true);
-        stack.add_named(&nothing, Some("empty"));
-        stack.add_named(&scroll, Some("themes"));
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.add_css_class("omafile-theme-page");
         root.set_focusable(true);
         root.append(&top);
-        root.append(&stack);
+        root.append(&scroll);
 
-        let page = Rc::new(ThemesPage { root, flow, stack, status, next_background, themes: RefCell::new(Vec::new()), busy: Cell::new(false) });
+        let page = Rc::new(ThemesPage { root, flow, status, cards: RefCell::new(Vec::new()) });
         let this = Rc::downgrade(window);
         back.connect_clicked(move |_| {
             if let Some(w) = this.upgrade() {
@@ -314,7 +299,7 @@ impl ThemesPage {
         let this = Rc::downgrade(window);
         folder.connect_clicked(move |_| {
             if let Some(w) = this.upgrade() {
-                let dir = omarchy::install_dir();
+                let dir = skins::dir();
                 let _ = std::fs::create_dir_all(&dir);
                 w.navigate(gio::File::for_path(dir));
             }
@@ -325,18 +310,12 @@ impl ThemesPage {
                 w.theme_pick_picture();
             }
         });
-        let this = Rc::downgrade(window);
-        page.next_background.connect_clicked(move |_| {
-            if let Some(w) = this.upgrade() {
-                w.theme_run(vec!["omarchy-theme-bg-next".into()], None);
-            }
-        });
         let (weak, this) = (Rc::downgrade(&page), Rc::downgrade(window));
         page.flow.connect_child_activated(move |_, child| {
             let (Some(p), Some(w)) = (weak.upgrade(), this.upgrade()) else { return };
-            let name = p.themes.borrow().get(child.index() as usize).map(|t| t.name.clone());
-            if let Some(name) = name {
-                w.theme_apply(&name);
+            let card = p.cards.borrow().get(child.index() as usize).cloned();
+            if let Some(card) = card {
+                w.skin_apply(card.map(|skin| skin.info.name));
             }
         });
         let this = Rc::downgrade(window);
@@ -354,32 +333,39 @@ impl ThemesPage {
         page
     }
 
-    /// Read the themes again and rebuild the cards.
+    /// Read the skins again and rebuild the cards.
     pub fn reload(self: &Rc<Self>, window: &Rc<Window>) {
         while let Some(child) = self.flow.first_child() {
             self.flow.remove(&child);
         }
-        let mut themes = omarchy::list_themes();
-        let current = omarchy::current_theme_name();
-        // The one that is on comes first; the rest stay in Omarchy's order, by name.
-        if let Some(at) = themes.iter().position(|t| current.as_deref() == Some(t.name.as_str())) {
-            let on = themes.remove(at);
-            themes.insert(0, on);
+        let all = skins::list();
+        // The skin that is worn; a name that no longer leads anywhere means "follow".
+        let worn = window.prefs.get("skin").filter(|name| all.iter().any(|s| &s.info.name == name));
+        let own = all.iter().filter(|s| s.origin == Origin::Own).count();
+        let mut parts = vec![if all.len() == 1 { tr("1 skin") } else { crate::trf!("{n} skins", n = all.len()) }];
+        if own > 0 {
+            parts.push(crate::trf!("{n} of your own", n = own));
         }
-        self.stack.set_visible_child_name(if themes.is_empty() { "empty" } else { "themes" });
-        let mine = themes.iter().filter(|t| t.user).count();
-        let mut parts = vec![if themes.len() == 1 { tr("1 theme") } else { crate::trf!("{n} themes", n = themes.len()) }];
-        if mine > 0 {
-            parts.push(crate::trf!("{n} of your own", n = mine));
-        }
-        if let Some(name) = current.as_deref() {
-            parts.push(format!("{}: {}", tr("on now"), omarchy::display_name(name)));
-        }
+        parts.push(match worn.as_deref() {
+            Some(name) => format!("{}: {}", tr("on now"), omarchy::display_name(name)),
+            None => tr("omafile follows Omarchy's theme"),
+        });
         self.status.set_text(&parts.join("  ·  "));
-        self.next_background.set_visible(current.is_some() && glib::find_program_in_path("omarchy-theme-bg-next").is_some());
-        for (i, info) in themes.iter().enumerate() {
-            let is_current = current.as_deref() == Some(info.name.as_str());
-            let card = self.card(window, info, is_current);
+
+        // "Follow Omarchy" first: it shows the theme Omarchy has on right now.
+        let omarchy_now = omarchy::current_theme_name();
+        let followed = omarchy_now.as_deref().and_then(|name| all.iter().find(|s| s.origin == Origin::Omarchy && s.info.name == name)).map(|s| s.info.clone()).unwrap_or_else(|| {
+            let dir = crate::theme::theme_dir();
+            let p = crate::theme::load_from(&dir);
+            ThemeInfo { name: String::new(), dir, preview: None, light: p.light, swatches: vec![p.background, p.foreground, p.accent, p.red, p.yellow, p.green, p.cyan, p.blue, p.magenta] }
+        });
+        let mut cards: Vec<Option<Skin>> = vec![None];
+        cards.extend(all.into_iter().map(Some));
+        for (i, entry) in cards.iter().enumerate() {
+            let card = match entry {
+                None => self.card(window, &followed, tr("Follow Omarchy"), omarchy_now.as_deref().map(omarchy::display_name), None, worn.is_none()),
+                Some(skin) => self.card(window, &skin.info, omarchy::display_name(&skin.info.name), None, Some(skin), worn.as_deref() == Some(skin.info.name.as_str())),
+            };
             self.flow.insert(&card, -1);
             if let Some(child) = self.flow.child_at_index(i as i32) {
                 child.add_css_class("omafile-theme-child");
@@ -387,19 +373,21 @@ impl ThemesPage {
                 crate::motion::stagger_in(child.upcast_ref::<gtk::Widget>(), i as u32);
             }
         }
-        self.themes.replace(themes);
+        self.cards.replace(cards);
     }
 
-    fn card(self: &Rc<Self>, window: &Rc<Window>, info: &ThemeInfo, current: bool) -> gtk::Widget {
+    /// One card. `skin` is None for "Follow Omarchy", which shows `info`, the theme that
+    /// Omarchy has on; `detail` is a second line under the title.
+    fn card(self: &Rc<Self>, window: &Rc<Window>, info: &ThemeInfo, title: String, detail: Option<String>, skin: Option<&Skin>, on: bool) -> gtk::Widget {
         let overlay = gtk::Overlay::new();
         overlay.set_size_request(CARD_W, CARD_H);
         overlay.set_overflow(gtk::Overflow::Hidden);
         overlay.add_css_class("omafile-theme-card");
-        if current {
+        if on {
             overlay.add_css_class("omafile-theme-current");
         }
-        // Underneath: the theme's own colours as a small desktop, so a theme without a
-        // picture still shows what it looks like; the picture fades in over it.
+        // Underneath: the skin's own colours as a small desktop, so one without a picture
+        // still shows what it looks like; the picture fades in over it.
         let scheme = std::fs::read_to_string(info.dir.join("colors.toml")).ok().and_then(|t| Scheme::from_colors_toml(&t));
         let base = gtk::DrawingArea::new();
         let fallback = info.swatches.first().copied().unwrap_or(Rgb(26, 27, 38));
@@ -419,7 +407,7 @@ impl ThemesPage {
             overlay.add_overlay(&picture);
             let weak = picture.downgrade();
             // The background first; where its format cannot be read (WebP without the
-            // loader), the theme's preview picture; failing both, the drawn desktop stays.
+            // loader), the folder's preview picture; failing both, the drawn desktop stays.
             let second = omarchy::folder_preview(&info.dir).filter(|p| *p != preview);
             glib::spawn_future_local(async move {
                 let decoded = gio::spawn_blocking(move || crate::thumbs::decode_image(&preview, 640).or_else(|| second.and_then(|p| crate::thumbs::decode_image(&p, 640)))).await.ok().flatten();
@@ -430,59 +418,58 @@ impl ThemesPage {
             });
         }
         // The caption: name, light or dark, and the colours.
-        let name = gtk::Label::builder().label(omarchy::display_name(&info.name)).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::End).css_classes(["omafile-theme-name"]).build();
+        let name = gtk::Label::builder().label(&title).xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).css_classes(["omafile-theme-name"]).build();
+        let names = gtk::Box::new(gtk::Orientation::Vertical, 1);
+        names.set_hexpand(true);
+        names.set_valign(gtk::Align::Center);
+        names.append(&name);
+        if let Some(detail) = detail {
+            names.append(&gtk::Label::builder().label(detail).xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).css_classes(["caption", "omafile-radio-kind"]).build());
+        }
         let caption = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         caption.set_valign(gtk::Align::End);
         caption.add_css_class("omafile-theme-caption");
-        caption.append(&name);
+        caption.append(&names);
         if info.light {
             let sun = gtk::Image::from_icon_name("weather-clear-symbolic");
-            sun.set_tooltip_text(Some(&tr("A light theme")));
+            sun.set_tooltip_text(Some(&tr("A light skin")));
             caption.append(&sun);
         }
-        let dots = swatches(&info.swatches, 16);
-        let count = info.backgrounds.len();
-        dots.set_tooltip_text(Some(&if count == 1 { tr("1 background") } else { crate::trf!("{n} backgrounds", n = count) }));
-        caption.append(&dots);
+        caption.append(&swatches(&info.swatches, 16));
         overlay.add_overlay(&caption);
-        if current {
+        if on {
             let badge = gtk::Image::from_icon_name("object-select-symbolic");
             badge.set_halign(gtk::Align::End);
             badge.set_valign(gtk::Align::Start);
             badge.add_css_class("omafile-theme-badge");
             overlay.add_overlay(&badge);
-        } else if info.user {
+        }
+        if skin.is_some_and(|s| s.origin == Origin::Own) {
             let badge = gtk::Label::new(Some(&tr("yours")));
             badge.set_halign(gtk::Align::Start);
             badge.set_valign(gtk::Align::Start);
             badge.add_css_class("omafile-theme-own");
             overlay.add_overlay(&badge);
         }
+        overlay.set_tooltip_text(Some(&match skin {
+            None => tr("omafile wears the theme Omarchy has on, and changes with it"),
+            Some(_) => tr("Only omafile wears it: the desktop keeps its Omarchy theme"),
+        }));
 
-        // Right click: what else can be done with this theme.
+        // Right click: what else can be done with this skin.
         let right = gtk::GestureClick::new();
         right.set_button(3);
-        let (weak, this, theme, anchor) = (Rc::downgrade(self), Rc::downgrade(window), info.clone(), overlay.downgrade());
+        let (weak, this, entry, anchor) = (Rc::downgrade(self), Rc::downgrade(window), skin.cloned(), overlay.downgrade());
         right.connect_pressed(move |gesture, _, x, y| {
             let (Some(p), Some(w), Some(anchor)) = (weak.upgrade(), this.upgrade(), anchor.upgrade()) else { return };
             gesture.set_state(gtk::EventSequenceState::Claimed);
-            p.card_menu(&w, &theme, current, &anchor, x, y);
+            p.card_menu(&w, entry.as_ref(), on, &anchor, x, y);
         });
         overlay.add_controller(right);
-
-        // Pictures dropped on a card become backgrounds of that theme.
-        let drop = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
-        let (this, theme) = (Rc::downgrade(window), info.name.clone());
-        drop.connect_drop(move |_, value, _, _| {
-            let (Some(w), Ok(list)) = (this.upgrade(), value.get::<gdk::FileList>()) else { return false };
-            let files: Vec<PathBuf> = list.files().iter().filter_map(|f| f.path()).collect();
-            w.theme_add_backgrounds(&theme, files)
-        });
-        overlay.add_controller(drop);
         overlay.upcast()
     }
 
-    fn card_menu(self: &Rc<Self>, window: &Rc<Window>, theme: &ThemeInfo, current: bool, anchor: &gtk::Overlay, x: f64, y: f64) {
+    fn card_menu(self: &Rc<Self>, window: &Rc<Window>, skin: Option<&Skin>, on: bool, anchor: &gtk::Overlay, x: f64, y: f64) {
         let popover = gtk::Popover::new();
         popover.set_parent(anchor);
         popover.set_has_arrow(false);
@@ -505,20 +492,21 @@ impl ThemesPage {
             });
             column.append(&button);
         };
-        let name = theme.name.clone();
-        if !current {
-            let n = name.clone();
-            item(tr("Turn On"), Box::new(move |w| w.theme_apply(&n)));
-        } else if glib::find_program_in_path("omarchy-theme-bg-next").is_some() {
-            item(tr("Next Background"), Box::new(|w| w.theme_run(vec!["omarchy-theme-bg-next".into()], None)));
+        if !on {
+            let name = skin.map(|s| s.info.name.clone());
+            item(if skin.is_some() { tr("Use This Skin") } else { tr("Follow Omarchy") }, Box::new(move |w| w.skin_apply(name.clone())));
         }
-        let n = name.clone();
-        item(tr("Add Backgrounds…"), Box::new(move |w| w.theme_choose_backgrounds(&n)));
-        let dir = theme.dir.clone();
-        item(tr("Open Folder"), Box::new(move |w| w.navigate(gio::File::for_path(&dir))));
-        if theme.user && !current {
-            let (n, dir) = (name.clone(), theme.dir.clone());
-            item(tr("Move to Trash"), Box::new(move |w| w.theme_delete(&n, &dir)));
+        if let Some(skin) = skin {
+            let dir = skin.info.dir.clone();
+            item(tr("Open Folder"), Box::new(move |w| w.navigate(gio::File::for_path(&dir))));
+            // Only omafile's own can go: an Omarchy theme is Omarchy's.
+            if skin.origin == Origin::Own && !on {
+                let (name, dir) = (skin.info.name.clone(), skin.info.dir.clone());
+                item(tr("Move to Trash"), Box::new(move |w| w.theme_delete(&name, &dir)));
+            }
+        }
+        if column.first_child().is_none() {
+            return;
         }
         popover.set_child(Some(&column));
         popover.connect_closed(|p| {
@@ -549,7 +537,7 @@ impl Draft {
 pub fn suggested_name(picture: &Path) -> String {
     let stem = picture.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     let name = omarchy::display_name(&omarchy::folder_name(&stem));
-    if name.is_empty() { tr("My Theme") } else { name }
+    if name.is_empty() { tr("My Skin") } else { name }
 }
 
 impl Window {
@@ -567,7 +555,7 @@ impl Window {
         }
     }
 
-    /// The gallery of Omarchy themes.
+    /// The gallery of skins.
     pub fn open_themes(self: &Rc<Self>) {
         let page = self.themes_page();
         if self.content_stack.visible_child_name().as_deref() == Some("nowplaying") {
@@ -585,47 +573,22 @@ impl Window {
         }
     }
 
-    /// Run one of Omarchy's theme commands; the gallery waits and then shows the new state.
-    pub fn theme_run(self: &Rc<Self>, argv: Vec<String>, done: Option<String>) {
-        let Some(program) = argv.first().cloned() else { return };
-        if glib::find_program_in_path(&program).is_none() {
-            self.toast_error(&crate::trf!("{program} not found (not on Omarchy?)", program = program));
+    /// Wear a skin, or (None) follow Omarchy's theme again. Only omafile changes: the
+    /// choice is kept in the preferences and applied to every open window at once.
+    pub fn skin_apply(self: &Rc<Self>, name: Option<String>) {
+        let folder = name.as_deref().and_then(skins::resolve);
+        if name.is_some() && folder.is_none() {
+            self.toast_error(&tr("This skin is no longer there"));
+            self.themes_reload();
             return;
         }
-        let page = self.themes_page.borrow().clone();
-        if let Some(p) = page.as_ref() {
-            if p.busy.replace(true) {
-                return;
-            }
-            p.flow.set_sensitive(false);
-        }
-        let this = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            let args: Vec<&str> = argv.iter().map(String::as_str).collect();
-            let result = ops::run_command(&args, None).await;
-            let Some(w) = this.upgrade() else { return };
-            if let Some(p) = page.as_ref() {
-                p.busy.set(false);
-                p.flow.set_sensitive(true);
-            }
-            match result {
-                Ok(()) => {
-                    if let Some(text) = done {
-                        w.toast(&text);
-                    }
-                }
-                Err(e) => w.toast_error(&format!("{program}: {}", e.message())),
-            }
-            w.themes_reload();
+        self.prefs.set("skin", name.as_deref());
+        self.theme.set_skin(folder);
+        self.toast(&match name.as_deref() {
+            Some(name) => crate::trf!("omafile wears {name}", name = omarchy::display_name(name)),
+            None => tr("omafile follows Omarchy's theme"),
         });
-    }
-
-    /// Turn a theme on, the way Omarchy's own menu does.
-    pub fn theme_apply(self: &Rc<Self>, name: &str) {
-        if omarchy::current_theme_name().as_deref() == Some(name) {
-            return;
-        }
-        self.theme_run(vec!["omarchy-theme-set".into(), name.to_string()], Some(format!("{}: {}", tr("Theme"), omarchy::display_name(name))));
+        self.themes_reload();
     }
 
     fn theme_delete(self: &Rc<Self>, name: &str, dir: &Path) {
@@ -637,60 +600,7 @@ impl Window {
         self.refresh_sidebar();
     }
 
-    fn theme_choose_backgrounds(self: &Rc<Self>, theme: &str) {
-        let filter = gtk::FileFilter::new();
-        filter.add_pixbuf_formats();
-        filter.set_name(Some(&tr("Pictures")));
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        filters.append(&filter);
-        let chooser = gtk::FileDialog::builder().title(tr("Pictures to use as backgrounds")).modal(true).filters(&filters).build();
-        if let Some(dir) = glib::user_special_dir(glib::UserDirectory::Pictures) {
-            chooser.set_initial_folder(Some(&gio::File::for_path(dir)));
-        }
-        let (this, theme) = (Rc::downgrade(self), theme.to_string());
-        chooser.open_multiple(Some(&self.window), gio::Cancellable::NONE, move |result| {
-            let (Some(w), Ok(list)) = (this.upgrade(), result) else { return };
-            let files: Vec<PathBuf> = (0..list.n_items()).filter_map(|i| list.item(i).and_downcast::<gio::File>()).filter_map(|f| f.path()).collect();
-            w.theme_add_backgrounds(&theme, files);
-        });
-    }
-
-    /// Copy pictures into the theme's own background folder (where Omarchy looks first); for
-    /// the theme that is on, the first one is shown at once.
-    fn theme_add_backgrounds(self: &Rc<Self>, theme: &str, files: Vec<PathBuf>) -> bool {
-        let pictures: Vec<PathBuf> = files.into_iter().filter(|p| omarchy::is_picture(p)).collect();
-        if pictures.is_empty() {
-            self.toast_error(&tr("Only pictures can be backgrounds"));
-            return false;
-        }
-        let into = omarchy::user_backgrounds_dir(theme);
-        if let Err(e) = std::fs::create_dir_all(&into) {
-            self.toast_error(&format!("{}: {e}", into.display()));
-            return false;
-        }
-        let mut added = Vec::new();
-        for picture in &pictures {
-            let Some(name) = picture.file_name() else { continue };
-            let target = into.join(name);
-            if target.exists() || std::fs::copy(picture, &target).is_ok() {
-                added.push(target);
-            }
-        }
-        if added.is_empty() {
-            self.toast_error(&tr("Cannot copy the pictures"));
-            return false;
-        }
-        let text = if added.len() == 1 { crate::trf!("1 background added to {name}", name = omarchy::display_name(theme)) } else { crate::trf!("{n} backgrounds added to {name}", n = added.len(), name = omarchy::display_name(theme)) };
-        if omarchy::current_theme_name().as_deref() == Some(theme) && omarchy::bg_set_available() {
-            self.theme_run(omarchy::set_wallpaper_argv(&added[0]), Some(text));
-        } else {
-            self.toast(&text);
-            self.themes_reload();
-        }
-        true
-    }
-
-    /// "Create Theme from Picture": the selected picture, or one to choose.
+    /// "Create Skin from Picture": the selected picture, or one to choose.
     pub fn theme_from_picture(self: &Rc<Self>) {
         let selected = self.selected_items().iter().find(|i| i.is_image()).and_then(|i| i.target_file().path());
         match selected.filter(|_| self.content_stack.visible_child_name().as_deref() == Some("files")) {
@@ -705,7 +615,7 @@ impl Window {
         filter.set_name(Some(&tr("Pictures")));
         let filters = gio::ListStore::new::<gtk::FileFilter>();
         filters.append(&filter);
-        let chooser = gtk::FileDialog::builder().title(tr("Picture to make a theme from")).modal(true).filters(&filters).build();
+        let chooser = gtk::FileDialog::builder().title(tr("Picture to make a skin from")).modal(true).filters(&filters).build();
         if let Some(dir) = glib::user_special_dir(glib::UserDirectory::Pictures) {
             chooser.set_initial_folder(Some(&gio::File::for_path(dir)));
         }
@@ -717,7 +627,7 @@ impl Window {
         });
     }
 
-    /// Read the picture, then show the dialog in which the theme takes shape.
+    /// Read the picture, then show the dialog in which the skin takes shape.
     pub fn theme_dialog(self: &Rc<Self>, picture: PathBuf) {
         let this = Rc::downgrade(self);
         glib::spawn_future_local(async move {
@@ -817,7 +727,7 @@ impl Window {
         let note = gtk::Label::builder().wrap(true).xalign(0.0).css_classes(["omafile-dim", "caption"]).build();
 
         let save = gtk::Button::builder().label(tr("Save")).build();
-        let apply = gtk::Button::builder().label(tr("Save and Turn On")).build();
+        let apply = gtk::Button::builder().label(tr("Save and Use")).build();
         apply.add_css_class("suggested-action");
         for b in [&save, &apply] {
             b.add_css_class("pill");
@@ -840,34 +750,26 @@ impl Window {
         let view = adw::ToolbarView::new();
         view.add_top_bar(&adw::HeaderBar::new());
         view.set_content(Some(&column));
-        let dialog = adw::Dialog::builder().title(tr("Theme from Picture")).content_width(780).child(&view).build();
+        let dialog = adw::Dialog::builder().title(tr("Skin from Picture")).content_width(780).child(&view).build();
 
         // The name decides the folder: say where it goes, and when it cannot.
-        let can_turn_on = omarchy::theme_set_available();
         let check: Rc<dyn Fn()> = {
             let (name, note, save, apply) = (name.clone(), note.clone(), save.clone(), apply.clone());
             Rc::new(move || {
                 let folder = omarchy::folder_name(&name.text());
-                let dir = omarchy::install_dir().join(&folder);
+                let dir = skins::dir().join(&folder);
                 let problem = if folder.is_empty() {
                     Some(tr("The name needs a letter or a digit."))
-                } else if dir.exists() || omarchy::stock_themes_dir().join(&folder).is_dir() {
-                    Some(tr("A theme with this name exists already."))
+                } else if dir.exists() || skins::resolve(&folder).is_some() {
+                    Some(tr("A skin with this name exists already."))
                 } else {
                     None
                 };
                 let fine = problem.is_none();
                 save.set_sensitive(fine);
-                apply.set_sensitive(fine && can_turn_on);
+                apply.set_sensitive(fine);
                 if fine { name.remove_css_class("error") } else { name.add_css_class("error") }
-                note.set_text(&problem.unwrap_or_else(|| {
-                    let place = crate::window::abbreviate_home(&dir);
-                    if omarchy::templates_available() {
-                        format!("{} {}. {}", tr("Saved in"), place, tr("Only the colours and the picture are stored: Omarchy builds the files for the terminal, the bar, Hyprland and the other programs from them when the theme is turned on."))
-                    } else {
-                        format!("{} {}. {}", tr("Saved in"), place, tr("Omarchy's theme templates were not found on this computer: an up-to-date Omarchy is needed to turn the theme on."))
-                    }
-                }));
+                note.set_text(&problem.unwrap_or_else(|| format!("{} {}. {}", tr("Saved in"), crate::window::abbreviate_home(&dir), tr("Only omafile wears it; the desktop keeps its Omarchy theme. The folder has the format of an Omarchy theme, should you ever want it there too."))));
             })
         };
         check();
@@ -881,21 +783,21 @@ impl Window {
                 let scheme = draft.scheme();
                 let png = mock_png(&scheme, draft.wallpaper.as_ref());
                 let icons = Some(scheme::icon_theme_for(scheme.accent)).filter(|set| omarchy::icon_theme_installed(set));
-                match omarchy::write_theme(&omarchy::install_dir(), &name.text(), &scheme, &draft.picture, png.as_deref(), icons) {
+                match omarchy::write_theme(&skins::dir(), &name.text(), &scheme, &draft.picture, png.as_deref(), icons) {
                     Ok(dir) => {
                         if let Some(dialog) = dialog.upgrade() {
                             dialog.close();
                         }
                         let folder = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                        w.record(Op::Derive(vec![gio::File::for_path(&dir)]), &crate::trf!("Theme {name} saved", name = omarchy::display_name(&folder)));
+                        w.record(Op::Derive(vec![gio::File::for_path(&dir)]), &crate::trf!("Skin {name} saved", name = omarchy::display_name(&folder)));
                         w.refresh_sidebar();
                         if turn_on {
-                            w.theme_apply(&folder);
+                            w.skin_apply(Some(folder));
                         } else {
                             w.themes_reload();
                         }
                     }
-                    Err(e) => w.toast_error(&format!("{}: {e}", tr("Cannot save the theme"))),
+                    Err(e) => w.toast_error(&format!("{}: {e}", tr("Cannot save the skin"))),
                 }
             });
         }
@@ -905,11 +807,12 @@ impl Window {
 }
 
 /// `omafile --theme-from-picture <picture> [--name <name>] [--dark | --light] [--into <folder>]`:
-/// the same theme the dialog saves, without a window. Prints the theme's folder. The mode
-/// follows the picture unless one is asked for; `--into` names another folder than
-/// `~/.config/omarchy/themes` (the checks use it).
+/// the same skin the dialog saves, without a window. Prints its folder. The mode follows
+/// the picture unless one is asked for; `--into` names another folder than
+/// `~/.config/omafile/skins` (Omarchy's `~/.config/omarchy/themes`, for example, to have it
+/// as a theme of the desktop too; the checks use it).
 pub fn create_headless(args: &[String]) -> u8 {
-    let (mut picture, mut name, mut light, mut into) = (None, None, None, omarchy::install_dir());
+    let (mut picture, mut name, mut light, mut into) = (None, None, None, skins::dir());
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {

@@ -153,7 +153,7 @@ def main():
     section("A theme made by omafile gives the templates every colour they ask for")
     with tempfile.TemporaryDirectory() as scratch:
         made = {}
-        for mode, picture in (("dark", "docs/screenshot-atelier.png"), ("light", "docs/screenshot-light.png")):
+        for mode, picture in (("dark", "docs/screenshot-skins.png"), ("light", "docs/screenshot-light.png")):
             run = subprocess.run([binary, "--theme-from-picture", os.path.join(ROOT, picture), "--name", f"Compat {mode}", f"--{mode}", "--into", scratch], capture_output=True, text=True)
             folder = run.stdout.strip()
             check(run.returncode == 0 and os.path.isfile(os.path.join(folder, "colors.toml")), f"omafile writes a {mode} theme ({run.stderr.strip() or 'ok'})")
