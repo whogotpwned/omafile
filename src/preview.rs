@@ -157,10 +157,13 @@ impl PreviewPane {
         engine_play.add_css_class("suggested-action");
         engine_play.set_valign(gtk::Align::Center);
         engine_play.set_tooltip_text(Some(tr("Play or pause").as_str()));
+        // Worked with the pointer: a focused button would take the Space meant to close the preview.
+        engine_play.set_focusable(false);
         let engine_scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 1.0);
         engine_scale.set_hexpand(true);
         engine_scale.set_valign(gtk::Align::Center);
         engine_scale.set_sensitive(false);
+        engine_scale.set_focusable(false);
         let engine_time = gtk::Label::builder().css_classes(["omafile-dim", "caption", "numeric"]).valign(gtk::Align::Center).build();
         let engine_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         engine_row.set_margin_start(16);

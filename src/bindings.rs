@@ -11,6 +11,7 @@ use gtk::glib;
 /// (group, action name without `win.` or empty, keys when not an action, what it does)
 pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Navigate", "back", "", "Back"),
+    ("Navigate", "", "Mouse: back and forward buttons", "Back and forward, as in a browser; from Radio, Skins and the other pages back to the files"),
     ("Navigate", "forward", "", "Forward"),
     ("Navigate", "up", "", "Parent folder"),
     ("Navigate", "", "BackSpace", "Parent folder"),

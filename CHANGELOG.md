@@ -2,6 +2,15 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.32.2 — 2026-11-14
+
+### Added
+- **The back and forward buttons of a mouse** go back and forward, as in a browser. From Radio, Skins and the other pages, back returns to the files.
+
+### Fixed
+- **Some songs had no play button** (FLAC files among them). The button was shown only when the system's type database called the file audio or video; where it calls a FLAC something else, or reports no type at all, there was none. The name's ending counts now as well.
+- **Space did not close the preview again.** When the keyboard focus had stayed in the file list behind the preview, the second Space went there and acted on a file instead. Space, `Esc`, `Q` and the arrow keys belong to the preview while it is shown, wherever the focus is. The preview is closed exactly once per request, also when Space is pressed twice in a hurry.
+
 ## 0.32.1 — 2026-11-14
 
 ### Fixed

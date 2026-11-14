@@ -221,3 +221,6 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 22.5 `Space` on a song: Quick Look opens and it plays; the button pauses, dragging the bar seeks, the time counts. `←`/`→` play the neighbours. `Esc` closes the preview and the music stops.
 - [ ] 22.6 Start a song with the badge, then `Space` on the same song and `Esc`: it keeps playing (the preview did not start it).
 - [ ] 22.7 Double click (or `Enter`) on a song, a video, a picture, a PDF and a text file: each opens in its default application at once, without a chooser dialog.
+- [ ] 22.8 Every FLAC, M4A, Opus and WAV file in the music folder shows the play badge, in the list and in the grid.
+- [ ] 22.9 `Space` on a file opens the preview; `Space` again closes it. Ten times in a row, also quickly, on a picture, a song and a PDF: it always ends the way the count says, and nothing happens to a file behind it.
+- [ ] 22.10 The mouse's thumb buttons go back and forward through the folders; on the Radio page, back returns to the files.

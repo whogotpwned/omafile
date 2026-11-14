@@ -210,11 +210,11 @@ impl FileItem {
     }
 
     pub fn is_audio(&self) -> bool {
-        self.content_type().map(|ct| ct.starts_with("audio/")).unwrap_or(false)
+        media_kind(self.content_type().as_deref(), &self.name()) == Some(Media::Audio)
     }
 
     pub fn is_video(&self) -> bool {
-        self.content_type().map(|ct| ct.starts_with("video/")).unwrap_or(false)
+        media_kind(self.content_type().as_deref(), &self.name()) == Some(Media::Video)
     }
 
     pub fn is_media(&self) -> bool {
@@ -287,5 +287,68 @@ impl FileItem {
 
     pub fn weight(&self) -> pango::Weight {
         if self.is_dir() { pango::Weight::Medium } else { pango::Weight::Normal }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Media {
+    Audio,
+    Video,
+}
+
+const AUDIO_ENDINGS: &[&str] = &["flac", "mp3", "m4a", "m4b", "aac", "ogg", "oga", "opus", "wav", "wave", "wma", "aiff", "aif", "ape", "wv", "mka", "alac", "dsf", "dff", "tta", "mpc", "ac3", "dts", "amr", "mid", "midi", "spx", "caf"];
+const VIDEO_ENDINGS: &[&str] = &["mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "flv", "mpg", "mpeg", "m2ts", "mts", "ts", "ogv", "3gp", "3g2", "vob", "divx", "asf", "rmvb"];
+
+/// Whether a file is a song or a video. The type the system names decides when it is one of
+/// the two; when it is not (a FLAC that the type database calls `application/x-flac` or
+/// plain data, a file on a share that reports no type), the name's ending does. Without
+/// this such a file has no play button, though the player would play it.
+pub fn media_kind(content_type: Option<&str>, name: &str) -> Option<Media> {
+    let kind = content_type.unwrap_or("");
+    if kind.starts_with("audio/") {
+        return Some(Media::Audio);
+    }
+    if kind.starts_with("video/") {
+        return Some(Media::Video);
+    }
+    // A type that says what it is and is neither: a folder, a picture, a text, a document.
+    if kind.starts_with("inode/directory") || kind.starts_with("image/") || kind.starts_with("text/") || kind == "application/pdf" {
+        return None;
+    }
+    let ending = name.rsplit_once('.').map(|(_, e)| e.to_lowercase())?;
+    if AUDIO_ENDINGS.contains(&ending.as_str()) {
+        Some(Media::Audio)
+    } else if VIDEO_ENDINGS.contains(&ending.as_str()) && ending != "ts" {
+        // (.ts is TypeScript far more often than a transport stream; that one needs its type.)
+        Some(Media::Video)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod media_tests {
+    use super::*;
+
+    #[test]
+    fn a_song_is_a_song_whatever_the_type_database_calls_it() {
+        assert_eq!(media_kind(Some("audio/flac"), "a.flac"), Some(Media::Audio));
+        assert_eq!(media_kind(Some("audio/mpeg"), "a.mp3"), Some(Media::Audio));
+        assert_eq!(media_kind(Some("video/mp4"), "a.mp4"), Some(Media::Video));
+        // The cases that had no play button.
+        assert_eq!(media_kind(Some("application/x-flac"), "01 - Intro.flac"), Some(Media::Audio));
+        assert_eq!(media_kind(Some("application/octet-stream"), "Live Set.FLAC"), Some(Media::Audio));
+        assert_eq!(media_kind(None, "song.opus"), Some(Media::Audio));
+        assert_eq!(media_kind(Some("application/ogg"), "talk.ogg"), Some(Media::Audio));
+        assert_eq!(media_kind(Some("application/x-matroska"), "film.mkv"), Some(Media::Video));
+        assert_eq!(media_kind(Some("inode/symlink"), "link to song.m4a"), Some(Media::Audio));
+        // The type wins where it knows better.
+        assert_eq!(media_kind(Some("video/mp2t"), "recording.ts"), Some(Media::Video));
+        assert_eq!(media_kind(Some("text/vnd.trolltech.linguist"), "app.ts"), None, "TypeScript");
+        assert_eq!(media_kind(Some("application/octet-stream"), "app.ts"), None);
+        assert_eq!(media_kind(Some("inode/directory"), "Albums.flac"), None, "a folder is a folder");
+        assert_eq!(media_kind(Some("image/png"), "cover.mp3.png"), None);
+        assert_eq!(media_kind(Some("application/zip"), "archive.zip"), None);
+        assert_eq!(media_kind(Some("application/octet-stream"), "README"), None);
     }
 }

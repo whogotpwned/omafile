@@ -10,7 +10,7 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.32.1-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.32.2-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
@@ -230,6 +230,7 @@ The daily question is one request for a small public file (`manifest.json` of th
 | Keys | Action |
 |---|---|
 | `Alt+←` `Alt+→` `Alt+↑` `Backspace` | Back, forward, parent |
+| Mouse back / forward buttons | Back and forward, as in a browser |
 | `Ctrl+L` | Edit the path; `Tab` completes folders |
 | `Ctrl+F` / `Ctrl+Shift+F` | Filter this folder / search subfolders |
 | `Ctrl+K` | Command palette (actions, folders, `> command`, bulk `rename` / `chmod` / `touch` / `mkdir`) |
@@ -438,13 +439,13 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 
 #### What is still open before publishing
 
-Status as of 0.32.1. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
+Status as of 0.32.2. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
 
 | # | Step | State | Who and how |
 |---|---|---|---|
 | 1 | **Try it on a real Omarchy.** Install the binary (`./install.sh --all`) and the bar button (`omarchy plugin add https://github.com/whogotpwned/omafile.git --enable`), run `omarchy plugin validate .` in the checkout, and work through [docs/acceptance-checklist.md](docs/acceptance-checklist.md). The bar button in particular has only ever been checked against the shell's source, never run inside the shell. | open | The maintainer, on an Omarchy machine. What fails becomes an issue. |
 | 2 | **Add GitHub topics** so the repository can be found: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`. There are none yet. | open | The maintainer: the gear next to *About* on the repository page. |
-| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.32.1 && git push origin v0.32.1` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
+| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.32.2 && git push origin v0.32.2` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
 | 4 | **Publish to the AUR**, after step 3: `packaging/aur/update.sh` fills in the checksums of the release, commit that, then `packaging/aur/publish.sh` pushes `omafile` and `omafile-bin`. | open | The maintainer: it needs an AUR account with an SSH **public** key added under *My Account*. The private key stays on the maintainer's machine and out of this repository. |
 | 5 | **List it on the marketplace**, after step 3: submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org), which is where Omarchy's manual sends plugin authors. The texts for the form are prepared in [docs/marketplace-submission.md](docs/marketplace-submission.md). That page could not be opened from the machine this was written on, so compare the form's fields with the prepared ones. | open | The maintainer: the submission is made in the author's name. |
 | 6 | **After publishing**: `omarchy plugin update` moves users to the tip of `main`, so `main` has to stay releasable; the weekly *Omarchy compatibility* workflow reports when a new Omarchy no longer fits; later versions repeat steps 3 to 5 (the marketplace has a form for new versions). The working branch `claude/relaxed-bohr-btoomh` can be deleted once `main` is what people install. | later | The maintainer. |
@@ -547,7 +548,7 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.32.1** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.32.2** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects

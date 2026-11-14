@@ -411,6 +411,28 @@ impl Window {
         this.start_backup_watch();
         this.maybe_show_tour();
         this.maybe_selftest();
+        // The thumb buttons of a mouse: back and forward, wherever the pointer is.
+        let thumb = gtk::GestureClick::new();
+        thumb.set_button(0);
+        thumb.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let weak = Rc::downgrade(&this);
+        thumb.connect_pressed(move |gesture, _, _, _| {
+            let action = match gesture.current_button() {
+                8 => "back",
+                9 => "forward",
+                _ => return,
+            };
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            if let Some(w) = weak.upgrade() {
+                // From a page that lies over the files (Radio, Skins, …) back means the files.
+                if action == "back" && w.content_stack.visible_child_name().as_deref() != Some("files") {
+                    w.show_files();
+                } else {
+                    gio::prelude::ActionGroupExt::activate_action(&w.window, action, None);
+                }
+            }
+        });
+        this.window.add_controller(thumb);
         this.radio_watch();
         this.start_update_check();
         for (flag, open) in [("--captures", (|w| w.open_captures()) as fn(&Rc<Window>)), ("--radio", |w| w.open_radio())] {
