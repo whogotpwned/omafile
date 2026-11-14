@@ -108,6 +108,7 @@ pub const TABLE: &[(&str, &str, &str, &str)] = &[
     ("Developer", "", "Context menu › New Encrypted Folder", "gocryptfs vault; Unlock, Lock, Change Password on the folder"),
     ("Tools", "backup", "", "Backup to another drive, Time Machine style: when the last one ran, the list of backups, the drive, what is included and how often; the sidebar shows the time of the last backup"),
     ("Tools", "themes", "", "Skins: a look of its own for omafile. Every Omarchy theme and every skin made from a picture as a card; one click and omafile wears it, while the desktop keeps its theme. Follow Omarchy goes back to the theme that is on"),
+    ("Tools", "", "Menu › Update omafile…", "Update omafile: fetches the newest version, builds and installs it in a window that shows every step, then offers to restart (a package is updated in a terminal)"),
     ("Tools", "", "Palette › Check for Updates", "Check for Updates: asks whether a newer omafile exists and shows the command that updates this installation (also asked once a day; Preferences › Updates turns that off)"),
     ("Tools", "radio", "", "Radio: internet radio and podcasts, with electronic music and tech and hacking news from the start; add any station by its address. It plays in Now Playing and on the media keys, and goes on when the window is closed"),
     ("Tools", "captures", "", "Captures: Omarchy's screenshots and screen recordings by day, to drag out, copy, draw on, turn into a GIF, share or delete"),

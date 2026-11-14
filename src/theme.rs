@@ -566,6 +566,10 @@ flowboxchild:focus-within .omafile-capture-actions {{
 .omafile-capture-new .omafile-capture-card {{
   box-shadow: 0 0 0 3px {accent}, 0 8px 22px alpha(black, 0.3);
 }}
+.omafile-update-log {{
+  background: none;
+  font-size: 0.9em;
+}}
 .omafile-update-command {{
   padding: 10px 8px 10px 14px;
 }}

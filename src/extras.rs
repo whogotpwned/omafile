@@ -258,6 +258,16 @@ impl Window {
         });
         let update_group = adw::PreferencesGroup::builder().title(tr("Updates")).build();
         update_group.add(&updates);
+        let now_row = adw::ActionRow::builder().title(tr("Update omafile")).subtitle(tr("Fetches the newest version and installs it; you see every step and decide when to restart")).build();
+        let now_button = gtk::Button::builder().label(tr("Update…")).valign(gtk::Align::Center).build();
+        let this = Rc::downgrade(self);
+        now_button.connect_clicked(move |_| {
+            if let Some(w) = this.upgrade() {
+                w.update_now();
+            }
+        });
+        now_row.add_suffix(&now_button);
+        update_group.add(&now_row);
         page.add(&system);
         page.add(&update_group);
 

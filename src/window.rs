@@ -2186,6 +2186,7 @@ fn main_menu() -> gio::Menu {
     let s3 = gio::Menu::new();
     s3.append(Some(tr("Preferences").as_str()), Some("win.preferences"));
     s3.append(Some(tr("Help and Features").as_str()), Some("win.help"));
+    s3.append(Some(tr("Update omafile…").as_str()), Some("win.update-now"));
     s3.append(Some(tr("Keyboard Shortcuts").as_str()), Some("win.shortcuts"));
     s3.append(Some(tr("About Files").as_str()), Some("win.help-about"));
     menu.append_section(None, &s3);

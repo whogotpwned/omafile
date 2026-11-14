@@ -10,7 +10,7 @@
 
 GTK 4 · libadwaita · Rust · theme-aware · Finder views · terminal inside · git inside · Python inside
 
-[![Version](https://img.shields.io/badge/version-0.31.1-f7768e)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.32.0-f7768e)](CHANGELOG.md)
 [![CI](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whogotpwned/omafile/actions/workflows/ci.yml)
 [![Omarchy plugin](https://img.shields.io/badge/Omarchy-shell%20plugin-7aa2f7)](#bar-button)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-9ece6a)](#how-it-follows-omarchy)
@@ -209,17 +209,19 @@ The first window after installing omafile opens with a **tour**: seven short sto
 
 ![update](docs/screenshot-update.png)
 
-omafile **tells you when a newer version exists**. A few seconds after the first window opens, and at most once a day, it asks GitHub which version is the newest; when there is one, a notification stays at the bottom until you answer it. **Update…** shows the command that updates *your* installation and, on **Update Now**, runs it in a terminal where you can watch it:
+**Menu › Update omafile…** is the one place to press: omafile asks GitHub which version is the newest, and *Update Now* **fetches the newest source, builds it and installs it, right in omafile**. A window shows every step and the full output; when it is done, *Restart omafile* starts the new version, with your tabs back where they were. If something goes wrong the lines say why, omafile keeps running as it is, and *Run in a Terminal* repeats the same steps where you can step in. When you already have the newest version, *Update Anyway* fetches the latest state all the same, since a fix can arrive without a new number. The same button is in *Preferences › Updates* and in the command palette.
 
-| Installed | What counts as newest | The command shown |
+omafile also **tells you when a newer version exists**. A few seconds after the first window opens, and at most once a day, it asks; when there is one, a notification stays at the bottom until you answer it, and *Update…* leads to the same dialog.
+
+| Installed | What counts as newest | What *Update Now* does |
 |---|---|---|
-| with `./install.sh` from a checkout | the version on the `main` branch (what `git pull` brings) | `cd <checkout> && git pull --ff-only && ./install.sh` |
-| as a package (`omafile`, `omafile-bin` from the AUR) | the latest tagged release | `yay -S <package>` (or `paru`) |
-| some other way | the version on `main` | none; omafile says how it is usually done |
+| with `./install.sh` from a checkout | the version on the `main` branch (what `git pull` brings) | in omafile: `cd <checkout> && git pull --ff-only && ./install.sh` |
+| as a package (`omafile`, `omafile-bin` from the AUR) | the latest tagged release | in a terminal, because the package manager asks for your password: `yay -S <package>` (or `paru`) |
+| some other way | the version on `main` | in omafile: clones the source into `~/.local/share/omafile/src` and installs from there |
 
-omafile **never updates itself** and installs nothing without that click. *Skip This Version* silences one version; the next one is announced again. *Later* brings the notification back the next day.
+Building takes a few minutes and needs what building omafile always needs (`rust`, the GTK headers). omafile **never updates without that click**. *Skip This Version* silences one version; the next one is announced again. *Later* brings the notification back the next day.
 
-The question is one request for a small public file (`manifest.json` of this repository, or GitHub's answer about the latest release). It carries nothing about you, your files or how you use omafile; GitHub sees what it sees of any download, the address it comes from. **Preferences › Updates** turns the daily question off. *Check for Updates* in the palette (`Ctrl+K`) and in *Help › About* asks at once, whatever the setting, and `omafile --check-update` does it in a terminal or a script (exit code 0: up to date, 10: a newer version exists, 1: could not ask).
+The daily question is one request for a small public file (`manifest.json` of this repository, or GitHub's answer about the latest release). It carries nothing about you, your files or how you use omafile; GitHub sees what it sees of any download, the address it comes from. **Preferences › Updates** turns it off. *Check for Updates* in the palette (`Ctrl+K`) and in *Help › About* only asks, and `omafile --check-update` does that in a terminal or a script (exit code 0: up to date, 10: a newer version exists, 1: could not ask).
 
 ## Keyboard shortcuts
 
@@ -436,13 +438,13 @@ omarchy plugin list | update whogotpwned.omafile | disable … | enable … --se
 
 #### What is still open before publishing
 
-Status as of 0.31.1. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
+Status as of 0.32.0. Everything a machine can check is done and stays checked by CI on every push: the manifest passes the shell's rules, the widget is linted against Omarchy 4.5 and the development branch, the package builds with `makepkg` on Arch, the repository is public under the MIT licence. What is left needs a real Omarchy desktop or one of the maintainer's accounts. None of it needs a secret in this repository: no token, key or password belongs in a file, a commit or an issue here.
 
 | # | Step | State | Who and how |
 |---|---|---|---|
 | 1 | **Try it on a real Omarchy.** Install the binary (`./install.sh --all`) and the bar button (`omarchy plugin add https://github.com/whogotpwned/omafile.git --enable`), run `omarchy plugin validate .` in the checkout, and work through [docs/acceptance-checklist.md](docs/acceptance-checklist.md). The bar button in particular has only ever been checked against the shell's source, never run inside the shell. | open | The maintainer, on an Omarchy machine. What fails becomes an issue. |
 | 2 | **Add GitHub topics** so the repository can be found: `omarchy`, `omarchy-plugin`, `file-manager`, `hyprland`, `gtk4`. There are none yet. | open | The maintainer: the gear next to *About* on the repository page. |
-| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.31.1 && git push origin v0.31.1` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
+| 3 | **Cut the first tagged release.** There is no tag yet, so the *Releases* page is empty and `omafile-bin` has nothing to download. `git tag v0.32.0 && git push origin v0.32.0` starts the Release workflow, which builds the tarball on Arch and publishes the GitHub Release with the changelog entry as its notes. It uses the repository's own token; nothing has to be configured. This workflow has not run yet, so watch its first run. | open | The maintainer. Pushing a tag publishes, so it is a deliberate step and not part of any script. |
 | 4 | **Publish to the AUR**, after step 3: `packaging/aur/update.sh` fills in the checksums of the release, commit that, then `packaging/aur/publish.sh` pushes `omafile` and `omafile-bin`. | open | The maintainer: it needs an AUR account with an SSH **public** key added under *My Account*. The private key stays on the maintainer's machine and out of this repository. |
 | 5 | **List it on the marketplace**, after step 3: submit the repository at [plugins.omarchy.org](https://plugins.omarchy.org), which is where Omarchy's manual sends plugin authors. The texts for the form are prepared in [docs/marketplace-submission.md](docs/marketplace-submission.md). That page could not be opened from the machine this was written on, so compare the form's fields with the prepared ones. | open | The maintainer: the submission is made in the author's name. |
 | 6 | **After publishing**: `omarchy plugin update` moves users to the tip of `main`, so `main` has to stay releasable; the weekly *Omarchy compatibility* workflow reports when a new Omarchy no longer fits; later versions repeat steps 3 to 5 (the marketplace has a form for new versions). The working branch `claude/relaxed-bohr-btoomh` can be deleted once `main` is what people install. | later | The maintainer. |
@@ -545,7 +547,7 @@ Commands run through `bash -lc` in the project folder inside a terminal window a
 
 ## Development
 
-Current version: **0.31.1** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
+Current version: **0.32.0** (see [CHANGELOG.md](CHANGELOG.md)). The number lives in `Cargo.toml`, `PKGBUILD` and `manifest.json`; `plugin/validate.sh` checks the three agree with the newest changelog entry and the README badge.
 
 ```sh
 cargo run -- ~/Projects

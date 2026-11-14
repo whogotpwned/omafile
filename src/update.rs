@@ -105,15 +105,75 @@ fn shell_quote(text: &str) -> String {
     }
 }
 
-/// The command that brings this installation up to date. None when omafile cannot know:
-/// then it only says that there is a newer version. `helper` is the AUR helper found
-/// (yay on Omarchy).
-pub fn update_command(install: &Install, helper: Option<&str>) -> Option<String> {
+pub const REPOSITORY: &str = "https://github.com/whogotpwned/omafile.git";
+
+/// How this installation is brought up to date.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Plan {
+    /// By omafile itself, with this script: fetch the source, build, install. Nothing in
+    /// it needs a password, so it runs in omafile's own window.
+    Here(String),
+    /// With this command in a terminal: the package manager asks for a password.
+    Terminal(String),
+    /// omafile cannot know how (a package, and no AUR helper is installed).
+    ByHand,
+}
+
+/// A checkout of omafile's own, for an installation that did not come from one it knows:
+/// the source is fetched here and installed from here.
+pub fn own_checkout() -> PathBuf {
+    gtk::glib::user_data_dir().join("omafile/src")
+}
+
+/// `helper` is the AUR helper found (yay on Omarchy); `own` is where omafile keeps a
+/// checkout of its own when it has to fetch the source itself.
+pub fn plan(install: &Install, helper: Option<&str>, own: &Path) -> Plan {
     match install {
-        Install::Package(name) => helper.map(|helper| format!("{helper} -S {}", shell_quote(name))),
-        Install::Checkout(dir) => Some(format!("cd {} && git pull --ff-only && ./install.sh", shell_quote(&dir.to_string_lossy()))),
-        Install::Unknown => None,
+        Install::Package(name) => match helper {
+            Some(helper) => Plan::Terminal(format!("{helper} -S {}", shell_quote(name))),
+            None => Plan::ByHand,
+        },
+        Install::Checkout(dir) => Plan::Here(format!("cd {} && git pull --ff-only && ./install.sh", shell_quote(&dir.to_string_lossy()))),
+        Install::Unknown => {
+            let dir = shell_quote(&own.to_string_lossy());
+            Plan::Here(format!("if [ -d {dir}/.git ]; then cd {dir} && git pull --ff-only; else git clone --depth 1 {REPOSITORY} {dir} && cd {dir}; fi && ./install.sh"))
+        }
     }
+}
+
+/// The command that brings this installation up to date, to show and to print. None when
+/// omafile cannot know.
+pub fn update_command(install: &Install, helper: Option<&str>) -> Option<String> {
+    match plan(install, helper, &own_checkout()) {
+        Plan::Here(command) | Plan::Terminal(command) => Some(command),
+        Plan::ByHand => None,
+    }
+}
+
+/// What a line of the update's output says about how far it is, for the line above the log.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Step {
+    Fetching,
+    /// Building, with the part that is being compiled.
+    Building(String),
+    Installing,
+}
+
+pub fn step_of(line: &str) -> Option<Step> {
+    let line = line.trim();
+    if let Some(rest) = line.strip_prefix("Compiling ") {
+        return Some(Step::Building(rest.split_whitespace().next().unwrap_or("").to_string()));
+    }
+    if line.starts_with(":: building") || line.starts_with("Finished ") || line.starts_with("Downloading ") || line.starts_with("Downloaded ") {
+        return Some(Step::Building(String::new()));
+    }
+    if line.starts_with(":: installed") {
+        return Some(Step::Installing);
+    }
+    if line.starts_with("Cloning into") || line.starts_with("From ") || line.starts_with("Updating ") || line.starts_with("Already up to date") || line.starts_with("remote: ") {
+        return Some(Step::Fetching);
+    }
+    None
 }
 
 pub fn aur_helper() -> Option<&'static str> {
@@ -200,6 +260,10 @@ pub fn question(install: &Install) -> (&'static str, fn(&str) -> Option<String>)
 /// Ask. `Ok(None)`: the answer names no version (no release yet). Blocks for the length of
 /// one small download: call it off the main thread.
 pub fn ask(install: &Install) -> Result<Option<String>, String> {
+    // The self-test runs these commands too, and asks nobody: it gets "nothing newer".
+    if std::env::var_os("OMAFILE_SELFTEST").is_some() {
+        return Ok(None);
+    }
     let (url, read) = question(install);
     // For tests: another address, read as the same kind of answer.
     let url = std::env::var("OMAFILE_UPDATE_URL").unwrap_or_else(|_| url.to_string());
@@ -281,19 +345,31 @@ mod tests {
         // A package: whatever pacman says owns the binary, updated with the AUR helper.
         let package = install_from(Path::new("/usr/bin/omafile"), Some(&checkout), Some("omafile-bin\n"));
         assert_eq!(package, Install::Package("omafile-bin".into()));
+        let own = Path::new("/home/me/.local/share/omafile/src");
+        assert_eq!(plan(&package, Some("yay"), own), Plan::Terminal("yay -S omafile-bin".into()), "a package: in a terminal, where the password is asked");
+        assert_eq!(plan(&package, None, own), Plan::ByHand, "without a helper omafile does not guess");
         assert_eq!(update_command(&package, Some("yay")).as_deref(), Some("yay -S omafile-bin"));
-        assert_eq!(update_command(&package, None), None, "without a helper omafile does not guess");
+        assert_eq!(update_command(&package, None), None);
         assert_eq!(install_from(Path::new("/usr/bin/omafile"), None, None), Install::Package("omafile".into()));
         assert_eq!(question(&package).0, RELEASES, "a package follows the releases");
         // From a checkout: pull and install again, the path quoted.
         let built = install_from(Path::new("/home/me/.local/bin/omafile"), Some(&checkout), None);
         assert_eq!(built, Install::Checkout(checkout.clone()));
-        assert_eq!(update_command(&built, Some("yay")), Some(format!("cd '{}' && git pull --ff-only && ./install.sh", checkout.display())));
+        assert_eq!(plan(&built, Some("yay"), own), Plan::Here(format!("cd '{}' && git pull --ff-only && ./install.sh", checkout.display())), "a checkout: omafile does it itself");
         assert_eq!(question(&built).0, MANIFEST, "a checkout follows the main branch");
         // A note that points nowhere, or no note: unknown, and no command.
         assert_eq!(install_from(Path::new("/home/me/.local/bin/omafile"), Some(&dir.join("gone")), None), Install::Unknown);
         assert_eq!(install_from(Path::new("/usr/local/bin/omafile"), None, None), Install::Unknown);
-        assert_eq!(update_command(&Install::Unknown, Some("yay")), None);
+        // Installed some other way: omafile fetches the source into a checkout of its own.
+        let Plan::Here(script) = plan(&Install::Unknown, Some("yay"), own) else { panic!("omafile updates itself") };
+        assert!(script.contains("git clone --depth 1 https://github.com/whogotpwned/omafile.git /home/me/.local/share/omafile/src") && script.contains("git pull --ff-only") && script.ends_with("&& ./install.sh"), "{script}");
+        // What the output says about how far the update is.
+        assert_eq!(step_of("Cloning into '/home/me/.local/share/omafile/src'..."), Some(Step::Fetching));
+        assert_eq!(step_of("Already up to date."), Some(Step::Fetching));
+        assert_eq!(step_of(":: building omafile (release)"), Some(Step::Building(String::new())));
+        assert_eq!(step_of("   Compiling gtk4 v0.11.0"), Some(Step::Building("gtk4".into())));
+        assert_eq!(step_of(":: installed /home/me/.local/bin/omafile and the desktop entry"), Some(Step::Installing));
+        assert_eq!(step_of("warning: unused variable"), None);
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
         let _ = std::fs::remove_dir_all(&dir);
     }

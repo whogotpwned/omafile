@@ -198,14 +198,19 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 20.8 With the network cable out, a click on a station: after a moment a notification says the address does not answer; nothing hangs.
 - [ ] 20.9 Bar button, right click › *Radio* opens the page.
 
-## 21. Updates (needs the internet and a newer version on GitHub)
+## 21. Updates (needs the internet)
 
 - [ ] 21.1 With an omafile older than the one on GitHub: a few seconds after the first window, the notification *omafile X is available* appears and stays. Starting omafile again the same day shows no second notification.
-- [ ] 21.2 *Update…*: the dialog names both versions and the command for this installation (`cd … && git pull --ff-only && ./install.sh` after `install.sh`; `yay -S omafile-bin` for the package). The copy button puts the command on the clipboard.
-- [ ] 21.3 *Update Now* opens a terminal that runs the command; after it finished and omafile was restarted, *Help › About* shows the new version and *Check for Updates* says it is the newest.
-- [ ] 21.4 *Skip This Version*: no notification for that version on the following days; *Check for Updates* still names it.
-- [ ] 21.5 Preferences › Updates off: no request is made at start (`~/.local/state/omafile/update` keeps its old `checked` time). *Check for Updates* still works.
-- [ ] 21.6 Without a network: no notification, no error, nothing hangs; `omafile --check-update` prints that it could not ask and exits with 1.
+- [ ] 21.2 Menu › Update omafile…: the dialog names both versions and what will run (`cd … && git pull --ff-only && ./install.sh` after `install.sh`).
+- [ ] 21.3 *Update Now*: the window shows *Fetching*, then *Building <crate>* with the output running through, then *omafile is updated*. This takes a few minutes; omafile stays usable meanwhile.
+- [ ] 21.4 *Restart omafile*: the window closes and comes back as the new version with the same tabs; *Help › About* shows the new number. Only one omafile is running (`pgrep -c omafile`).
+- [ ] 21.5 Menu › Update omafile… again: *omafile X is the newest version*; *Update Anyway* runs the same steps once more.
+- [ ] 21.6 Without `cargo` on the PATH (rename it for the test): the update stops, the window says it did not go through and shows the line about cargo; omafile is unchanged. *Run in a Terminal* opens a terminal with the same steps.
+- [ ] 21.7 Close the update window while it builds: the build goes on, and a notification with *Restart* appears when it is done.
+- [ ] 21.8 *Skip This Version*: no notification for that version on the following days; Update omafile… still offers it.
+- [ ] 21.9 Preferences › Updates off: no request is made at start (`~/.local/state/omafile/update` keeps its old `checked` time). Update omafile… still works.
+- [ ] 21.10 Without a network: no notification, no error at start; Update omafile… says it could not ask; `omafile --check-update` exits with 1.
+- [ ] 21.11 Installed as a package: *Update Now* opens a terminal with `yay -S <package>`.
 
 ## 22. Playing files (on a stock Omarchy, without the GStreamer plugins)
 

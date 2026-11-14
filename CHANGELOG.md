@@ -2,6 +2,15 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.32.0 — 2026-11-14
+
+### Added
+- **Update omafile from inside omafile.** *Menu › Update omafile…* (also in *Preferences › Updates* and the command palette) asks for the newest version, and *Update Now* fetches the source, builds and installs it in a window that shows every step and the full output. When it is done, *Restart omafile* starts the new version. Until now the command was only shown and run in a terminal.
+- When this version is the newest already, *Update Anyway* fetches the latest state and installs it again: a fix can arrive without a new version number.
+- An installation omafile does not know the checkout of gets one of its own: the source is cloned into `~/.local/share/omafile/src` and installed from there.
+- When the update fails, the output says why, omafile keeps running unchanged, and *Run in a Terminal* repeats the same steps. Closing the window does not stop the update; the result is then announced in a notification.
+- A package (AUR) is still updated in a terminal, because the package manager asks for the password.
+
 ## 0.31.1 — 2026-11-14
 
 ### Fixed
