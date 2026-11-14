@@ -134,7 +134,7 @@ impl QuickLook {
         if !self.open.get() || self.closing.replace(true) {
             return;
         }
-        let arrived = std::time::Duration::from_millis(320);
+        let arrived = std::time::Duration::from_millis(220);
         let wait = self.shown_at.get().map(|at| arrived.saturating_sub(at.elapsed())).unwrap_or_default();
         let weak = Rc::downgrade(self);
         glib::timeout_add_local_once(wait, move || {

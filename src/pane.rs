@@ -1066,7 +1066,7 @@ impl Pane {
         self.ghost.set_paintable(Some(&frozen));
         self.ghost.set_visible(true);
         let ghost = self.ghost.clone();
-        crate::motion::property(&self.ghost, "opacity", 1.0, 0.0, crate::motion::FAST + 60, Some(Box::new(move || {
+        crate::motion::property(&self.ghost, "opacity", 1.0, 0.0, crate::motion::FAST, Some(Box::new(move || {
             ghost.set_visible(false);
             ghost.set_opacity(1.0);
             ghost.set_paintable(None::<&gdk::Paintable>);

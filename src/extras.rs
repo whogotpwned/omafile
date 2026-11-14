@@ -106,6 +106,15 @@ impl Window {
             }
         });
         views.add(&hidden);
+        let motion = adw::SwitchRow::builder().title(tr("Animations")).subtitle(tr("Fades and slides when folders, panels and previews open. Off: everything appears at once")).active(self.prefs.get_bool("animations", true)).build();
+        let this = Rc::downgrade(self);
+        motion.connect_active_notify(move |row| {
+            if let Some(w) = this.upgrade() {
+                w.prefs.set("animations", Some(if row.is_active() { "true" } else { "false" }));
+                crate::motion::set_enabled(row.is_active());
+            }
+        });
+        views.add(&motion);
         let session = adw::SwitchRow::builder().title(tr("Restore tabs on start")).subtitle(tr("Reopen the last tabs, split view and terminal panels")).active(self.prefs.get_bool("restore-session", true)).build();
         let this = Rc::downgrade(self);
         session.connect_active_notify(move |row| {

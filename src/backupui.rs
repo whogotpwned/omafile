@@ -520,6 +520,13 @@ impl BackupPage {
             config.save();
         });
         what.add(&caches);
+        let hidden = adw::SwitchRow::builder().title(tr("Leave out hidden folders and files")).subtitle(tr("The dot folders at the top of your home: the settings of programs, caches, keys. Off: they are backed up too")).active(config.skip_hidden).build();
+        hidden.connect_active_notify(|row| {
+            let mut config = Config::load();
+            config.skip_hidden = row.is_active();
+            config.save();
+        });
+        what.add(&hidden);
         let excludes = adw::EntryRow::builder().title(tr("Also leave out (names with *, or folders; separated by commas)")).text(config.excludes.join(", ")).build();
         excludes.connect_changed(|row| {
             let mut config = Config::load();

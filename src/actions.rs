@@ -728,6 +728,8 @@ impl Window {
                 w.unmount(m);
             }
         }));
+        simple("sidebar-drive-properties", Box::new(|w| w.drive_properties()));
+        simple("sidebar-drive-format", Box::new(|w| w.drive_format()));
         simple("shortcuts", Box::new(|w| w.show_shortcuts()));
         simple("help", Box::new(|w| w.show_help("features")));
         simple("help-about", Box::new(|w| w.show_help("about")));
@@ -751,7 +753,7 @@ impl Window {
         });
         self.window.add_action(&hidden);
 
-        let sidebar = gio::SimpleAction::new_stateful("show-sidebar", None, &true.to_variant());
+        let sidebar = gio::SimpleAction::new_stateful("show-sidebar", None, &self.split.shows_sidebar().to_variant());
         let this = Rc::downgrade(self);
         sidebar.connect_activate(move |action, _| {
             if trace {

@@ -2,6 +2,24 @@
 
 All notable changes to omafile. The version here matches `Cargo.toml`, `PKGBUILD`, `manifest.json` and the README badge; `plugin/validate.sh` checks they agree.
 
+## 0.33.0 — 2026-11-15
+
+The open issues on GitHub, worked through.
+
+### Added
+- **Drives: Properties and Format…** (#3). Right click a drive in the sidebar: *Properties* shows device, disk, make and model, how it is attached, size, used and free, file system, label, UUID and mount point. *Format…* erases a USB stick or card and writes a new file system (ext4, Btrfs, exFAT, FAT32, NTFS, XFS, whichever tools are installed) with a name; through `udisksctl`, so the system asks for the password. omafile refuses the disk the system runs from and formats partitions only, never a whole disk that has some.
+- **Backups with or without hidden folders** (#4): *Leave out hidden folders and files* in Backup › What is backed up. Off by default; on, the dot folders at the top of each source stay out.
+- **A sidebar button** in the header folds the sidebar away and brings it back (#1); F9 did that already. The state is remembered.
+- **Preferences › Animations** turns omafile's fades and slides off (#5).
+
+### Changed
+- **Quicker** (#5): every transition is shorter (fades 110 ms instead of 160, panels 180 instead of 260, the page switch 200 instead of 320), cards fill a page in half the time, and the preview closes sooner.
+- **The music ends with the last window** (#2): closing omafile completely stops what it started, the radio and a song alike, instead of playing on without a window. *Stop* on the Radio page, in the palette and in the sidebar entry's menu is still there.
+- **uninstall.sh hands folders back to the file manager that had them before** (#6): install.sh notes the previous default; without a note, Nautilus.
+
+### Not changed
+- Omaplug's badge and icon (#7) come from the plugin marketplace's catalog, not from a plugin's own files: they appear once omafile is listed there. See the README's publishing table.
+
 ## 0.32.2 — 2026-11-14
 
 ### Added

@@ -6,8 +6,16 @@
 use adw::prelude::*;
 use gtk::glib;
 
-pub const FAST: u32 = 160;
-pub const PANEL: u32 = 260;
+pub const FAST: u32 = 110;
+pub const PANEL: u32 = 180;
+
+/// Turn omafile's animations on or off (Preferences). Off, GTK's own transitions stop too:
+/// this is the per-process form of the system's reduced-motion setting.
+pub fn set_enabled(on: bool) {
+    if let Some(settings) = gtk::Settings::default() {
+        settings.set_gtk_enable_animations(on);
+    }
+}
 
 /// Animate a numeric property from `from` to `to`, then run `done`.
 pub fn property(widget: &impl IsA<gtk::Widget>, name: &str, from: f64, to: f64, ms: u32, done: Option<Box<dyn FnOnce()>>) {
@@ -57,7 +65,7 @@ pub fn stagger_in(widget: &gtk::Widget, index: u32) {
     }
     widget.set_opacity(0.0);
     let weak = widget.downgrade();
-    glib::timeout_add_local_once(std::time::Duration::from_millis(30 + (index.min(24) * 28) as u64), move || {
+    glib::timeout_add_local_once(std::time::Duration::from_millis(20 + (index.min(12) * 16) as u64), move || {
         if let Some(widget) = weak.upgrade() {
             property(&widget, "opacity", 0.0, 1.0, 320, None);
         }

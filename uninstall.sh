@@ -17,14 +17,17 @@ purge=false
 rm -f "$bin_dir/omafile" "$apps_dir/$desktop"
 rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.whogotpwned.Omafile.svg" \
       "$HOME/.local/share/icons/hicolor/symbolic/apps/io.github.whogotpwned.Omafile-symbolic.svg"
+previous="$(cat "$share_dir/previous-default" 2>/dev/null || true)"
 rm -rf "$share_dir"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" || true
 echo ":: removed binary and desktop entry"
 
-# Hand folders back to Nautilus if omafile was the default.
+# Hand folders back to the file manager that had them before omafile (install.sh noted
+# it); Nautilus, Omarchy's own, when nothing was noted.
 if command -v xdg-mime >/dev/null 2>&1 && [ "$(xdg-mime query default inode/directory 2>/dev/null)" = "$desktop" ]; then
-    xdg-mime default org.gnome.Nautilus.desktop inode/directory 2>/dev/null || true
-    echo ":: folders open with Nautilus again"
+    [ -n "$previous" ] || previous="org.gnome.Nautilus.desktop"
+    xdg-mime default "$previous" inode/directory 2>/dev/null || true
+    echo ":: folders open with $previous again"
 fi
 
 # Drop the binding lines install.sh appended (only those).

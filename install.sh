@@ -53,6 +53,11 @@ install -m644 "$here/data/hyprland-bindings.lua" "$share_dir/hyprland-bindings.l
 install -m644 "$here/data/hyprland-bindings.conf" "$share_dir/hyprland-bindings.conf"
 # Where this checkout is, so that omafile can name the command that updates it.
 printf '%s\n' "$here" > "$share_dir/source"
+# Which application opened folders before omafile, so that uninstall.sh can hand them back.
+if command -v xdg-mime >/dev/null 2>&1 && [ ! -f "$share_dir/previous-default" ]; then
+    previous="$(xdg-mime query default inode/directory 2>/dev/null || true)"
+    [ -n "$previous" ] && [ "$previous" != "$desktop" ] && printf '%s\n' "$previous" > "$share_dir/previous-default"
+fi
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" || true
 echo ":: installed $bin_dir/omafile and $apps_dir/$desktop"
 case ":$PATH:" in

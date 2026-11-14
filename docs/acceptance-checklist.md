@@ -224,3 +224,13 @@ Needs `sudo pacman -S gvfs-afc libimobiledevice`, optionally `libheif`.
 - [ ] 22.8 Every FLAC, M4A, Opus and WAV file in the music folder shows the play badge, in the list and in the grid.
 - [ ] 22.9 `Space` on a file opens the preview; `Space` again closes it. Ten times in a row, also quickly, on a picture, a song and a PDF: it always ends the way the count says, and nothing happens to a file behind it.
 - [ ] 22.10 The mouse's thumb buttons go back and forward through the folders; on the Radio page, back returns to the files.
+
+## 23. Drives (needs a USB stick you can erase)
+
+- [ ] 23.1 Plug in a stick: right click it in the sidebar › *Properties*: device, size, used and free, file system, label, USB, removable are right (compare `lsblk -f`).
+- [ ] 23.2 *Format…*: choose exFAT and a name, switch *Erase everything on it* on, *Format*: the polkit dialog asks for the password; afterwards the stick mounts again empty with the new name (`lsblk -f`). Without the switch the *Format* button stays off.
+- [ ] 23.3 Right click the root partition in the sidebar (if listed) › *Format…*: refused with the message about the system disk. A whole disk with partitions is refused too.
+- [ ] 23.4 Backup › *Leave out hidden folders and files* on, then *Back Up Now*: the backup has no `.config`, `.cache`, `.local` at the top of the home, but `Projects/.git` inside a project is there.
+- [ ] 23.5 Preferences › Animations off: folders and panels appear without fades; on again, they fade.
+- [ ] 23.6 Play a song or the radio, close every omafile window: the sound stops and no `mpv` is left (`pgrep mpv`).
+- [ ] 23.7 `./uninstall.sh` on a machine where Nautilus (or another file manager) was the default before `install.sh`: `xdg-mime query default inode/directory` names it again.

@@ -168,6 +168,9 @@ impl Window {
         nav_box.add_css_class("linked");
         nav_box.append(&back_btn);
         nav_box.append(&forward_btn);
+        // The sidebar folds away and comes back with this button, or F9.
+        let sidebar_btn = gtk::ToggleButton::builder().icon_name("sidebar-show-symbolic").tooltip_text(tr("Show or hide the sidebar (F9)")).action_name("win.show-sidebar").build();
+        sidebar_btn.add_css_class("flat");
 
         let pathbar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         pathbar.add_css_class("omafile-pathbar");
@@ -208,6 +211,7 @@ impl Window {
         let header = adw::HeaderBar::new();
         header.add_css_class("omafile-header");
         header.pack_start(&nav_box);
+        header.pack_start(&sidebar_btn);
         header.pack_start(&up_btn);
         header.set_title_widget(Some(&path_stack));
         header.pack_end(&menu_button);
@@ -275,7 +279,7 @@ impl Window {
         content.add_top_bar(&header);
         let content_stack = gtk::Stack::new();
         content_stack.set_transition_type(gtk::StackTransitionType::OverUpDown);
-        content_stack.set_transition_duration(320);
+        content_stack.set_transition_duration(200);
         content_stack.add_named(&preview_split, Some("files"));
         content.set_content(Some(&content_stack));
 
@@ -566,6 +570,9 @@ impl Window {
             self.window.maximize();
         }
         self.split.set_show_sidebar(s.sidebar);
+        if let Some(action) = gio::prelude::ActionMapExt::lookup_action(&self.window, "show-sidebar").and_downcast::<gio::SimpleAction>() {
+            action.set_state(&s.sidebar.to_variant());
+        }
         // Replace the single start tab with the saved ones.
         let initial: Vec<adw::TabPage> = (0..self.tab_views[0].n_pages()).map(|i| self.tab_views[0].nth_page(i)).collect();
         for (side, tabs) in s.sides.iter().enumerate().take(2) {
@@ -1121,9 +1128,10 @@ impl Window {
                 match state.places.get(index) {
                     Some(Place::Entry { kind: PlaceKind::Bookmark, .. }) => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Remove Bookmark", "win.sidebar-remove-bookmark")]),
                     Some(Place::Entry { kind: PlaceKind::Tag(_), .. }) => return,
-                    Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_eject() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Eject", "win.sidebar-unmount")]),
-                    Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_unmount() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Unmount", "win.sidebar-unmount")]),
-                    Some(Place::Entry { kind: PlaceKind::Volume(_), .. }) => menu_of(&[("Mount", "win.sidebar-mount")]),
+                    Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_eject() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Eject", "win.sidebar-unmount"), ("Properties", "win.sidebar-drive-properties"), ("Format…", "win.sidebar-drive-format")]),
+                    Some(Place::Entry { kind: PlaceKind::Mount(m), .. }) if m.can_unmount() => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Unmount", "win.sidebar-unmount"), ("Properties", "win.sidebar-drive-properties"), ("Format…", "win.sidebar-drive-format")]),
+                    Some(Place::Entry { kind: PlaceKind::Mount(_), .. }) => menu_of(&[("Open in New Tab", "win.sidebar-new-tab"), ("Properties", "win.sidebar-drive-properties")]),
+                    Some(Place::Entry { kind: PlaceKind::Volume(_), .. }) => menu_of(&[("Mount", "win.sidebar-mount"), ("Properties", "win.sidebar-drive-properties"), ("Format…", "win.sidebar-drive-format")]),
                     Some(Place::Entry { kind: PlaceKind::Backup, .. }) => menu_of(&[("Back Up Now", "win.backup-now"), ("Open Backup", "win.backup")]),
                     Some(Place::Entry { kind: PlaceKind::Radio, .. }) => menu_of(&[("Play or Pause", "win.radio-toggle"), ("Stop", "win.radio-stop"), ("Add Station…", "win.radio-add")]),
                     Some(Place::Entry { kind: PlaceKind::Feed(url), .. }) if url.is_empty() => menu_of(&[("Fetch New Articles", "win.sidebar-feed-refresh")]),

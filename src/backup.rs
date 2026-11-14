@@ -75,6 +75,9 @@ pub struct Config {
     pub sources: Vec<PathBuf>,
     /// Names (with `*`) or absolute paths to leave out.
     pub excludes: Vec<String>,
+    /// Leave out hidden files and folders (names that start with a dot) at the top of each
+    /// source: the settings of programs, caches, keys. What lies deeper is copied.
+    pub skip_hidden: bool,
     /// Daily and weekly backups: not before this hour of the day (local time).
     pub hour: u8,
     /// Weekly backups: the day, Monday = 0.
@@ -93,7 +96,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { schedule: Schedule::Daily, dest: PathBuf::new(), uuid: String::new(), subdir: String::new(), skip_caches: true, sources: Vec::new(), excludes: Vec::new(), hour: 12, weekday: 0, keep_days: 0, make_room: true, ac_only: false, notify_done: false, package_list: true }
+        Config { schedule: Schedule::Daily, dest: PathBuf::new(), uuid: String::new(), subdir: String::new(), skip_caches: true, sources: Vec::new(), excludes: Vec::new(), skip_hidden: false, hour: 12, weekday: 0, keep_days: 0, make_room: true, ac_only: false, notify_done: false, package_list: true }
     }
 }
 
@@ -118,6 +121,7 @@ impl Config {
                 "package_list" => c.package_list = value != "false",
                 "source" if !value.is_empty() => c.sources.push(PathBuf::from(value)),
                 "exclude" if !value.is_empty() => c.excludes.push(value.to_string()),
+                "skip_hidden" => c.skip_hidden = value == "true",
                 _ => {}
             }
         }
@@ -133,6 +137,7 @@ impl Config {
         for e in &self.excludes {
             out.push_str(&format!("exclude={e}\n"));
         }
+        out.push_str(&format!("skip_hidden={}\n", self.skip_hidden));
         out
     }
 
@@ -237,6 +242,9 @@ pub fn excluded(path: &Path, is_dir: bool, config: &Config) -> bool {
     // Snapshots (snapper's, so Omarchy's, and other backups in this layout) are never copied,
     // whatever the settings say: each one is a whole copy of the folder it sits in.
     if is_dir && name == ".snapshots" {
+        return true;
+    }
+    if config.skip_hidden && name.starts_with('.') && config.sources.iter().any(|source| path.parent() == Some(source.as_path())) {
         return true;
     }
     if config.skip_caches && is_dir {
@@ -1104,6 +1112,13 @@ mod tests {
         assert!(glob("*.iso", "arch.iso") && !glob("*.iso", "arch.iso.sig"));
         assert!(glob("backup-*", "backup-2026") && glob("a*b*c", "aXXbYYc") && !glob("a*b*c", "aXXc"));
         assert!(glob("exact", "exact") && !glob("exact", "exactly"));
+        // Hidden folders at the top of a source stay out when asked; deeper ones are copied.
+        let hidden = Config { skip_hidden: true, sources: vec!["/home/me".into()], ..Default::default() };
+        assert!(excluded(Path::new("/home/me/.config"), true, &hidden) && excluded(Path::new("/home/me/.bashrc"), false, &hidden));
+        assert!(!excluded(Path::new("/home/me/Projects/.git"), true, &hidden), "only at the top of a source");
+        assert!(!excluded(Path::new("/home/me/Documents"), true, &hidden));
+        assert!(!excluded(Path::new("/home/me/.config"), true, &Config { sources: vec!["/home/me".into()], ..Default::default() }), "off by default");
+        assert!(Config::parse(&hidden.serialize()).skip_hidden);
         let mut config = Config { excludes: vec!["*.tmp".into(), "/srv/private".into()], ..Default::default() };
         assert!(excluded(Path::new("/home/me/x.tmp"), false, &config));
         assert!(excluded(Path::new("/srv/private/deep/file"), false, &config));

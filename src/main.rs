@@ -78,6 +78,8 @@ mod skins;
 mod treemap;
 mod rules;
 mod rulesui;
+mod drives;
+mod drivesui;
 mod dupes;
 mod ebook;
 mod mpris;
@@ -182,6 +184,9 @@ fn main() -> glib::ExitCode {
             eprintln!("language: {}", i18n::language());
         }
         gtk::Window::set_default_icon_name("io.github.whogotpwned.Omafile");
+        if !prefs2.get_bool("animations", true) {
+            motion::set_enabled(false);
+        }
         *theme2.borrow_mut() = Some(theme::ThemeManager::install(prefs2.get("icon-theme"), prefs2.get("skin").and_then(|name| skins::resolve(&name))));
         let quit = gio::SimpleAction::new("quit", None);
         let app2 = app.clone();
@@ -224,7 +229,13 @@ fn main() -> glib::ExitCode {
     });
 
     let (prefs_a, theme_a) = (prefs.clone(), theme.clone());
-    // The radio ends with omafile.
+    // What omafile plays ends with omafile: when the last window is closed, the music it
+    // started stops (and with it the hold that kept omafile alive without a window).
+    app.connect_window_removed(|app, _| {
+        if app.windows().is_empty() {
+            radioplayer::player().stop();
+        }
+    });
     app.connect_shutdown(|_| radioplayer::player().shutdown());
     app.connect_activate(move |app| {
         // A saved session wins over the current directory when restoring is on
