@@ -95,16 +95,24 @@ async fn settle(w: &Rc<Window>) {
         // large dialog that was still being put on screen): forcing a dialog shut trips an
         // assertion inside libadwaita 1.5 a moment later, which would be this test's doing
         // and nobody else's. Only one that refuses to close (it asks first) is forced.
+        // First it is allowed to arrive: a dialog asked to close while it still slides in
+        // (nobody is that quick) may not hear it on libadwaita 1.5, and asking twice is
+        // what confuses the library.
+        glib::timeout_future(Duration::from_millis(320)).await;
         let mut gone = false;
         for attempt in 0..3 {
             if trace {
-                eprintln!("selftest:   closing {} \"{}\"{}", dialog.type_().name(), dialog.title(), if attempt > 0 { " again" } else { "" });
+                eprintln!("selftest:   closing {} \"{}\"{} (mapped {}, can close {})", dialog.type_().name(), dialog.title(), if attempt > 0 { " again" } else { "" }, dialog.is_mapped(), dialog.can_close());
             }
+            let asked = std::time::Instant::now();
             dialog.close();
-            for _ in 0..40 {
+            for _ in 0..60 {
                 glib::timeout_future(Duration::from_millis(70)).await;
                 if w.window.visible_dialog().as_ref() != Some(&dialog) {
                     gone = true;
+                    if trace && asked.elapsed() > Duration::from_millis(600) {
+                        eprintln!("selftest:   it took {} ms to go", asked.elapsed().as_millis());
+                    }
                     break;
                 }
             }
